@@ -28,6 +28,15 @@ namespace oaiResponsesAvalonia.Native
         private const uint OAIF_ALLOW_REGISTRATION = 0x01;
         private const uint OAIF_EXEC = 0x04;
 
+        /// <summary>
+        /// Displays the Windows "Open with" dialog for a file, owned by the specified Avalonia window.
+        /// </summary>
+        /// <remarks>
+        /// This uses the Windows Shell API and is unavailable on other platforms. The regular "Open" action
+        /// uses the platform's default file association instead.
+        /// </remarks>
+        /// <param name="parentWindow">The Avalonia window that owns the native dialog.</param>
+        /// <param name="filePath">The path of the file to offer to external applications.</param>
         public static void ShowOpenWithDialog(Window parentWindow, string filePath)
         {
             if (!OperatingSystem.IsWindows())

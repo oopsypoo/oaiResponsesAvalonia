@@ -241,22 +241,31 @@ namespace oaiResponsesAvalonia.Views
             gridResponsesPromptImage.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
             gridResponsesPromptImage.ColumnDefinitions[1].Width = new GridLength(0);
         }
+        /// <summary>
+        /// Replaces the selected turn's images and shows the gallery only when it contains images.
+        /// </summary>
         private void ReplaceResponsePreviewImages(IEnumerable<MediaFile> images)
         {
             ResponsePreviewImages.Clear();
 
-            if (images == null)
-                return;
-
-            foreach (var image in images)
+            if (images != null)
             {
-                ResponsePreviewImages.Add(image);
+                foreach (var image in images)
+                {
+                    ResponsePreviewImages.Add(image);
+                }
             }
+
+            responsesImageGallery.IsVisible = ResponsePreviewImages.Count > 0;
         }
 
+        /// <summary>
+        /// Clears and collapses the selected-turn image gallery.
+        /// </summary>
         private void ClearResponsePreviewImages()
         {
             ResponsePreviewImages.Clear();
+            responsesImageGallery.IsVisible = false;
 
             if (lstResponsesImages != null)
                 lstResponsesImages.SelectedItem = null;
@@ -288,6 +297,10 @@ namespace oaiResponsesAvalonia.Views
             txtResponsesPreviewInfo.Text = $"1 / {ResponsePreviewImages.Count}";
         }
 
+        /// <summary>
+        /// Populates the image gallery from one message and previews its preferred image or first image.
+        /// </summary>
+        /// <remarks>The gallery contains only images attached to this message, not images from the entire conversation.</remarks>
         private void ShowResponsesImageGallery(ChatMessage message, string preferredPath = null)
         {
             var images = GetImageMediaFiles(message);
@@ -532,6 +545,9 @@ namespace oaiResponsesAvalonia.Views
                     DialogSeverity.Error);
             }
         }
+        /// <summary>
+        /// Gets the path for the selected gallery image, current preview, or pending image attachment.
+        /// </summary>
         private string GetCurrentPreviewImagePath()
         {
             if (lstResponsesImages?.SelectedItem is MediaFile selected &&
@@ -760,6 +776,9 @@ namespace oaiResponsesAvalonia.Views
             RefreshLogsTab();
         }
 
+        /// <summary>
+        /// Updates the displayed message and image gallery when the selected conversation turn changes.
+        /// </summary>
         private async void lstResponsesTurns_SelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
             if (_responsesClient == null || _isApplyingResponsesSettings)
@@ -791,6 +810,9 @@ namespace oaiResponsesAvalonia.Views
             }
         }
 
+        /// <summary>
+        /// Shows the selected image from the current turn's image gallery in the preview.
+        /// </summary>
         private void lstResponsesImages_SelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
             if (lstResponsesImages.SelectedItem is not MediaFile selectedImage)
@@ -829,10 +851,9 @@ namespace oaiResponsesAvalonia.Views
             _responsesImagePath = string.Empty;
             HideResponsesImagePreview();
         }
-        //This is probably unneccessary. Check it out first. Is it really functional?
-        //Does it make sense do double-click inside the chat-history.
-        //Double-clicking on the preview-image is logical...here maybe not so.
-        //REMOVE or NOT? test first
+        /// <summary>
+        /// Opens the primary attachment from the double-clicked turn with the platform's default application.
+        /// </summary>
         private async void lstResponsesTurns_MouseDoubleClick(object? sender, TappedEventArgs e)
         {
             if (lstResponsesTurns.SelectedItem is not ChatMessage message)
@@ -858,6 +879,9 @@ namespace oaiResponsesAvalonia.Views
             }
         }
 
+        /// <summary>
+        /// Handles the preview image context menu's Open action using the platform's default file association.
+        /// </summary>
         private async void MenuItemImageOpen_Click(object? sender, RoutedEventArgs e)
         {
             var path = GetCurrentPreviewImagePath();
@@ -878,12 +902,10 @@ namespace oaiResponsesAvalonia.Views
             }
         }
         /// <summary>
-        /// Handles the Click event of the 'Open With' menu item for an image, displaying the system 'Open with' dialog
-        /// for the currently selected image file.
+        /// Handles the preview image context menu's Open with action for the currently selected image.
         /// </summary>
-        /// <remarks>If no image is selected or the file does not exist, an informational message is shown
-        /// and the dialog is not displayed. If an error occurs while attempting to show the 'Open with' dialog, an
-        /// error message is displayed to the user.</remarks>
+        /// <remarks>This delegates to the Windows-only ShellLauncher. On other platforms, the unsupported-platform
+        /// error is caught and reported to the user.</remarks>
         /// <param name="sender">The source of the event, typically the menu item that was clicked.</param>
         /// <param name="e">The event data associated with the click event.</param>
         private async void MenuItemImageOpenWith_Click(object? sender, RoutedEventArgs e)

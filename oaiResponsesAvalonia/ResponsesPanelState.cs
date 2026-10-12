@@ -84,14 +84,14 @@ namespace oaiResponsesAvalonia
         public string ImageGenQuality
         {
             get => _imageGenQuality;
-            set => SetProperty(ref _imageGenQuality, string.IsNullOrWhiteSpace(value) ? "auto" : value);
+            set => SetProperty(ref _imageGenQuality, NormalizeImageSetting(value, "auto", "auto", "low", "medium", "high"));
         }
 
         private string _imageGenSize = "auto";
         public string ImageGenSize
         {
             get => _imageGenSize;
-            set => SetProperty(ref _imageGenSize, string.IsNullOrWhiteSpace(value) ? "auto" : value);
+            set => SetProperty(ref _imageGenSize, NormalizeImageSetting(value, "auto", "auto", "1024x1024", "1536x1024", "1024x1536"));
         }
         private string _imageGenOutputFormat = "jpeg";
         public string ImageGenOutputFormat
@@ -99,9 +99,10 @@ namespace oaiResponsesAvalonia
             get => _imageGenOutputFormat;
             set
             {
-                if (_imageGenOutputFormat != value)
+                string normalizedValue = NormalizeImageSetting(value, "jpeg", "jpeg", "png", "webp");
+                if (_imageGenOutputFormat != normalizedValue)
                 {
-                    _imageGenOutputFormat = value;
+                    _imageGenOutputFormat = normalizedValue;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsOutputCompressionEnabled));
                     OnPropertyChanged(nameof(IsTransparentBackgroundAllowed));
@@ -115,9 +116,10 @@ namespace oaiResponsesAvalonia
             get => _imageGenOutputCompression;
             set
             {
-                if (_imageGenOutputCompression != value)
+                int normalizedValue = Math.Clamp(value, 0, 100);
+                if (_imageGenOutputCompression != normalizedValue)
                 {
-                    _imageGenOutputCompression = value;
+                    _imageGenOutputCompression = normalizedValue;
                     OnPropertyChanged();
                 }
             }
@@ -129,9 +131,10 @@ namespace oaiResponsesAvalonia
             get => _imageGenBackground;
             set
             {
-                if (_imageGenBackground != value)
+                string normalizedValue = NormalizeImageSetting(value, "auto", "auto", "opaque", "transparent");
+                if (_imageGenBackground != normalizedValue)
                 {
-                    _imageGenBackground = value;
+                    _imageGenBackground = normalizedValue;
                     OnPropertyChanged();
                 }
             }
@@ -147,6 +150,20 @@ namespace oaiResponsesAvalonia
             UseImageGeneration &&
             (string.Equals(ImageGenOutputFormat, "png", StringComparison.OrdinalIgnoreCase) ||
              string.Equals(ImageGenOutputFormat, "webp", StringComparison.OrdinalIgnoreCase));
+
+        private static string NormalizeImageSetting(string? value, string fallback, params string[] allowedValues)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                foreach (string allowedValue in allowedValues)
+                {
+                    if (string.Equals(value, allowedValue, StringComparison.OrdinalIgnoreCase))
+                        return allowedValue;
+                }
+            }
+
+            return fallback;
+        }
 
         //Developer functions-controls
         private bool _useDeveloperTools;

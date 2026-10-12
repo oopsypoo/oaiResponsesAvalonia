@@ -797,6 +797,7 @@
                                                        ToolTip.Tip="Allows to set transparency for the background of the generated image(s). This parameter is only supported for the GPT image models. Must be one of transparent, opaque or auto."/>
                                                 <ComboBox Grid.Row="9"
                                                           x:Name="cmbImageGenBackground"
+                                                          SelectedValueBinding="{Binding Tag}"
                                                           SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenBackground, Mode=TwoWay}">
                                                     <ComboBoxItem Content="auto" Tag="auto"/>
                                                     <ComboBoxItem Content="opaque" Tag="opaque"/>

@@ -1013,6 +1013,7 @@ namespace oaiResponsesAvalonia.Views
                 ResponsesState.ImageGenOutputFormat = "jpeg";
                 ResponsesState.ImageGenBackground = "auto";
                 ResponsesState.ImageGenOutputCompression = 85;
+                ApplyImageToolSettingsFromJson(settingsMessage.ImageToolSettingsJson);
                 ApplyResponsesToolsToState(settingsMessage.ActiveTools);
                 ApplyDeveloperToolSettingsFromJson(settingsMessage.DeveloperToolSettingsJson);
             }
@@ -1022,6 +1023,7 @@ namespace oaiResponsesAvalonia.Views
             }
 
             NormalizeResponsesToolsState();
+            ValidateImageGenerationSettings();
             ApplyResponsesStateToClient();
             ApplyDeveloperToolSettingsFromJson(settingsMessage.DeveloperToolSettingsJson);
         }

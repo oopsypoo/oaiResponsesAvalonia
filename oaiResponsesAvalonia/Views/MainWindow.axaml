@@ -392,12 +392,13 @@
                                        Stretch="Uniform"
                                        MaxHeight="250"
                                        >
-                                                    <!-- Right-click the preview image for Open (default app) or Open with (Windows Shell). -->
+                                                    <!-- Right-click the preview image to open it with the default or another installed app. -->
                                                     <Image.ContextMenu>
-                                                        <ContextMenu x:Name="ctxImagePreview">
+                                                        <ContextMenu x:Name="ctxImagePreview" Opening="ctxImagePreview_Opening">
                                                             <MenuItem Header="Open" Click="MenuItemImageOpen_Click"/>
                                                             <Separator/>
-                                                            <MenuItem Header="Open with" Click="MenuItemImageOpenWith_Click" />
+                                                            <MenuItem Tag="OpenWithApps" Header="Open with" IsVisible="False" />
+                                                            <MenuItem Tag="OpenWithDialog" Header="Open with" Click="MenuItemImageOpenWith_Click" />
                                                         </ContextMenu>
                                                     </Image.ContextMenu>
                                                 </Image>

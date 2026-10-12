@@ -1,8 +1,5 @@
 using System;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
 
@@ -36,17 +33,9 @@ namespace oaiResponsesAvalonia.Native
         public static void OpenWith(Window parentWindow, string filePath)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-            filePath = Path.GetFullPath(filePath);
-
             if (OperatingSystem.IsWindows())
             {
                 ShowWindowsOpenWithDialog(parentWindow, filePath);
-                return;
-            }
-
-            if (OperatingSystem.IsLinux())
-            {
-                OpenLinuxFileManagerWithSelection(filePath);
                 return;
             }
 
@@ -72,33 +61,6 @@ namespace oaiResponsesAvalonia.Native
             };
 
             SHOpenWithDialog(hwnd, ref info);
-        }
-
-        private static void OpenLinuxFileManagerWithSelection(string filePath)
-        {
-            string desktop = Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP") ?? string.Empty;
-            string preferredManager = desktop.Contains("KDE", StringComparison.OrdinalIgnoreCase) ? "dolphin"
-                : desktop.Contains("XFCE", StringComparison.OrdinalIgnoreCase) ? "thunar"
-                : desktop.Contains("Cinnamon", StringComparison.OrdinalIgnoreCase) ? "nemo"
-                : desktop.Contains("MATE", StringComparison.OrdinalIgnoreCase) ? "caja"
-                : "nautilus";
-
-            foreach (string manager in new[] { preferredManager, "nautilus", "dolphin", "thunar", "nemo", "caja" }
-                .Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    StartProcess(manager, "--select", filePath);
-                    return;
-                }
-                catch (Win32Exception)
-                {
-                }
-            }
-
-            string directory = Path.GetDirectoryName(filePath)
-                ?? throw new InvalidOperationException("Could not determine the file's containing directory.");
-            StartProcess("xdg-open", directory);
         }
 
         private static void StartProcess(string fileName, params string[] arguments)

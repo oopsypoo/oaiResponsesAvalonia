@@ -11,6 +11,7 @@ using oaiResponsesAvalonia.Native;
 using oaiResponsesAvalonia.Services;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -885,22 +886,100 @@ namespace oaiResponsesAvalonia.Views
         private async void MenuItemImageOpen_Click(object? sender, RoutedEventArgs e)
         {
             var path = GetCurrentPreviewImagePath();
-            if (path == null) return;
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                return;
 
             try
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = path,
-                    UseShellExecute = true
-                };
-                Process.Start(psi);
+                var topLevel = TopLevel.GetTopLevel(this)
+                    ?? throw new InvalidOperationException("The window is not attached to a top level.");
+                bool launched = await topLevel.Launcher.LaunchFileInfoAsync(new FileInfo(path));
+                if (!launched)
+                    await _dialogs.ShowMessageAsync(this, "Error", "The default application could not open this image.", DialogSeverity.Error);
             }
             catch (Exception ex)
             {
                 await _dialogs.ShowMessageAsync(this, "Error", $"Could not open image:\n{ex.Message}", DialogSeverity.Error);
             }
         }
+
+        private async void ctxImagePreview_Opening(object? sender, CancelEventArgs e)
+        {
+            if (sender is not ContextMenu contextMenu)
+                return;
+
+            var openWithApps = contextMenu.Items.OfType<MenuItem>()
+                .FirstOrDefault(item => Equals(item.Tag, "OpenWithApps"));
+            var openWithDialog = contextMenu.Items.OfType<MenuItem>()
+                .FirstOrDefault(item => Equals(item.Tag, "OpenWithDialog"));
+            if (openWithApps is null || openWithDialog is null)
+                return;
+
+            openWithApps.Items.Clear();
+            openWithApps.IsVisible = OperatingSystem.IsLinux();
+            openWithDialog.IsVisible = !OperatingSystem.IsLinux();
+
+            if (!OperatingSystem.IsLinux())
+                return;
+
+            var path = GetCurrentPreviewImagePath();
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                openWithApps.Items.Add(new MenuItem
+                {
+                    Header = "No image selected",
+                    IsEnabled = false
+                });
+                return;
+            }
+
+            try
+            {
+                var apps = GioOpenWithService.GetApps(path);
+                if (apps.Count == 0)
+                {
+                    openWithApps.Items.Add(new MenuItem
+                    {
+                        Header = "No compatible apps found",
+                        IsEnabled = false
+                    });
+                    return;
+                }
+
+                foreach (var app in apps)
+                {
+                    var item = new MenuItem
+                    {
+                        Header = app.IsDefault ? $"{app.Name} (Default)" : app.Name
+                    };
+
+                    item.Click += async (_, _) =>
+                    {
+                        try
+                        {
+                            if (!GioOpenWithService.Launch(app.Id, path))
+                                await _dialogs.ShowMessageAsync(this, "Open with", $"Could not launch {app.Name}.", DialogSeverity.Error);
+                        }
+                        catch (Exception ex)
+                        {
+                            await _dialogs.ShowMessageAsync(this, "Error", $"Could not launch {app.Name}:\n{ex.Message}", DialogSeverity.Error);
+                        }
+                    };
+
+                    openWithApps.Items.Add(item);
+                }
+            }
+            catch (Exception ex)
+            {
+                openWithApps.Items.Add(new MenuItem
+                {
+                    Header = "Unable to load available apps",
+                    IsEnabled = false
+                });
+                await _dialogs.ShowMessageAsync(this, "Open with", $"Could not load available apps:\n{ex.Message}", DialogSeverity.Error);
+            }
+        }
+
         /// <summary>
         /// Handles the preview image context menu's Open with action for the currently selected image.
         /// </summary>

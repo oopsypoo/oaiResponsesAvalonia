@@ -25,6 +25,9 @@ using oaiResponsesAvalonia.Views;
 
 namespace oaiResponsesAvalonia.Views
 {
+    /// <summary>
+    /// Interaction logic for MainWindow.xaml, specifically for the Responses tab and related controls.
+    /// </summary>
     public partial class MainWindow
     {
         private List<string> _allModelsFromApi = new();

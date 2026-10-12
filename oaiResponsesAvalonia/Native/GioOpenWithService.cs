@@ -5,6 +5,14 @@ using System.Runtime.InteropServices;
 
 namespace oaiResponsesAvalonia.Native
 {
+    /// <summary>
+    /// Represents an application entry with its ID, name, icon, and default status.
+    /// Used in linux systems to represent applications that can open files of a specific type.
+    /// </summary>
+    /// <param name="Id">The ID of the application.</param>
+    /// <param name="Name">The display name of the application.</param>
+    /// <param name="Icon">The icon of the application.</param>
+    /// <param name="IsDefault">Indicates whether the application is the default for its type.</param>
     internal sealed record AppEntry(string Id, string Name, string? Icon, bool IsDefault);
     internal static class GioOpenWithService
     {

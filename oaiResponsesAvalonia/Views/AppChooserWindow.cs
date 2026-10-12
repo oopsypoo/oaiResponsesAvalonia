@@ -9,6 +9,10 @@ using oaiResponsesAvalonia.Native;
 
 namespace oaiResponsesAvalonia.Views
 {
+    /// <summary>
+    /// Represents a window that allows the user to choose an application to open a file with.
+    /// Used in Linux to provide a list of available applications for opening a specific file type.
+    /// </summary>
     internal sealed class AppChooserWindow : Window
     {
         public AppChooserWindow(IReadOnlyList<AppEntry> apps)

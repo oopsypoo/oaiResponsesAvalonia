@@ -11,6 +11,10 @@ using oaiResponsesAvalonia.Services;
 
 namespace oaiResponsesAvalonia.Views
 {
+    /// <summary>
+    /// Represents a window that allows the user to select available models. 
+    /// OpenAI models can be filtered, selected, and saved for later use. The window provides functionality to add or remove models from the selection, apply filters (including regex), and manage the saved model list.
+    /// </summary>
     public partial class AvailableModels : Window
     {
         private readonly List<string> _allAvailableModels;

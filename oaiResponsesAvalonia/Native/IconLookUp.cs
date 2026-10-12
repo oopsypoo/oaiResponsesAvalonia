@@ -11,6 +11,10 @@ using System.Threading;
 
 namespace oaiResponsesAvalonia.Native
 {
+    /// <summary>
+    /// Provides functionality to look up and load application icons on Linux systems.
+    /// Used to create Avalonia controls representing these icons.
+    /// </summary>
     internal static class IconLookup
     {
         private static readonly string[] ImageExtensions = { ".svg", ".png", ".jpg", ".jpeg", ".bmp" };

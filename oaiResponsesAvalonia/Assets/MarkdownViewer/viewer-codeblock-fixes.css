@@ -1,0 +1,146 @@
+.code-block-wrapper {
+    position: relative;
+    margin: 1em 0;
+}
+
+.code-block-wrapper pre {
+    margin: 0;
+    overflow: auto;
+    border-radius: var(--code-block-radius, 8px);
+}
+
+.code-copy-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+
+    padding: 4px 10px;
+    border: 1px solid var(--code-button-border);
+    border-radius: 6px;
+
+    background: var(--code-button-bg);
+    color: var(--code-button-fg);
+
+    font-size: 12px;
+    line-height: 1.2;
+    cursor: pointer;
+
+    backdrop-filter: blur(2px);
+    transition:
+        background-color 120ms ease,
+        border-color 120ms ease,
+        transform 80ms ease,
+        opacity 120ms ease;
+}
+
+.code-copy-button:hover {
+    background: var(--code-button-hover-bg);
+}
+
+.code-copy-button:active {
+    transform: translateY(1px);
+}
+
+.code-copy-button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.code-copy-button.copied {
+    background: var(--code-button-copied-bg);
+    border-color: var(--code-button-copied-border);
+    color: var(--code-button-copied-fg);
+}
+
+/* Plain block code: normalize fully */
+.markdown-body pre code:not(.hljs),
+.markdown-body pre tt {
+    display: block !important;
+    margin: 0 !important;
+    padding: var(--code-block-padding-y, 14px) var(--code-block-padding-x, 16px) !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: inherit;
+    line-height: inherit;
+    white-space: pre !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+    overflow: visible !important;
+}
+
+/* Highlighted block code: preserve theme-owned background/padding */
+.markdown-body pre code.hljs {
+    display: block !important;
+    margin: 0 !important;
+    border: 0 !important;
+    line-height: inherit;
+    white-space: pre !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+    overflow: visible !important;
+}
+
+/* If a theme applies hljs on pre instead of code */
+.markdown-body pre.hljs {
+    margin: 0;
+    border-radius: var(--code-block-radius, 8px);
+}
+
+.markdown-body pre code br,
+.markdown-body pre tt br {
+    display: none;
+}
+
+.markdown-body :not(pre) > code,
+.markdown-body :not(pre) > tt {
+    display: inline;
+}
+
+.markdown-body .highlight,
+.markdown-body .highlight pre {
+    margin-bottom: 1em;
+}
+
+.code-block-wrapper .highlight,
+.code-block-wrapper .highlight pre {
+    margin: 0;
+}
+/* GitHub-ish fenced code block typography */
+.markdown-body pre,
+.markdown-body pre code,
+.markdown-body pre tt {
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.85em;
+    line-height: 1.45;
+    tab-size: 4;
+    font-variant-ligatures: none;
+}
+
+.code-block-wrapper {
+    position: relative;
+    margin: 1em 0;
+    border-radius: var(--code-block-radius, 8px);
+}
+
+.code-block-wrapper pre {
+    margin: 0;
+    overflow: auto;
+    border-radius: inherit;
+}
+
+/* Optional: nicer Chromium/WebView2 scrollbars */
+.code-block-wrapper pre::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.code-block-wrapper pre::-webkit-scrollbar-thumb {
+    background: rgba(127, 127, 127, 0.35);
+    border-radius: 999px;
+}
+
+.code-block-wrapper pre::-webkit-scrollbar-track {
+    background: transparent;
+}

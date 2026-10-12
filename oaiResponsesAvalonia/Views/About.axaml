@@ -1,0 +1,80 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="oaiResponsesAvalonia.Views.About"
+        Title="About oaiResponsesAvalonia"
+        Width="480"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#FFF7F8FA"
+        ShowInTaskbar="False">
+    <Border Margin="18"
+            Padding="24"
+            Background="White"
+            BorderBrush="#FFE1E5EA"
+            BorderThickness="1"
+            CornerRadius="8">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+            <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                <TextBlock Text="oaiResponsesAvalonia"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           Foreground="#FF202A35" />
+                <TextBlock Margin="0,5,0,0"
+                           Text="An application focused on the OpenAI Responses API"
+                           FontSize="13"
+                           Foreground="#FF586574"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+
+            <TextBlock Grid.Row="1"
+                       Margin="0,0,0,12"
+                       Text="PROJECT GOAL"
+                       FontSize="11"
+                       FontWeight="Bold"
+                       Foreground="#FF536273" />
+            <TextBlock Grid.Row="2"
+                       Margin="0,0,0,18"
+                       Text="Rewrite the current WPF application in Avalonia to support Windows and Linux."
+                       FontSize="14"
+                       Foreground="#FF202A35"
+                       TextWrapping="Wrap" />
+
+            <Border Grid.Row="3"
+                    Margin="0,0,0,18"
+                    Padding="12"
+                    Background="#FFF3F5F7"
+                    CornerRadius="5">
+                <StackPanel>
+                    <TextBlock Text="Current UI: Avalonia (migration in progress)"
+                               FontSize="12"
+                               Foreground="#FF344252" />
+                    <TextBlock Margin="0,5,0,0"
+                               Text="Release version: Not assigned"
+                               FontSize="12"
+                               Foreground="#FF344252" />
+                    <TextBlock x:Name="tbGitCommit"
+                               Margin="0,5,0,0"
+                               Text="Git commit: Not embedded in this build"
+                               FontSize="12"
+                               Foreground="#FF344252" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Grid.Row="4"
+                       Margin="0,0,0,18"
+                       Text="A short commit is shown when Git revision metadata is included in the build."
+                       FontSize="11"
+                       Foreground="#FF687584"
+                       TextWrapping="Wrap" />
+
+            <Button Grid.Row="5"
+                    Width="88"
+                    Height="32"
+                    HorizontalAlignment="Right"
+                    Content="Close"
+                    Click="CloseButton_Click"
+                    IsCancel="True" />
+        </Grid>
+    </Border>
+</Window>

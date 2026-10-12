@@ -1,0 +1,241 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:settings="using:oaiResponsesAvalonia"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        x:Class="oaiResponsesAvalonia.Views.AvailableModels"
+        Title="AvailableModels"
+        WindowStartupLocation="CenterOwner"
+        Width="760"
+        Height="520"
+        Background="#1E1E1E"
+        Foreground="White"
+        ShowInTaskbar="False"
+        Topmost="True">
+        <Window.Styles>
+        <Style Selector="Button.models-button">
+            <Setter Property="Background" Value="WhiteSmoke"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="5"/>
+        </Style>
+
+        <Style Selector="Button.models-button-wide">
+            <Setter Property="Width" Value="85"/>
+        </Style>
+
+        <Style Selector="Button.models-button-move">
+            <Setter Property="Width" Value="55"/>
+        </Style>
+
+        <Style Selector="TextBlock.models-header">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="TextBlock.models-subtext">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+    </Window.Styles>
+
+  <Border CornerRadius="12" Background="#2A2A2A" Padding="16">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="12"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="16"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Top filter area -->
+            <Border Grid.Row="0" Background="#333333" CornerRadius="8" Padding="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0"
+                               Text="Filter available models:"
+                               VerticalAlignment="Center"
+                               Classes="models-subtext"/>
+
+                    <TextBox x:Name="tbFilter"
+                             Grid.Row="0" Grid.Column="2"
+                             Height="28"
+                             FontSize="14"
+                             VerticalContentAlignment="Center"
+                             TextChanged="tbFilter_TextChanged"
+                             KeyDown="tbFilter_KeyDown"
+                             ToolTip.Tip="Type text to filter available models"/>
+
+                    <CheckBox x:Name="chkUseRegex"
+                              Grid.Row="0" Grid.Column="4"
+                              Content="Use regex"
+                              VerticalAlignment="Center"
+                              Margin="0,0,0,2"
+                              IsCheckedChanged="chkUseRegex_IsCheckedChanged"
+                              ToolTip.Tip="Check to interpret the filter as a regular expression"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5"
+                               Text="Tip: Plain text filter is easiest. Enable regex only when needed."
+                               FontSize="12"
+                               Foreground="LightGray"
+                               Margin="0,8,0,0"/>
+                </Grid>
+            </Border>
+
+            <!-- Main two-list area -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="90"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left side -->
+                <Border Grid.Column="0" Background="#333333" CornerRadius="8" Padding="10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Text="Available models"
+                                   Classes="models-header"/>
+
+                        <ListBox x:Name="lbAvailableModels"
+                                 Grid.Row="1"
+                                 FontSize="14"
+                                 SelectionMode="Multiple"
+                                 Background="#1E1E1E"
+                                 Foreground="White"
+                                 BorderBrush="#555555"
+                                 BorderThickness="1"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 MinWidth="280"
+                                 MinHeight="260"
+                                 DoubleTapped="lbAvailableModels_DoubleTapped"
+                                 KeyDown="lbAvailableModels_KeyDown"/>
+
+                        <TextBlock x:Name="txtAvailableCount"
+                                   Grid.Row="2"
+                                   Margin="0,8,0,0"
+                                   FontSize="12"
+                                   Foreground="LightGray"
+                                   Text="0 model(s)"/>
+                    </Grid>
+                </Border>
+
+                <!-- Move buttons -->
+                <StackPanel Grid.Column="1"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Center">
+                    <Button x:Name="btnAddSelected"
+                            Content="&gt;"
+                            Classes="models-button models-button-move"
+                            ToolTip.Tip="Add selected model(s)"
+                            Click="Button_AddSelected_Click"/>
+
+                    <Button x:Name="btnAddAll"
+                            Content="&gt;&gt;"
+                            Classes="models-button models-button-move"
+                            ToolTip.Tip="Add all visible available models"
+                            Click="Button_AddAll_Click"/>
+
+                    <Button x:Name="btnRemoveSelected"
+                            Content="&lt;"
+                            Classes="models-button models-button-move"
+                            ToolTip.Tip="Remove selected model(s)"
+                            Click="Button_RemoveSelected_Click"/>
+
+                    <Button x:Name="btnRemoveAll"
+                            Content="&lt;&lt;"
+                            Classes="models-button models-button-move"
+                            ToolTip.Tip="Remove all selected models"
+                            Click="Button_RemoveAll_Click"/>
+                </StackPanel>
+
+                <!-- Right side -->
+                <Border Grid.Column="2" Background="#333333" CornerRadius="8" Padding="10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Text="Selected models"
+                                   Classes="models-header"/>
+
+                        <ListBox x:Name="lbSelectedModels"
+                                 Grid.Row="1"
+                                 FontSize="14"
+                                 SelectionMode="Multiple"
+                                 Background="#1E1E1E"
+                                 Foreground="White"
+                                 BorderBrush="#555555"
+                                 BorderThickness="1"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 MinWidth="280"
+                                 MinHeight="260"
+                                 DoubleTapped="lbSelectedModels_DoubleTapped"
+                                 KeyDown="lbSelectedModels_KeyDown"/>
+
+                        <TextBlock x:Name="txtSelectedCount"
+                                   Grid.Row="2"
+                                   Margin="0,8,0,0"
+                                   FontSize="12"
+                                   Foreground="LightGray"
+                                   Text="0 model(s)"/>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- Bottom buttons -->
+            <StackPanel Grid.Row="4"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center">
+                <Button Content="Use now"
+                        Classes="models-button models-button-wide"
+                        Background="LightSkyBlue"
+                        Click="Button_UseNow_Click"/>
+
+                <Button Content="Save"
+                        Classes="models-button models-button-wide"
+                        Background="LightGreen"
+                        Click="Button_Save_model_list"/>
+
+                <Button Content="Delete"
+                        Classes="models-button models-button-wide"
+                        Background="#FFB3B3"
+                        Click="Button_Delete_model_list"/>
+
+                <Button Content="Close"
+                        Classes="models-button models-button-wide"
+                        Click="Button_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

@@ -1,0 +1,96 @@
+<Window x:Class="oaiResponsesAvalonia.Views.EnvironmentReportWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:services="using:oaiResponsesAvalonia.Services"
+        Title="Developer Environment Report"
+        Width="760"
+        Height="400"
+        WindowStartupLocation="CenterOwner">
+
+        <Window.Resources>
+            <!-- Colors -->
+            <SolidColorBrush x:Key="TreeConnectorBrush" Color="#6E737A"/>
+            <SolidColorBrush x:Key="TreeHoverBrush" Color="#18FFFFFF"/>
+            <SolidColorBrush x:Key="TreeSelectedBrush" Color="#FF2B579A"/>
+        </Window.Resources>
+
+        <Window.Styles>
+        <!-- Keep Avalonia's built-in TreeViewItem template. -->
+            <Style Selector="TreeViewItem">
+                <Setter Property="Padding" Value="4,2" />
+                <Setter Property="MinHeight" Value="24" />
+            </Style>
+
+            <!-- Nautilus-like subtle hover and blue selection. -->
+            <Style Selector="TreeViewItem:pointerover /template/ ContentPresenter#PART_HeaderPresenter">
+                <Setter Property="Background" Value="#FFE8EDF3" />
+                <Setter Property="CornerRadius" Value="3" />
+            </Style>
+
+            <Style Selector="TreeViewItem:selected /template/ ContentPresenter#PART_HeaderPresenter">
+                <Setter Property="Background" Value="#FF3584E4" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="CornerRadius" Value="3" />
+            </Style>
+
+            <!-- No expand arrow for leaf nodes. -->
+            <Style Selector="TreeViewItem:empty /template/ ToggleButton#PART_ExpandCollapseChevron">
+                <Setter Property="IsVisible" Value="False" />
+            </Style>
+        </Window.Styles>
+
+        
+    
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="220" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Margin="0,0,0,8"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Text="Environment and workspace capabilities" />
+        <TextBox x:Name="ReportTextBox"
+                 Grid.Row="1"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 TextWrapping="NoWrap" />
+        <StackPanel x:Name="WorkspaceTreeSection"
+                    Grid.Row="2"
+                    Margin="0,10,0,0">
+            <TextBlock Margin="0,0,0,4"
+                       FontWeight="SemiBold"
+                       Text="Workspace file tree (folders marked as skipped are not scanned)" />
+            <TreeView x:Name="WorkspaceTreeView"
+                    Height="320"
+                    BorderThickness="1"
+                    Background="#FFFAFAFA"
+                    BorderBrush="#FFD0D7DE"
+                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <TreeView.DataTemplates>
+                        <TreeDataTemplate DataType="services:WorkspaceTreeNode"
+                                            x:DataType="services:WorkspaceTreeNode"
+                                            ItemsSource="{Binding Children}">
+                            <TextBlock Text="{Binding Name}"
+                                        VerticalAlignment="Center" />
+                        </TreeDataTemplate>
+                    </TreeView.DataTemplates>
+            </TreeView>
+        </StackPanel>
+        <Button Grid.Row="3"
+                Width="90"
+                Margin="0,10,0,0"
+                HorizontalAlignment="Right"
+                Click="Close_Click"
+                Content="Close" />
+    </Grid>
+</Window>

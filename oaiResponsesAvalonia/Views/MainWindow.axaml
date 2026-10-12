@@ -1,0 +1,1219 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:oaiResponsesAvalonia.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        x:Class="oaiResponsesAvalonia.Views.MainWindow"
+        x:Name="RootWindow"
+        x:DataType="vm:MainViewModel"
+        x:CompileBindings="False"
+        Icon="/Assets/avalonia-logo.ico"
+        Width="1024"
+        Height="768"
+        Title="oaiResponsesAvalonia">
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <Window.Styles>
+        <Style Selector="Border.StatusBarStyle">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Background" Value="OrangeRed"/>
+            <Setter Property="BorderBrush" Value="DarkRed"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+        </Style>
+        <Style Selector="Border.StatusBarStyle TextBlock">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style Selector="DataGridRow:selected">
+            <Setter Property="Background" Value="#0078D7" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+
+        <Style Selector="TextBox.TextBoxRequest">
+            <Setter Property="TabIndex" Value="1" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        </Style>
+
+        <Style Selector="TextBox.TextBoxResponse">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Visible" />
+        </Style>
+
+        <Style Selector="Slider.SliderGPTOptions">
+            <Setter Property="SmallChange" Value="0.1" />
+        </Style>
+        <Style Selector="Expander.smallText">
+            <Setter Property="FontSize" Value="7" />
+            <Setter Property="Foreground" Value="DarkGray" />
+        </Style>
+
+        <Style Selector="GroupBox">
+            <Setter Property="FontSize" Value="9"/>
+            <Setter Property="FontStyle" Value="Normal"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+
+        <Style Selector="Label">
+            <Setter Property="FontStyle" Value="Italic" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="Button.SendRequest">
+            <Setter Property="Margin" Value="0,6,0,0" />
+            <Setter Property="TabIndex" Value="2" />
+            <Setter Property="Content" Value="Send Request" />
+            <Setter Property="Width" Value="120" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="Background" Value="LightGreen" />
+            <Setter Property="Foreground" Value="Black" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="20">
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                              VerticalAlignment="Center"
+                                              Content="{TemplateBinding Content}"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style Selector="^:pointerover">
+                <Setter Property="Background" Value="LimeGreen" />
+            </Style>
+        </Style>
+
+        <Style Selector="Button.DeleteButtonStyle">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="ToolTip.Tip" Value="Delete session"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Content="{TemplateBinding Content}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style Selector="^:pointerover">
+                <Setter Property="Background" Value="#22FF0000"/>
+                <Setter Property="Foreground" Value="#D32F2F"/>
+            </Style>
+            <Style Selector="^:pressed">
+                <Setter Property="Background" Value="#33CC0000"/>
+            </Style>
+            <Style Selector="^:disabled">
+                <Setter Property="Opacity" Value="0.5"/>
+            </Style>
+        </Style>
+
+        <!-- Subtle horizontal splitter -->
+        <Style Selector="GridSplitter.HorizontalGridSplitterStyle">
+            <Setter Property="Height" Value="5"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="#D0D0D0"/>
+            <Setter Property="ShowsPreview" Value="True"/>
+            <Setter Property="ResizeDirection" Value="Rows"/>
+            <Setter Property="ResizeBehavior" Value="PreviousAndNext"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Cursor" Value="SizeNorthSouth"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border Background="{TemplateBinding Background}">
+                            <Border Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="#B8B8B8"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style Selector="^:pointerover">
+                <Setter Property="Background" Value="#C7D7EA"/>
+            </Style>
+        </Style>
+
+        <!-- Subtle vertical splitter -->
+        <Style Selector="GridSplitter.VerticalGridSplitterStyle">
+            <Setter Property="Width" Value="5"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+            <Setter Property="Background" Value="#D0D0D0"/>
+            <Setter Property="ShowsPreview" Value="True"/>
+            <Setter Property="ResizeDirection" Value="Columns"/>
+            <Setter Property="ResizeBehavior" Value="PreviousAndNext"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Cursor" Value="SizeWestEast"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border Background="{TemplateBinding Background}">
+                            <Border Width="1"
+                                    HorizontalAlignment="Center"
+                                    Background="#B8B8B8"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style Selector="^:pointerover">
+                <Setter Property="Background" Value="#C7D7EA"/>
+            </Style>
+        </Style>
+    </Window.Styles>
+    <Grid VerticalAlignment="Stretch"
+          HorizontalAlignment="Stretch"
+          UseLayoutRounding="True">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Menu Grid.Row="0" Height="18" IsEnabled="True">
+            <MenuItem Header="File" Name="menuFile" IsEnabled="True">
+                <MenuItem Header="Settings" x:Name="menuSettings" IsEnabled="True" Click="menuSettings_Click"/>
+                <MenuItem Header="Exit" Name="menuExit" IsEnabled="True" Click="menuExit_Click" />
+            </MenuItem>
+            <MenuItem Header="Tools" Name="menuTools" IsEnabled="True">
+                <MenuItem Header="Available Models" Name="menuAvlblMdls" IsEnabled="True" Click="menuAvailableModels_Click" />
+            </MenuItem>
+            <MenuItem Header="Help" Name="menuHelp" IsEnabled="True">
+                <MenuItem Header="About" Name="menuAbout" IsEnabled="True" Click="menuAbout_Click"/>
+            </MenuItem>
+        </Menu>
+        <TabControl Grid.Row="1"
+                Background="Azure"
+                x:Name="tabMain"
+                Loaded="MainWindow_Loaded"
+                SelectionChanged="tabMain_SelectionChanged"
+                HorizontalContentAlignment="Stretch"
+                VerticalContentAlignment="Stretch"
+                >
+            
+            <TabItem Header="Responses" Name="tpResponses" Height="20" VerticalAlignment="Bottom">
+                <Grid x:Name="gridResponses"
+                      VerticalAlignment="Stretch"
+                      HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3*"/>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="1*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- LEFT: IO -->
+                    <GroupBox x:Name="groupIO"
+                              Header="IO"
+                              Grid.Row="0"
+                              Grid.Column="0"
+                              VerticalAlignment="Stretch"
+                              HorizontalAlignment="Stretch"
+                              Margin="0">
+                        <Grid Margin="6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" MinHeight="150"/>
+                                <RowDefinition Height="5"/>
+                                <RowDefinition Height="*" MinHeight="150"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- REQUEST SECTION -->
+                            <!-- Encapsulate to be able to disable at request(Grid) -->
+                            <Grid Grid.Row="0"
+                                  IsEnabled="{Binding #RootWindow.ResponsesState.AreRequestEditingControlsEnabled}">
+                                <DockPanel Grid.Row="0" LastChildFill="True">
+                                    <!-- Header -->
+                                    <Grid DockPanel.Dock="Top" Margin="0,0,0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <Label Grid.Column="0"
+                                           VerticalAlignment="Center"
+                                           Content="Responses prompt" />
+
+                                        <Button Grid.Column="1"
+                                            x:Name="btnResponsesAttachFiles"
+                                            Margin="6,0,0,0"
+                                            Padding="5,2"
+                                            Content="Attach files"
+                                            Click="btnResponsesAttachFiles_Click"
+                                            />
+
+                                        <Button Grid.Column="2"
+                                            x:Name="btnResponsesClearAttachments"
+                                            Margin="6,0,0,0"
+                                            Padding="5,2"
+                                            Content="Clear all"
+                                            Click="btnResponsesClearAttachments_Click"
+                                            />
+                                    </Grid>
+
+                                    <!-- Send button -->
+                                    <!-- HorizontalAlignment="Stretch" -->
+                                    <!-- Remove the stretch. Even if it looks 
+                                    good there are chances that you will hit 
+                                    'send' when resizing with gridSplitter -->
+                                    <Button DockPanel.Dock="Bottom"
+                                    x:Name="btnResponsesSendRequest"
+                                    Classes="SendRequest"
+                                    Content="Send Request"
+                                    Padding="5,2"
+                                    Click="btnResponsesSendRequestClick"
+                                    />
+                                    
+                                    <!-- Attachments -->
+                                    <Border DockPanel.Dock="Bottom"
+                                        x:Name="borderResponsesAttachments"
+                                        Margin="0,6,0,0"
+                                        Padding="6"
+                                        BorderBrush="DarkGray"
+                                        BorderThickness="1"
+                                        Background="#FFF8F8F8"
+                                        IsVisible="False">
+                                        <StackPanel>
+                                            <TextBlock Text="Attached files"
+                                                   FontStyle="Italic"
+                                                   Margin="0,0,0,2"/>
+
+                                            <ListBox x:Name="lstResponsesPendingAttachments"
+                                                 MaxHeight="120"
+                                                 ItemsSource="{Binding #RootWindow.PendingResponseAttachments}"
+                                                 SelectionChanged="lstResponsesPendingAttachments_SelectionChanged"
+                                                 >
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <DockPanel Margin="0,2">
+                                                            <StackPanel DockPanel.Dock="Right"
+                                                        Orientation="Horizontal">
+                                                                <Button Content="Open"
+                                                                    Margin="6,0,0,0"
+                                                                    Padding="8,2"
+                                                                    Click="btnResponsesOpenPendingAttachment_Click"
+                                                                    />
+                                                                <Button Content="Remove"
+                                                                    Margin="6,0,0,0"
+                                                                    Padding="8,2"
+                                                                    Click="btnResponsesRemovePendingAttachment_Click"
+                                                                    />
+                                                            </StackPanel>
+
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding FileName, Mode=OneWay}"
+                                                           FontWeight="SemiBold"/>
+                                                                <TextBlock Text="{Binding MediaType}"
+                                                           FontSize="10"
+                                                           Foreground="DimGray"/>
+                                                            </StackPanel>
+                                                        </DockPanel>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Main prompt content -->
+                                    <Grid x:Name="gridResponsesPromptImage">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="0" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBox Grid.Column="0"
+                                             x:Name="txtResponsesPrompt"
+                                             Classes="TextBoxRequest"
+                                             Text="{Binding #RootWindow.ResponsesState.PromptText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                        <Border Grid.Column="1"
+                                            x:Name="borderResponsesImage"
+                                            Margin="6,0,0,0"
+                                            BorderBrush="DarkGray"
+                                            BorderThickness="1"
+                                            Background="#FFF8F8F8"
+                                             IsVisible="False">
+                                            <Grid Margin="6">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="*"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="120"/>
+                                                </Grid.RowDefinitions>
+
+                                                <Label Grid.Row="0"
+                                       Content="Image Preview" />
+
+                                                <TextBlock Grid.Row="1"
+                                           x:Name="txtResponsesPreviewInfo"
+                                           Margin="0,0,0,2"
+                                           FontSize="10"
+                                           Foreground="DimGray"
+                                           HorizontalAlignment="Right"
+                                           TextWrapping="NoWrap" />
+
+                                                <Image Grid.Row="2"
+                                       x:Name="imgResponsesPreview"
+                                       Stretch="Uniform"
+                                       MaxHeight="250"
+                                       >
+                                                    <Image.ContextMenu>
+                                                        <ContextMenu x:Name="ctxImagePreview">
+                                                            <MenuItem Header="Open" Click="MenuItemImageOpen_Click"/>
+                                                            <Separator/>
+                                                            <MenuItem Header="Open with" Click="MenuItemImageOpenWith_Click" />
+                                                        </ContextMenu>
+                                                    </Image.ContextMenu>
+                                                </Image>
+
+                                                <TextBlock Grid.Row="3"
+                                           Margin="0,8,0,6"
+                                           Text="Images in selected turn"
+                                           FontStyle="Italic"
+                                           Foreground="DimGray" />
+
+                                                <ListBox Grid.Row="4"
+                                         x:Name="lstResponsesImages"
+                                         ItemsSource="{Binding #RootWindow.ResponsePreviewImages}"
+                                         SelectionChanged="lstResponsesImages_SelectionChanged"
+                                         >
+                                                    <ListBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Margin="4,2">
+                                                                <TextBlock Text="{Binding FileName, Mode=OneWay}"
+                                                           FontWeight="SemiBold"
+                                                           TextWrapping="Wrap"/>
+                                                                <TextBlock Text="{Binding MediaType, Mode=OneWay}"
+                                                           FontSize="10"
+                                                           Foreground="DimGray"
+                                                           TextWrapping="Wrap"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ListBox.ItemTemplate>
+                                                </ListBox>
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
+                                </DockPanel>
+                            </Grid>
+                            <!-- HORIZONTAL SPLITTER -->
+                            <GridSplitter Grid.Row="1"
+                              Classes="HorizontalGridSplitterStyle" />
+
+                                    <DockPanel Grid.Row="2" LastChildFill="True" Margin="0">
+                                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,2" LastChildFill="False">
+                                    <Label DockPanel.Dock="Left"
+                                           Margin="0"
+                                           VerticalAlignment="Center"
+                                           Content="OpenAi response" />
+
+                                    <Expander x:Name="expResponsesTheme"
+                                              DockPanel.Dock="Right"
+                                              Classes="smallText"
+                                              Header="Highlighting-theme" 
+                                              Margin="8,0,0,0"
+                                              VerticalAlignment="Center"
+                                              ExpandDirection="Down">
+                                        <Border Padding="6"
+                                                Background="#FFF8F8F8"
+                                                BorderBrush="DarkGray"
+                                                BorderThickness="1">
+                                            <ComboBox x:Name="cmbResponsesMarkdownTheme"
+                                                      Width="180"
+                                                      SelectionChanged="cmbResponsesMarkdownTheme_SelectionChanged"
+                                                      />
+                                        </Border>
+                                    </Expander>
+                                    <Expander x:Name="expResponsePageTheme" 
+                                              DockPanel.Dock="Right"
+                                              Classes="smallText"
+                                              Header="Page-theme" 
+                                              Margin="8,0,0,0"
+                                              VerticalAlignment="Center"
+                                              ExpandDirection="Down">
+                                        <Border Padding="6"
+                                                Background="#FFF8F8F8"
+                                                BorderBrush="DarkGray"
+                                                BorderThickness="1">
+                                            <ComboBox x:Name="cmbResponsesPageTheme"
+                                                      Width="180"
+                                                      SelectionChanged="cmbResponsesPageTheme_SelectionChanged"
+                                                      />
+                                        </Border>
+                                    </Expander>
+                                </DockPanel>
+
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <Border Grid.Row="0"
+                                            Margin="0"
+                                            BorderBrush="DarkGray"
+                                            BorderThickness="1"
+                                            Background="White">
+                                        <NativeWebView x:Name="wvResponsesResponse"
+                                                       EnvironmentRequested="ResponsesWebView_EnvironmentRequested"
+                                                       HorizontalAlignment="Stretch"
+                                                       VerticalAlignment="Stretch"
+                                                       IsEnabled="True"/>
+                                    </Border>
+
+                                    <Border Grid.Row="1"
+                                            IsVisible="{Binding #RootWindow.ResponsesState.DeveloperPendingReviewVisible}"
+                                            Margin="0,8,0,0"
+                                            Padding="0"
+                                            Background="#FFFDF7"
+                                            BorderBrush="#E5C76B"
+                                            BorderThickness="1"
+                                            CornerRadius="6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="6" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Border Grid.Column="0"
+                Background="#D6A400"
+                CornerRadius="6,0,0,6" />
+
+                                            <StackPanel Grid.Column="1"
+                    Margin="12,10,12,10">
+                                                <TextBlock Text="Pending file change review"
+                       FontWeight="SemiBold"
+                       FontSize="14"
+                       Foreground="#6C5200"
+                       Margin="0,0,0,6" />
+
+                                                <Border Background="#FFF7D6"
+                    BorderBrush="#F0D98A"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="8"
+                    Margin="0,0,0,8">
+                                                    <StackPanel>
+                                                        <TextBlock Margin="0,0,0,4">
+                        <Run Text="Tool: "
+                             FontWeight="SemiBold" />
+                        <Run Text="{Binding #RootWindow.ResponsesState.DeveloperPendingReviewToolName}" />
+                                                        </TextBlock>
+
+                                                        <TextBlock Text="{Binding #RootWindow.ResponsesState.DeveloperPendingReviewTitle}"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,4" />
+
+                                                        <TextBlock Text="{Binding #RootWindow.ResponsesState.DeveloperPendingReviewSummary}"
+                               TextWrapping="Wrap"
+                               Foreground="#333333" />
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <TextBlock Text="Review the proposed changes above before approving."
+                       Foreground="#7A6A2A"
+                       FontStyle="Italic"
+                       Margin="0,0,0,10" />
+
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button Content="Approve changes"
+                        Width="140"
+                        Height="32"
+                        Margin="0,0,8,0"
+                        FontWeight="SemiBold"
+                        Background="#DFF2E1"
+                        BorderBrush="#8FBE95"
+                        />
+
+                                                    <Button Content="Reject"
+                        Width="100"
+                        Height="32"
+                        Background="#F6E3E3"
+                        BorderBrush="#D2A4A4"
+                        />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </DockPanel>
+                        </Grid>
+                    </GroupBox>
+
+        <GridSplitter Grid.Row="0"
+                      Grid.Column="1"
+                      Classes="VerticalGridSplitterStyle" />
+
+                    <!-- RIGHT: OPTIONS -->
+                    <GroupBox x:Name="groupResponses"
+                              Header="Responses Options"
+                              Grid.Row="0"
+                              Grid.Column="2"
+                              VerticalAlignment="Stretch"
+                              HorizontalAlignment="Stretch"
+                              Margin="0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="6">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Model -->
+                                <Label Grid.Row="0" Content="Model" />
+                                <ComboBox Grid.Row="1"
+                                          IsEnabled="{Binding #RootWindow.ResponsesState.AreRequestEditingControlsEnabled}"
+                                          x:Name="cmbResponsesModel"
+                                          IsEditable="False"
+                                                          SelectedValueBinding="{Binding Tag}"
+                                                          SelectedValue="{Binding #RootWindow.ResponsesState.SelectedModel, Mode=TwoWay}" />
+
+                                <!-- Reasoning -->
+                                <Label Grid.Row="2" Content="Reasoning" Margin="0,5,0,2"/>
+                                <ComboBox Grid.Row="3"
+                                          IsEnabled="{Binding #RootWindow.ResponsesState.AreRequestEditingControlsEnabled}"
+                                          x:Name="cmbReasoning"
+                                          IsEditable="False"
+                                          SelectedValueBinding="{Binding Tag}"
+                                          SelectedValue="{Binding #RootWindow.ResponsesState.SelectedReasoning, Mode=TwoWay}">
+                                    <ComboBoxItem Content="none" IsSelected="True" Tag="none"/>
+                                    <ComboBoxItem Content="minimal" Tag="minimal"/>
+                                    <ComboBoxItem Content="low" Tag="low"/>
+                                    <ComboBoxItem Content="medium" Tag="medium"/>
+                                    <ComboBoxItem Content="high" Tag="high"/>
+                                    <ComboBoxItem Content="xhigh" Tag="xhigh"/>
+                                </ComboBox>
+
+                                <!-- Tools -->
+                                <Label Grid.Row="4" Content="Available Tools" Margin="0,5,0,2"/>
+
+                                <Grid Grid.Row="5"
+                                      IsEnabled="{Binding #RootWindow.ResponsesState.AreRequestEditingControlsEnabled}"
+                                      Margin="0,2,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <CheckBox Grid.Row="0"
+                                              x:Name="cbToolText"
+                                              Content="Text (no tools)"
+                                              Margin="0,0,0,2"
+                                              IsChecked="{Binding #RootWindow.ResponsesState.UseTextTool, Mode=TwoWay}" />
+
+                                    <!-- Web search -->
+                                    <Border Grid.Row="1"
+                                            Margin="0,0,0,8"
+                                            Padding="6"
+                                            BorderBrush="#DDDDDD"
+                                            BorderThickness="1"
+                                            Background="#FFF8F8F8">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <CheckBox Grid.Row="0"
+                                                      x:Name="cbToolWebSearch"
+                                                      Content="Web search"
+                                                      IsChecked="{Binding #RootWindow.ResponsesState.UseWebSearch, Mode=TwoWay}" />
+
+                                            <Grid Grid.Row="1"
+                                                  Margin="16,6,0,0"
+                                                  IsVisible="{Binding #RootWindow.ResponsesState.IsWebSearchOptionsEnabled}">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <Label Grid.Row="0" Content="Search Context Size" />
+                                                <ComboBox Grid.Row="1"
+                                                          x:Name="cmbSearchContextSize"
+                                                          SelectedValueBinding="{Binding Tag}"
+                                                          SelectedValue="{Binding #RootWindow.ResponsesState.SearchContextSize, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="low" Tag="low"/>
+                                                    <ComboBoxItem Content="medium" Tag="medium"/>
+                                                    <ComboBoxItem Content="high" Tag="high"/>
+                                                </ComboBox>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Image generation -->
+                                    <Border Grid.Row="2"
+                                            Margin="0,0,0,8"
+                                            Padding="6"
+                                            BorderBrush="#DDDDDD"
+                                            BorderThickness="1"
+                                            Background="#FFF8F8F8">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <CheckBox Grid.Row="0"
+                                          x:Name="cbToolImageGeneration"
+                                          Content="Image Generation"
+                                          Margin="0,0,0,2"
+                                          IsChecked="{Binding #RootWindow.ResponsesState.UseImageGeneration, Mode=TwoWay}" />
+
+                                            <Grid Grid.Row="1"
+                                                  Margin="16,6,0,0"
+                                                  IsVisible="{Binding #RootWindow.ResponsesState.IsImageGenerationOptionsVisible}">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <Label Grid.Row="0" Content="Image Quality" />
+                                                <ComboBox Grid.Row="1"
+                                                          x:Name="cmbImageGenQuality"
+                                                          SelectedValueBinding="{Binding Tag}"
+                                                          IsEnabled="{Binding #RootWindow.ResponsesState.IsImageGenerationOptionsEnabled}"
+                                                          SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenQuality, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="auto" Tag="auto" IsSelected="True"/>
+                                                    <ComboBoxItem Content="low" Tag="low"/>
+                                                    <ComboBoxItem Content="medium" Tag="medium"/>
+                                                    <ComboBoxItem Content="high" Tag="high"/>
+                                                </ComboBox>
+
+                                                <Label Grid.Row="2" Content="Image Size" Margin="0,8,0,4"/>
+                                                <ComboBox Grid.Row="3"
+                                                          x:Name="cmbImageGenSize"
+                                                          SelectedValueBinding="{Binding Tag}"
+                                                          IsEnabled="{Binding #RootWindow.ResponsesState.IsImageGenerationOptionsEnabled}"
+                                                          SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenSize, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="auto" Tag="auto" IsSelected="True"/>
+                                                    <ComboBoxItem Content="1024x1024" Tag="1024x1024"/>
+                                                    <ComboBoxItem Content="1536x1024" Tag="1536x1024"/>
+                                                    <ComboBoxItem Content="1024x1536" Tag="1024x1536"/>
+                                                </ComboBox>
+
+                                                <Label Grid.Row="4"
+                                                       Content="Output Format"
+                                                       Margin="0,8,0,4"
+                                                       ToolTip.Tip="jpeg = smaller/faster, png = transparency, webp = compression + transparency"/>
+                                                <ComboBox Grid.Row="5"
+                                                          x:Name="cmbImageGenOutputFormat"
+                                                          SelectedValueBinding="{Binding Tag}"
+                                                          IsEnabled="{Binding #RootWindow.ResponsesState.IsImageGenerationOptionsEnabled}"
+                                                          SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenOutputFormat, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="jpeg" Tag="jpeg" IsSelected="True"/>
+                                                    <ComboBoxItem Content="png" Tag="png"/>
+                                                    <ComboBoxItem Content="webp" Tag="webp"/>
+                                                </ComboBox>
+
+                                                <Label Grid.Row="6"
+                                                       Content="Output Compression"
+                                                       Margin="0,8,0,4"
+                                                       ToolTip.Tip="The compression level (0-100%) for the generated images. This parameter is only supported for the GPT image models with the webp or jpeg output formats, and defaults to 85."/>
+                                                <Grid Grid.Row="7"
+                                                    IsEnabled="{Binding #RootWindow.ResponsesState.IsOutputCompressionEnabled}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Slider Grid.Column="0"
+                                                            Minimum="0"
+                                                            Maximum="100"
+                                                            TickFrequency="5"
+                                                            IsSnapToTickEnabled="True"
+                                                            Value="{Binding #RootWindow.ResponsesState.ImageGenOutputCompression, Mode=TwoWay}" />
+
+                                                    <TextBlock Grid.Column="1"
+                                                               Margin="8,0,0,0"
+                                                               VerticalAlignment="Center"
+                                                               Padding="6,1"
+                                                               Background="Aqua"
+                                                   Text="{Binding #RootWindow.ResponsesState.ImageGenOutputCompression}" />
+                                                </Grid>
+
+                                                <Label Grid.Row="8"
+                                                       Content="Background"
+                                                       Margin="0,8,0,4"
+                                                       ToolTip.Tip="Allows to set transparency for the background of the generated image(s). This parameter is only supported for the GPT image models. Must be one of transparent, opaque or auto."/>
+                                                <ComboBox Grid.Row="9"
+                                                          x:Name="cmbImageGenBackground"
+                                                          SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenBackground, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="auto" Tag="auto"/>
+                                                    <ComboBoxItem Content="opaque" Tag="opaque"/>
+                                                    <ComboBoxItem Content="transparent"
+                                                      Tag="transparent"
+                                                      IsEnabled="{Binding #RootWindow.ResponsesState.IsTransparentBackgroundAllowed}" />
+                                                </ComboBox>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                    <Border Grid.Row="4"
+                                            Margin="0,0,0,8"
+                                            Padding="6"
+                                            BorderBrush="#DDDDDD"
+                                            BorderThickness="1"
+                                            Background="#FFF8F8F8">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <CheckBox Grid.Row="0"
+                                                      x:Name="cbToolDeveloperTools"
+                                                      Content="Developer Tools"
+                                                      IsChecked="{Binding #RootWindow.ResponsesState.UseDeveloperTools, Mode=TwoWay}" />
+                                            <Button Grid.Row="0"
+                                                    Margin="130,0,0,0"
+                                                    Padding="6,1"
+                                                    Content="Environment report"
+                                                    IsEnabled="{Binding #RootWindow.ResponsesState.UseDeveloperTools}"
+                                                    Click="btnDeveloperEnvironmentReport_Click"
+                                                    />
+
+                                            <Grid Grid.Row="1"
+                                                  Margin="16,6,0,0"
+                                                  IsVisible="{Binding #RootWindow.ResponsesState.IsDeveloperToolsOptionsVisible}">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <Label Grid.Row="0" Content="Workspace root" />
+                                                <DockPanel Grid.Row="1" LastChildFill="True">
+                                                    <Button Content="Browse"
+                                                            Width="70"
+                                                            Margin="0,0,6,0"
+                                                            Click="btnDeveloperBrowseRoot_Click"
+                                                            />
+                                                    <TextBox Text="{Binding #RootWindow.ResponsesState.DeveloperRepositoryRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             LostFocus="txtDeveloperWorkspaceRoot_LostFocus"
+                                                             />
+                                                </DockPanel>
+
+                                                <Label Grid.Row="2" Content="Scope" Margin="0,8,0,2"/>
+                                                <ComboBox Grid.Row="3"
+                                                          SelectedValue="{Binding #RootWindow.ResponsesState.DeveloperScope, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="Current repository only" Tag="repository"/>
+                                                    <ComboBoxItem Content="Workspace" Tag="workspace"/>
+                                                    <ComboBoxItem Content="Custom" Tag="custom"/>
+                                                </ComboBox>
+
+                                                <TextBlock Grid.Row="4"
+                                                           Margin="0,8,0,4"
+                                                           FontWeight="SemiBold"
+                                                           Text="Available functions" />
+                                                <StackPanel Grid.Row="5">
+                                                    <CheckBox Content="Search project text"
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolSearchProjectText, Mode=TwoWay}"/>
+                                                    <CheckBox Content="Read project file"
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolReadProjectFile, Mode=TwoWay}"/>
+                                                    <CheckBox Content="List project files"
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolListProjectFiles, Mode=TwoWay}"/>
+                                                      <CheckBox Content="Create .NET solution and project"
+                                                               ToolTip.Tip="Creates a constrained .NET solution and project in one new child folder below the workspace root, then switches the workspace root to that new solution folder."
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolCreateDotNetSolution, Mode=TwoWay}"
+                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}" />
+                                                    <CheckBox Content="Build, clean, or rebuild .NET project or solution"
+                                                               ToolTip.Tip="Enables dotnet build, dotnet clean, and clean-then-build for a selected .csproj, .sln, or .slnx file."
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolBuildDotNetProject, Mode=TwoWay}"
+                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}" />
+                                                    <CheckBox Content="Run .NET project (Debug)"
+                                                               ToolTip.Tip="Runs a built .NET project in Debug configuration and lets the AI inspect or stop the developer-launched process."
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolRunDotNetProject, Mode=TwoWay}"
+                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}"/>
+
+                                                    <CheckBox Content="Write project file"
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolWriteProjectFile, Mode=TwoWay}"
+                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}"/>
+                                                    <CheckBox Content="Replace in project file"
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolReplaceInProjectFile, Mode=TwoWay}"
+                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}"/>
+                                                </StackPanel>
+
+                                                <TextBlock Grid.Row="6"
+                                                           Margin="0,8,0,4"
+                                                           FontWeight="SemiBold"
+                                                           Text="Advanced options" />
+                                                <StackPanel Grid.Row="7">
+                                                    <CheckBox Content="Allow read-only only"
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperAllowReadOnlyOnly, Mode=TwoWay}" />
+                                                    <CheckBox Content="Require confirmation before read-only local calls"
+                                                               ToolTip.Tip="Prompt before the AI runs search, read, list, or diagnostics tools."
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperRequireConfirmation, Mode=TwoWay}" />
+                                                    <CheckBox Content="Require approval before AI changes files"
+                                                               ToolTip.Tip="When enabled, every file write or replacement must be reviewed and approved before it is applied."
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperRequireWriteConfirmation, Mode=TwoWay}" />
+                                                    <CheckBox Content="Require approval before AI executes project operations"
+                                                               ToolTip.Tip="When enabled, solution creation, build, run, and process-stop operations require approval before dotnet is started."
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperRequireExecutionConfirmation, Mode=TwoWay}"/>
+                                                    <CheckBox Content="Show tool call logs"
+                                                               ToolTip.Tip="Show the persisted audit trail of local developer tool calls. Logging continues when this is unchecked."
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperShowToolLogs, Mode=TwoWay}" />
+                                                <Button Content="Stop all Developer Tools applications"
+                                                        Margin="0,6,0,0"
+                                                         ToolTip.Tip="Stops applications that were launched by the Run .NET project tool in this application instance."
+                                                         Click="btnDeveloperStopAllProcesses_Click"
+                                                        />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+
+                                <!-- Actions -->
+                                <Button Grid.Row="6"
+                                        x:Name="btnResponsesNewChat"
+                                        IsEnabled="{Binding #RootWindow.ResponsesState.AreRequestEditingControlsEnabled}"
+                                        Margin="0,8,0,0"
+                                        Padding="5,2"
+                                        Content="New Conversation"
+                                        Click="btnResponsesNewChat_Click"
+                                        />
+
+                                <ListBox Grid.Row="7"
+                                         x:Name="lstResponsesTurns"
+                                         IsEnabled="{Binding #RootWindow.ResponsesState.AreRequestEditingControlsEnabled}"
+                                         Height="150"
+                                         Margin="0,8,0,0"
+                                         ItemsSource="{Binding #RootWindow.CurrentChatMessages}"
+                                         SelectedItem="{Binding #RootWindow.ResponsesState.SelectedTurn, Mode=TwoWay}"
+                                         SelectionChanged="lstResponsesTurns_SelectionChanged"
+                                         DoubleTapped="lstResponsesTurns_MouseDoubleClick"
+                                         >
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="5">
+                                                <TextBlock Text="{Binding Role}"
+                                                           FontWeight="Bold"
+                                                           Foreground="Gray"
+                                                           FontSize="10"/>
+
+                                                <TextBlock Text="{Binding Content}"
+                                                           TextWrapping="Wrap"/>
+
+                                                <ItemsControl ItemsSource="{Binding MediaFiles}" Margin="0,4,0,0">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock FontSize="10"
+                                                                       Foreground="SlateGray"
+                                                                       TextWrapping="Wrap">
+                                                                <Run Text="📎 "/>
+                                                                <Run Text="{Binding FileName, Mode=OneWay}"/>
+                                                                <Run Text="  "/>
+                                                                <Run Text="{Binding MediaType}"/>
+                                                            </TextBlock>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <TextBlock FontSize="10"
+                                                           Foreground="DimGray"
+                                                           TextWrapping="Wrap">
+                                                    <Run Text="Model: "/>
+                                                    <Run Text="{Binding ModelUsed}"/>
+                                                    <Run Text=" | Reasoning: "/>
+                                                    <Run Text="{Binding ReasoningLevel}"/>
+                                                    <Run Text=" | Tools: "/>
+                                                    <Run Text="{Binding ActiveTools}"/>
+                                                </TextBlock>
+
+                                                <TextBlock FontSize="10"
+                                                           Foreground="SlateGray"
+                                                           TextWrapping="Wrap"
+                                               Text="{Binding ImageToolSummary, Mode=OneWay}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <Button Grid.Row="8"
+                                        x:Name="btnResponsesDeleteChat"
+                                        IsEnabled="{Binding #RootWindow.ResponsesState.AreRequestEditingControlsEnabled}"
+                                        Margin="0,8,0,0"
+                                        Padding="5,2"
+                                        Content="Remove Current Turn"
+                                        Click="btnResponsesDeleteChat_Click"
+                                        />
+                                <Expander Grid.Row="9"
+                                          Margin="0,8,0,0"
+                                          Header="Local Tool Call Logs"
+                                         IsVisible="{Binding #RootWindow.ResponsesState.DeveloperToolLogsVisible}"
+                                          IsExpanded="False">
+                                    <Border Margin="0,6,0,0"
+                                            Padding="6"
+                                            BorderBrush="#DDDDDD"
+                                            BorderThickness="1"
+                                            Background="#FFF8F8F8">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="*"/>
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0"
+                                                       Margin="0,0,0,6"
+                                                       FontStyle="Italic"
+                                                       Foreground="DimGray"
+                                                       Text="Shows local developer tool calls and the workspace root used for each call." />
+
+                                            <ListBox Grid.Row="1"
+                                                     MaxHeight="180"
+                                                     ItemsSource="{Binding #RootWindow.DeveloperToolCallLogs, Mode=OneWay}">
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Margin="0,0,0,6"
+                                                                Padding="6"
+                                                                BorderBrush="#E0E0E0"
+                                                                BorderThickness="1"
+                                                                Background="White">
+                                                            <StackPanel>
+                                                                <TextBlock FontWeight="SemiBold"
+                                                                           Text="{Binding ToolName, Mode=OneWay}" />
+
+                                                                <TextBlock Margin="0,2,0,0"
+                                                                           FontSize="11"
+                                                                           Foreground="DimGray"
+                                                                           Text="{Binding TimestampText, Mode=OneWay}" />
+
+                                                                <TextBlock Margin="0,4,0,0"
+                                                                           FontSize="11"
+                                                                           Foreground="DarkSlateBlue"
+                                                                           TextWrapping="Wrap"
+                                                                           Text="{Binding ResultSummary, Mode=OneWay}" />
+
+                                                                 <TextBlock Margin="0,2,0,0"
+                                                                            FontSize="11"
+                                                                            Foreground="SlateGray"
+                                                                            TextWrapping="Wrap"
+                                                                            Text="{Binding WorkspaceRoot, Mode=OneWay}" />
+
+                                                                <TextBlock Margin="0,4,0,0"
+                                                                           FontSize="11"
+                                                                           Foreground="DimGray"
+                                                                           TextWrapping="Wrap"
+                                                                           Text="{Binding ArgumentsJson, Mode=OneWay}" />
+
+                                                                <TextBlock Margin="0,4,0,0"
+                                                                           FontSize="11"
+                                                                           Foreground="SlateGray"
+                                                                           TextWrapping="Wrap"
+                                                                           Text="{Binding ResultJson, Mode=OneWay}" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                        </Grid>
+                                    </Border>
+                                </Expander>
+                            </Grid>
+                        </ScrollViewer>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Logs" x:Name="tabLogs">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Margin="10,5">
+                        <TextBlock Text="Filter by Type: "
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,5,0"/>
+
+                        <ComboBox x:Name="cbLogTypeFilter"
+                                  SelectionChanged="cbLogTypeFilter_SelectionChanged"
+                                  Width="120"
+                                  SelectedValue="{Binding #RootWindow.LogsState.TypeFilter, Mode=TwoWay}">
+                            <ComboBoxItem Content="All" Tag="All"/>
+                            <ComboBoxItem Content="Responses" Tag="Responses"/>
+                        </ComboBox>
+
+                        <Label Content="Search Logs:"
+                               VerticalAlignment="Center"
+                               Margin="10,0,0,0"/>
+
+                        <TextBox x:Name="txtLogSearch"
+                                 Width="300"
+                                 Margin="10,0"
+                                 Text="{Binding #RootWindow.LogsState.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+
+                        <Menu Margin="10,0,0,0"
+                              VerticalAlignment="Center">
+                            <MenuItem Header="Columns">
+                                <MenuItem Header="Turns"
+                                          ToggleType="CheckBox"
+                                          IsChecked="{Binding #RootWindow.LogsState.ShowTurns, Mode=TwoWay}" />
+                                <MenuItem Header="Media"
+                                          ToggleType="CheckBox"
+                                          IsChecked="{Binding #RootWindow.LogsState.ShowMedia, Mode=TwoWay}" />
+                                <MenuItem Header="Tools"
+                                          ToggleType="CheckBox"
+                                          IsChecked="{Binding #RootWindow.LogsState.ShowTools, Mode=TwoWay}" />
+                                <MenuItem Header="Model"
+                                          ToggleType="CheckBox"
+                                          IsChecked="{Binding #RootWindow.LogsState.ShowModel, Mode=TwoWay}" />
+                                <MenuItem Header="Dev"
+                                          ToggleType="CheckBox"
+                                          IsChecked="{Binding #RootWindow.LogsState.ShowDev, Mode=TwoWay}" />
+                            </MenuItem>
+                        </Menu>
+
+                        <Menu Margin="10,0,0,0"
+                              VerticalAlignment="Center">
+                            <MenuItem Header="Export">
+                                <MenuItem Header="Markdown (.md)" Click="OnExportLogMarkdownClick"/>
+                                <MenuItem Header="Text (.txt)"
+                                          Click="OnExportLogTextClick"/>
+                                <MenuItem Header="HTML (.html)"
+                                          Click="OnExportLogHtmlClick"/>
+                            </MenuItem>
+                        </Menu>
+                    </StackPanel>
+
+                    <DataGrid x:Name="dgUnifiedLogs"
+                              ItemsSource="{Binding #RootWindow.LogView}"
+                              SelectedItem="{Binding #RootWindow.LogsState.SelectedLogRow, Mode=TwoWay}"
+                              Grid.Row="1"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              SelectionMode="Single"
+                              LostFocus="dgUnifiedLogs_LostFocus"
+                              DoubleTapped="OnLogEntryDoubleTapped"
+                              >
+
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Date"
+                                                Binding="{Binding LastUsedAt, StringFormat={}{0:dd.MM HH:mm}}"
+                                                Width="110"/>
+
+                            <DataGridTextColumn Header="Type"
+                                                Binding="{Binding Endpoint}"
+                                                Width="90"/>
+
+                            <DataGridTextColumn
+                                                Header="Turns"
+                                                Binding="{Binding Turns}"
+                                                Width="65"/>
+
+                            <DataGridTextColumn
+                                                Header="Media"
+                                                Binding="{Binding Media}"
+                                                Width="100"/>
+
+                            <DataGridTextColumn
+                                                Header="Tools"
+                                                Binding="{Binding Tools}"
+                                                Width="160"/>
+                            <DataGridTextColumn
+                                                Header="Dev"
+                                                Binding="{Binding Dev}"
+                                                Width="55"/>
+
+                            <DataGridTextColumn
+                                                Header="Model"
+                                                Binding="{Binding Model}"
+                                                Width="140"/>
+
+                            <DataGridTextColumn Header="Title"
+                                                Binding="{Binding Title}"
+                                                Width="*"/>
+
+                            <DataGridTemplateColumn Width="Auto" Header="Del" IsReadOnly="True">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="🗑" 
+                                                Foreground="Red"
+                                                Width="50"
+                                                Height="28"
+                                                FontSize="15"
+                                                Focusable="False"
+                                                IsTabStop="False"
+                                                Classes="DeleteButtonStyle"
+                                                Click="OnDeleteSessionClick"
+                                                ToolTip.Tip="{Binding Title, StringFormat=Delete {0}}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+        </TabControl>
+        <Border Grid.Row="2" Classes="StatusBarStyle">
+            <TextBlock x:Name="StatusText"
+                       Text="Ready"
+                       VerticalAlignment="Center" />
+        </Border>
+    </Grid>
+</Window>

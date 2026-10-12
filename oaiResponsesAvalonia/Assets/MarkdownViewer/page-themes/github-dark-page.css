@@ -1,0 +1,86 @@
+:root {
+    color-scheme: dark;
+    --bg: #0d1117;
+    --fg: #f0f6fc;
+    --muted: #9198a1;
+    --border: #30363d;
+    --subtle: #151b23;
+    --subtle-2: #1c2128;
+    --link: #58a6ff;
+    --quote-border: #3d444d;
+    --quote-bg: #11161c;
+    --code-inline-bg: rgba(110, 118, 129, 0.4);
+    --table-stripe: #151b23;
+    --selection-bg: rgba(56, 139, 253, 0.25);
+    --selection-fg: inherit;
+    --code-block-bg: #151b23;
+    --code-block-border: #30363d;
+    --code-button-bg: #21262d;
+    --code-button-fg: #c9d1d9;
+    --code-button-border: #30363d;
+    --code-button-hover-bg: #30363d;
+    --code-button-copied-bg: #12321f;
+    --code-button-copied-fg: #7ee787;
+    --code-button-copied-border: #2ea043;
+    --focus-ring: rgba(88, 166, 255, 0.4);
+    --code-inline-border: rgba(240, 246, 252, 0.12);
+    background: var(--bg);
+    color: var(--fg);
+}
+
+.markdown-body {
+    background: var(--bg);
+    color: var(--fg);
+}
+
+body {
+    background: var(--bg);
+    color: var(--fg);
+}
+
+.markdown-body a {
+    color: var(--link);
+}
+
+.markdown-body h1,
+.markdown-body h2 {
+    border-bottom-color: rgba(61, 68, 77, 0.7);
+}
+
+.markdown-body h6 {
+    color: var(--muted);
+}
+
+.markdown-body blockquote {
+    color: var(--muted);
+    background: var(--quote-bg);
+    border-left-color: var(--quote-border);
+}
+
+.markdown-body hr {
+    border-top-color: var(--border);
+}
+
+.markdown-body th,
+.markdown-body td {
+    border-color: var(--border);
+}
+
+.markdown-body th {
+    background: var(--subtle);
+}
+
+.markdown-body tbody tr:nth-child(even) {
+    background: var(--table-stripe);
+}
+
+.markdown-body :not(pre) > code,
+.markdown-body :not(pre) > tt {
+    background: var(--code-inline-bg);
+}
+
+.markdown-body kbd {
+    background: #161b22;
+    border-color: #30363d;
+    box-shadow: inset 0 -1px 0 rgba(240, 246, 252, 0.08);
+}

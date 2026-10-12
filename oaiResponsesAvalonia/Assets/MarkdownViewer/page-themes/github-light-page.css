@@ -1,0 +1,80 @@
+:root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --fg: #24292f;
+    --muted: #57606a;
+    --border: #d0d7de;
+    --subtle: #f6f8fa;
+    --subtle-2: #f3f4f6;
+    --link: #0969da;
+    --quote-border: #d0d7de;
+    --quote-bg: #f6f8fa;
+    --code-inline-bg: rgba(175, 184, 193, 0.2);
+    --table-stripe: #fcfcfc;
+    --selection-bg: rgba(9, 105, 218, 0.18);
+    --selection-fg: inherit;
+    --code-block-bg: #f6f8fa;
+    --code-block-border: #d0d7de;
+    --code-button-bg: #ffffff;
+    --code-button-fg: #24292f;
+    --code-button-border: #d0d7de;
+    --code-button-hover-bg: #f3f4f6;
+    --code-button-copied-bg: #dafbe1;
+    --code-button-copied-fg: #1a7f37;
+    --code-button-copied-border: #a6d8b3;
+    --focus-ring: rgba(9, 105, 218, 0.35);
+    --code-inline-border: rgba(27, 31, 35, 0.15);
+    background: var(--bg);
+    color: var(--fg);
+}
+
+.markdown-body {
+    background: var(--bg);
+    color: var(--fg);
+}
+
+body {
+    background: var(--bg);
+    color: var(--fg);
+}
+
+.markdown-body a {
+    color: var(--link);
+}
+
+.markdown-body h1,
+.markdown-body h2 {
+    border-bottom-color: var(--border);
+}
+
+.markdown-body h6 {
+    color: var(--muted);
+}
+
+.markdown-body blockquote {
+    color: var(--muted);
+    background: var(--quote-bg);
+    border-left-color: var(--quote-border);
+}
+
+.markdown-body hr {
+    border-top-color: var(--border);
+}
+
+.markdown-body th,
+.markdown-body td {
+    border-color: var(--border);
+}
+
+.markdown-body th {
+    background: var(--subtle);
+}
+
+.markdown-body tbody tr:nth-child(even) {
+    background: var(--table-stripe);
+}
+
+.markdown-body :not(pre) > code,
+.markdown-body :not(pre) > tt {
+    background: var(--code-inline-bg);
+}

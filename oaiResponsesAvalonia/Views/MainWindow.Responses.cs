@@ -21,6 +21,7 @@ using System.Threading.Tasks;
 /*
  * Code for Responses-tab-controls
 */
+using oaiResponsesAvalonia.Views;
 
 namespace oaiResponsesAvalonia.Views
 {
@@ -903,7 +904,7 @@ namespace oaiResponsesAvalonia.Views
             }
         }
 
-        private async void ctxImagePreview_Opening(object? sender, CancelEventArgs e)
+        private void ctxImagePreview_Opening(object? sender, CancelEventArgs e)
         {
             if (sender is not ContextMenu contextMenu)
                 return;
@@ -937,49 +938,53 @@ namespace oaiResponsesAvalonia.Views
             {
                 var apps = GioOpenWithService.GetApps(path);
                 if (apps.Count == 0)
-                {
-                    openWithApps.Items.Add(new MenuItem
-                    {
-                        Header = "No compatible apps found",
-                        IsEnabled = false
-                    });
-                    return;
-                }
+                    openWithApps.Items.Add(new MenuItem { Header = "No compatible apps found", IsEnabled = false });
 
                 foreach (var app in apps)
                 {
                     var item = new MenuItem
                     {
-                        Header = app.IsDefault ? $"{app.Name} (Default)" : app.Name
+                        Header = app.IsDefault ? $"{app.Name} (Default)" : app.Name,
+                        Icon = CreateAppIcon(app.Icon)
                     };
-
-                    item.Click += async (_, _) =>
-                    {
-                        try
-                        {
-                            if (!GioOpenWithService.Launch(app.Id, path))
-                                await _dialogs.ShowMessageAsync(this, "Open with", $"Could not launch {app.Name}.", DialogSeverity.Error);
-                        }
-                        catch (Exception ex)
-                        {
-                            await _dialogs.ShowMessageAsync(this, "Error", $"Could not launch {app.Name}:\n{ex.Message}", DialogSeverity.Error);
-                        }
-                    };
-
+                    item.Click += async (_, _) => await LaunchWithAppAsync(app, path);
                     openWithApps.Items.Add(item);
                 }
             }
             catch (Exception ex)
             {
-                openWithApps.Items.Add(new MenuItem
-                {
-                    Header = "Unable to load available apps",
-                    IsEnabled = false
-                });
-                await _dialogs.ShowMessageAsync(this, "Open with", $"Could not load available apps:\n{ex.Message}", DialogSeverity.Error);
+                openWithApps.Items.Add(new MenuItem { Header = "Unable to load available apps", IsEnabled = false });
+                _appStatus.Set($"Could not load available apps: {ex.Message}");
+            }
+
+            openWithApps.Items.Add(new Separator());
+            var other = new MenuItem { Header = "Other application…" };
+            other.Click += async (_, _) => await ChooseAndLaunchAsync(path);
+            openWithApps.Items.Add(other);
+        }
+        private static Control? CreateAppIcon(string? icon) =>
+            IconLookup.CreateControl(icon, 16);
+
+        private async Task LaunchWithAppAsync(AppEntry app, string path)
+        {
+            try
+            {
+                if (!GioOpenWithService.Launch(app.Id, path, out string? error))
+                    await _dialogs.ShowMessageAsync(this, "Open with",
+                        $"Could not launch {app.Name}.\n{error}", DialogSeverity.Error);
+            }
+            catch (Exception ex)
+            {
+                await _dialogs.ShowMessageAsync(this, "Error", $"Could not launch {app.Name}:\n{ex.Message}", DialogSeverity.Error);
             }
         }
 
+        private async Task ChooseAndLaunchAsync(string path)
+        {
+            var chosen = await new AppChooserWindow(GioOpenWithService.GetAllApps()).ShowDialog<AppEntry?>(this);
+            if (chosen != null)
+                await LaunchWithAppAsync(chosen, path);
+        }
         /// <summary>
         /// Handles the preview image context menu's Open with action for the currently selected image.
         /// </summary>

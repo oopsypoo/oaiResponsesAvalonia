@@ -5,8 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace oaiResponsesAvalonia.Native
 {
-    internal sealed record AppEntry(string Id, string Name, bool IsDefault);
-
+    internal sealed record AppEntry(string Id, string Name, string? Icon, bool IsDefault);
     internal static class GioOpenWithService
     {
         private const string Gio = "libgio-2.0.so.0";
@@ -61,7 +60,65 @@ namespace oaiResponsesAvalonia.Native
 
         [DllImport(GLib, CallingConvention = CallingConvention.Cdecl)]
         private static extern void g_error_free(IntPtr error);
+        [DllImport(Gio, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr g_app_info_get_all();
 
+        [DllImport(Gio, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr g_app_info_get_icon(IntPtr appInfo);
+
+        [DllImport(Gio, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr g_icon_to_string(IntPtr icon);
+
+        [DllImport(GLib, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void g_free(IntPtr mem);
+
+        private static string? GetIconString(IntPtr app)
+        {
+            var icon = g_app_info_get_icon(app);
+            if (icon == IntPtr.Zero) return null;
+            var s = g_icon_to_string(icon);
+            if (s == IntPtr.Zero) return null;
+            try
+            {
+                var str = Marshal.PtrToStringUTF8(s);
+                // Themed icons with several names serialize as ". GThemedIcon name1 name2"
+                if (str is not null && str.StartsWith(". GThemedIcon "))
+                    str = str.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(2).FirstOrDefault();
+                return str;
+            }
+            finally { g_free(s); }
+        }
+        private static List<AppEntry> ReadList(IntPtr list, string? defaultId = null)
+        {
+            var result = new List<AppEntry>();
+            try
+            {
+                for (IntPtr node = list; node != IntPtr.Zero; node = Marshal.ReadIntPtr(node, IntPtr.Size))
+                {
+                    IntPtr app = Marshal.ReadIntPtr(node);
+                    if (app == IntPtr.Zero) continue;
+                    try
+                    {
+                        if (g_app_info_should_show(app) == 0) continue;
+                        string? id = Marshal.PtrToStringUTF8(g_app_info_get_id(app));
+                        string? name = Marshal.PtrToStringUTF8(g_app_info_get_display_name(app));
+                        if (id is not null && name is not null)
+                            result.Add(new AppEntry(id, name, GetIconString(app),
+                                string.Equals(id, defaultId, StringComparison.Ordinal)));
+                    }
+                    finally { g_object_unref(app); }
+                }
+            }
+            finally { g_list_free(list); }
+            return result;
+        }
+
+        internal static List<AppEntry> GetAllApps()
+        {
+            EnsureLinux();
+            return ReadList(g_app_info_get_all())
+                .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
         internal static List<AppEntry> GetApps(string path)
         {
             EnsureLinux();
@@ -107,35 +164,7 @@ namespace oaiResponsesAvalonia.Native
                     }
                 }
 
-                IntPtr apps = g_app_info_get_all_for_type(contentType);
-                try
-                {
-                    for (IntPtr node = apps; node != IntPtr.Zero; node = Marshal.ReadIntPtr(node, IntPtr.Size))
-                    {
-                        IntPtr app = Marshal.ReadIntPtr(node);
-                        if (app == IntPtr.Zero)
-                            continue;
-
-                        try
-                        {
-                            if (g_app_info_should_show(app) == 0)
-                                continue;
-
-                            string? id = Marshal.PtrToStringUTF8(g_app_info_get_id(app));
-                            string? name = Marshal.PtrToStringUTF8(g_app_info_get_display_name(app));
-                            if (id is not null && name is not null)
-                                result.Add(new AppEntry(id, name, string.Equals(id, defaultId, StringComparison.Ordinal)));
-                        }
-                        finally
-                        {
-                            g_object_unref(app);
-                        }
-                    }
-                }
-                finally
-                {
-                    g_list_free(apps);
-                }
+                result.AddRange(ReadList(g_app_info_get_all_for_type(contentType), defaultId));
             }
             finally
             {
@@ -144,12 +173,19 @@ namespace oaiResponsesAvalonia.Native
 
             return result.OrderByDescending(app => app.IsDefault).ToList();
         }
-
-        internal static bool Launch(string appId, string path)
+        // GError { guint32 domain; gint code; gchar* message; } -> message is at offset 8
+        private static string? TakeErrorMessage(IntPtr error)
+        {
+            if (error == IntPtr.Zero) return null;
+            try { return Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(error, 2 * sizeof(int))); }
+            finally { g_error_free(error); }
+        }
+        internal static bool Launch(string appId, string path, out string? errorMessage)
         {
             EnsureLinux();
             ArgumentException.ThrowIfNullOrWhiteSpace(appId);
             ArgumentException.ThrowIfNullOrWhiteSpace(path);
+            errorMessage = null;
 
             IntPtr app = g_desktop_app_info_new(appId);
             if (app == IntPtr.Zero)
@@ -168,7 +204,7 @@ namespace oaiResponsesAvalonia.Native
                     {
                         IntPtr error = IntPtr.Zero;
                         int launched = g_app_info_launch(app, files, IntPtr.Zero, ref error);
-                        FreeError(error);
+                        errorMessage = TakeErrorMessage(error);
                         return launched != 0;
                     }
                     finally

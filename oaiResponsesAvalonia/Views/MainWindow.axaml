@@ -6,19 +6,14 @@
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="oaiResponsesAvalonia.Views.MainWindow"
         x:Name="RootWindow"
-        x:DataType="vm:MainViewModel"
+        
         x:CompileBindings="False"
         Icon="/Assets/avalonia-logo.ico"
         Width="1024"
         Height="768"
         Title="oaiResponsesAvalonia">
 
-    <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:MainViewModel />
-    </Design.DataContext>
-
+    
     <Window.Styles>
         <Style Selector="Border.StatusBarStyle">
             <Setter Property="Height" Value="22" />

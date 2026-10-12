@@ -904,8 +904,7 @@ namespace oaiResponsesAvalonia.Views
         /// <summary>
         /// Handles the preview image context menu's Open with action for the currently selected image.
         /// </summary>
-        /// <remarks>This delegates to the Windows-only ShellLauncher. On other platforms, the unsupported-platform
-        /// error is caught and reported to the user.</remarks>
+        /// <remarks>Linux opens the image in the file manager so its native context menu can be used; macOS reveals it in Finder.</remarks>
         /// <param name="sender">The source of the event, typically the menu item that was clicked.</param>
         /// <param name="e">The event data associated with the click event.</param>
         private async void MenuItemImageOpenWith_Click(object? sender, RoutedEventArgs e)
@@ -919,11 +918,11 @@ namespace oaiResponsesAvalonia.Views
 
             try
             {
-                ShellLauncher.ShowOpenWithDialog(this, path);
+                ShellLauncher.OpenWith(this, path);
             }
             catch (Exception ex)
             {
-                await _dialogs.ShowMessageAsync(this, "Error", $"Could not show Open with dialog:\n{ex.Message}", DialogSeverity.Error);
+                await _dialogs.ShowMessageAsync(this, "Error", $"Could not launch the platform's Open with experience:\n{ex.Message}", DialogSeverity.Error);
             }
         }
         private static bool HasResponsesSettings(ChatMessage message)

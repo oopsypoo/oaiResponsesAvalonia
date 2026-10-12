@@ -1,16 +1,16 @@
 using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
 
 namespace oaiResponsesAvalonia.Native
 {
     /// <summary>
-    /// Provides functionality to display the Windows "Open With" dialog for selecting an application to open a
-    /// specified file.
+    /// Provides platform-specific behavior for selecting an application to open a specified file.
     /// </summary>
-    /// <remarks>This class enables integration with the standard Windows "Open With" dialog, allowing users
-    /// to choose an application to open a file at runtime. It is intended for use in desktop applications that require
-    /// user-driven file association selection.</remarks>
     class ShellLauncher
     {
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
@@ -29,19 +29,38 @@ namespace oaiResponsesAvalonia.Native
         private const uint OAIF_EXEC = 0x04;
 
         /// <summary>
-        /// Displays the Windows "Open with" dialog for a file, owned by the specified Avalonia window.
+        /// Opens the platform's native Open With experience for a file.
         /// </summary>
-        /// <remarks>
-        /// This uses the Windows Shell API and is unavailable on other platforms. The regular "Open" action
-        /// uses the platform's default file association instead.
-        /// </remarks>
-        /// <param name="parentWindow">The Avalonia window that owns the native dialog.</param>
+        /// <param name="parentWindow">The Avalonia window that owns the Windows dialog.</param>
         /// <param name="filePath">The path of the file to offer to external applications.</param>
-        public static void ShowOpenWithDialog(Window parentWindow, string filePath)
+        public static void OpenWith(Window parentWindow, string filePath)
         {
-            if (!OperatingSystem.IsWindows())
-                throw new PlatformNotSupportedException("The Open With dialog is only available on Windows.");
+            ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+            filePath = Path.GetFullPath(filePath);
 
+            if (OperatingSystem.IsWindows())
+            {
+                ShowWindowsOpenWithDialog(parentWindow, filePath);
+                return;
+            }
+
+            if (OperatingSystem.IsLinux())
+            {
+                OpenLinuxFileManagerWithSelection(filePath);
+                return;
+            }
+
+            if (OperatingSystem.IsMacOS())
+            {
+                StartProcess("open", "-R", filePath);
+                return;
+            }
+
+            throw new PlatformNotSupportedException("Open With is not supported on this platform.");
+        }
+
+        private static void ShowWindowsOpenWithDialog(Window parentWindow, string filePath)
+        {
             IntPtr hwnd = parentWindow.TryGetPlatformHandle()?.Handle
                 ?? throw new InvalidOperationException("The parent window does not have a native platform handle.");
 
@@ -53,6 +72,47 @@ namespace oaiResponsesAvalonia.Native
             };
 
             SHOpenWithDialog(hwnd, ref info);
+        }
+
+        private static void OpenLinuxFileManagerWithSelection(string filePath)
+        {
+            string desktop = Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP") ?? string.Empty;
+            string preferredManager = desktop.Contains("KDE", StringComparison.OrdinalIgnoreCase) ? "dolphin"
+                : desktop.Contains("XFCE", StringComparison.OrdinalIgnoreCase) ? "thunar"
+                : desktop.Contains("Cinnamon", StringComparison.OrdinalIgnoreCase) ? "nemo"
+                : desktop.Contains("MATE", StringComparison.OrdinalIgnoreCase) ? "caja"
+                : "nautilus";
+
+            foreach (string manager in new[] { preferredManager, "nautilus", "dolphin", "thunar", "nemo", "caja" }
+                .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    StartProcess(manager, "--select", filePath);
+                    return;
+                }
+                catch (Win32Exception)
+                {
+                }
+            }
+
+            string directory = Path.GetDirectoryName(filePath)
+                ?? throw new InvalidOperationException("Could not determine the file's containing directory.");
+            StartProcess("xdg-open", directory);
+        }
+
+        private static void StartProcess(string fileName, params string[] arguments)
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                UseShellExecute = false
+            };
+
+            foreach (string argument in arguments)
+                startInfo.ArgumentList.Add(argument);
+
+            Process.Start(startInfo);
         }
     }
 }

@@ -425,7 +425,13 @@ public partial class MainWindow : Window
         await _dialogs.ShowModalAsync(this, new About());
     }
 
-    private void menuExit_Click(object? sender, RoutedEventArgs e) => Close();
+    private void menuExit_Click(object? sender, RoutedEventArgs e)
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            desktop.Shutdown(0);
+        else
+            Close();
+    }
 
     private async void menuAvailableModels_Click(object? sender, RoutedEventArgs e)
     {

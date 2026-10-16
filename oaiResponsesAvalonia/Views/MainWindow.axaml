@@ -482,23 +482,13 @@
                                                       />
                                         </Border>
                                     </Expander>
-                                    <Expander x:Name="expDeveloperToolActivity"
-                                              DockPanel.Dock="Right"
-                                              Classes="smallText"
-                                              Header="Developer Activity"
-                                              Margin="8,0,0,0"
-                                              VerticalAlignment="Center"
-                                              ExpandDirection="Down"
-                                              IsVisible="{Binding #RootWindow.ResponsesState.UseDeveloperTools}">
-                                        <Border Padding="6"
-                                                Background="#FFF8F8F8"
-                                                BorderBrush="DarkGray"
-                                                BorderThickness="1">
-                                            <Button Padding="8,4"
-                                                    Content="Open Activity Window"
-                                                    Click="OpenDeveloperActivityWindow_Click" />
-                                        </Border>
-                                    </Expander>
+                                    <Button DockPanel.Dock="Right"
+                                            Margin="8,0,0,0"
+                                            Padding="8,4"
+                                            VerticalAlignment="Center"
+                                            Content="Open Activity Window"
+                                            IsVisible="{Binding #RootWindow.ResponsesState.UseDeveloperTools}"
+                                            Click="OpenDeveloperActivityWindow_Click" />
                                 </DockPanel>
 
                                 <Grid>

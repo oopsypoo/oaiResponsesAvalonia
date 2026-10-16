@@ -26,7 +26,7 @@ using oaiResponsesAvalonia.Views;
 namespace oaiResponsesAvalonia.Views
 {
     /// <summary>
-    /// Interaction logic for MainWindow.xaml, specifically for the Responses tab and related controls.
+    /// Interaction logic for MainWindow.axaml, specifically for the Responses tab and related controls.
     /// </summary>
     public partial class MainWindow
     {
@@ -1490,9 +1490,9 @@ namespace oaiResponsesAvalonia.Views
                 SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(savepath_images),
                 FileTypeFilter = new[]
                 {
-                    new FilePickerFileType("Common Files") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp", "*.pdf", "*.txt", "*.md", "*.csv", "*.json", "*.xml", "*.cs", "*.docx", "*.xlsx" } },
+                    new FilePickerFileType("Common Files") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp", "*.pdf", "*.txt", "*.md", "*.csv", "*.json", "*.xml", "*.cs", "*.axaml", "*.docx", "*.xlsx" } },
                     new FilePickerFileType("Image Files") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp" } },
-                    new FilePickerFileType("Document Files") { Patterns = new[] { "*.pdf", "*.txt", "*.md", "*.csv", "*.json", "*.xml", "*.docx", "*.xlsx", "*.cs", "*.css", "*.js", "*.html" } },
+                    new FilePickerFileType("Document Files") { Patterns = new[] { "*.pdf", "*.txt", "*.md", "*.csv", "*.json", "*.xml", "*.docx", "*.xlsx", "*.cs", "*.axaml", "*.css", "*.js", "*.html" } },
                     new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
                 }
             });
@@ -1922,6 +1922,7 @@ The assistant wants to replace text in an existing file.
             {
                 ".cs" => "csharp",
                 ".xaml" => "xml",
+                ".axaml" => "xml",
                 ".xml" => "xml",
                 ".json" => "json",
                 ".js" => "javascript",

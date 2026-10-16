@@ -294,7 +294,7 @@ namespace oaiResponsesAvalonia
                             glob = new
                             {
                                 type = "string",
-                                description = "Optional filter like *.cs or *.xaml."
+                                description = "Optional filter like *.cs, *.xaml, or *.axaml."
                             },
                             subpath = new
                             {

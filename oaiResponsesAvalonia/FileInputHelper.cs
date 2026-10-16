@@ -18,6 +18,7 @@ namespace oaiResponsesAvalonia
                 [".log"] = "text/plain",
                 [".cs"] = "text/plain",
                 [".xaml"] = "text/plain",
+                [".axaml"] = "text/plain",
                 [".js"] = "text/plain",
                 [".ts"] = "text/plain",
                 [".html"] = "text/html",

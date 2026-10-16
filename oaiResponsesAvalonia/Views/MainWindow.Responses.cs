@@ -658,6 +658,7 @@ namespace oaiResponsesAvalonia.Views
                     var context = await _historyService.GetContextForApiAsync(sid);
                     var developerToolsOptions = BuildDeveloperToolsOptionsFromState();
                     // We are sending full DB history, so start a fresh response chain.
+                    DeveloperToolActivities.Clear();
                     ClearDeveloperToolCallLogs();
                     _responsesClient.ClearConversation();
                     _appStatus.Set("GetChatCompletionWLocal tools.");
@@ -667,6 +668,7 @@ namespace oaiResponsesAvalonia.Views
                         developerToolsOptions,
                         confirmLocalCallAsync: ConfirmDeveloperToolCallAsync,
                         onToolCallLoggedAsync: LogDeveloperToolCallAsync,
+                        onToolCallActivityAsync: UpdateDeveloperToolActivityAsync,
                         onWorkspaceRootChangedAsync: UpdateDeveloperWorkspaceRootAsync,
                         progress: progress);
                     developerToolSettingsJson = BuildDeveloperToolSettingsJson();
@@ -1965,6 +1967,26 @@ The assistant wants to replace text in an existing file.
             {
                 ResponsesState.DeveloperRepositoryRoot = Path.GetFullPath(workspaceRoot);
                 _appStatus.Set("Workspace root switched to the created solution folder.");
+            });
+        }
+
+        private async Task UpdateDeveloperToolActivityAsync(string callId, string toolName, string argumentsJson, string status, string resultJson)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var activity = DeveloperToolActivities.FirstOrDefault(item => item.CallId == callId);
+                if (activity is null)
+                {
+                    activity = new DeveloperToolActivityItem
+                    {
+                        CallId = callId,
+                        ToolName = toolName ?? string.Empty,
+                        Target = DeveloperToolActivityItem.GetTarget(argumentsJson)
+                    };
+                    DeveloperToolActivities.Add(activity);
+                }
+
+                activity.Update(status, resultJson);
             });
         }
 

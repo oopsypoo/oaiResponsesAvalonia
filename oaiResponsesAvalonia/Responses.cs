@@ -641,7 +641,8 @@ namespace oaiResponsesAvalonia
         Func<string, string, Task<bool>>? confirmLocalCallAsync = null,
         Func<string, string, string, Task>? onToolCallLoggedAsync = null,
         Func<string, Task>? onWorkspaceRootChangedAsync = null,
-        IProgress<string>? progress = null)
+        IProgress<string>? progress = null,
+        Func<string, string, string, string, string, Task>? onToolCallActivityAsync = null)
         {
             if (developerToolsOptions == null ||
                 !developerToolsOptions.Enabled ||
@@ -671,6 +672,12 @@ namespace oaiResponsesAvalonia
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
                 WriteIndented = true
             };
+
+            async Task ReportToolActivityAsync(string callId, string toolName, string arguments, string status, string result)
+            {
+                if (onToolCallActivityAsync != null)
+                    await onToolCallActivityAsync(callId, toolName, arguments, status, result);
+            }
 
             while (true)
             {
@@ -725,10 +732,14 @@ namespace oaiResponsesAvalonia
                             ? developerToolsOptions.RequireWriteConfirmation
                             : developerToolsOptions.RequireConfirmation;
 
+                    string callId = string.IsNullOrWhiteSpace(call.CallId) ? Guid.NewGuid().ToString("N") : call.CallId;
+                    string arguments = call.Arguments ?? "{}";
+
                     if (requiresConfirmation && confirmLocalCallAsync != null)
                     {
-                        progress?.Report($"Running local tool: {call.Name}...");
-                        bool allowed = await confirmLocalCallAsync(call.Name, call.Arguments ?? "{}");
+                        await ReportToolActivityAsync(callId, call.Name, arguments, "Awaiting approval", string.Empty);
+                        progress?.Report($"Awaiting approval for local tool: {call.Name}...");
+                        bool allowed = await confirmLocalCallAsync(call.Name, arguments);
                         if (!allowed)
                         {
                             progress?.Report($"Local tool denied: {call.Name}. Continuing without it...");
@@ -738,8 +749,10 @@ namespace oaiResponsesAvalonia
                                 error = "User denied local tool call."
                             });
 
-                            if (onToolCallLoggedAsync != null)
-                                await onToolCallLoggedAsync(call.Name, call.Arguments ?? "{}", denied);
+                            
+                            await ReportToolActivityAsync(callId, call.Name, arguments, "Denied", denied);
+                                if (onToolCallLoggedAsync != null)
+                                    await onToolCallLoggedAsync(call.Name, arguments, denied);
 
                             toolOutputs.Add(new
                             {
@@ -752,12 +765,26 @@ namespace oaiResponsesAvalonia
                         }
                     }
 
+                    await ReportToolActivityAsync(callId, call.Name, arguments, "Running", string.Empty);
                     progress?.Report($"Executing local tool: {call.Name}...");
-                    string toolResult = await dispatcher.DispatchAsync(call.Name, call.Arguments ?? "{}");
+                    string toolResult;
+                    try
+                    {
+                        toolResult = await dispatcher.DispatchAsync(call.Name, arguments);
+                    }
+                    catch (Exception ex)
+                    {
+                        string failure = JsonSerializer.Serialize(new { error = ex.Message });
+                        await ReportToolActivityAsync(callId, call.Name, arguments, "Failed", failure);
+                        throw;
+                    }
+
+                    string resultStatus = ToolResultIndicatesFailure(toolResult) ? "Failed" : "Completed";
+                    await ReportToolActivityAsync(callId, call.Name, arguments, resultStatus, toolResult);
                     progress?.Report($"Local tool finished: {call.Name}. Sending output back...");
 
                     if (onToolCallLoggedAsync != null)
-                        await onToolCallLoggedAsync(call.Name, call.Arguments ?? "{}", toolResult);
+                        await onToolCallLoggedAsync(call.Name, arguments, toolResult);
 
                     if (TryGetCreatedWorkspaceRoot(call.Name, toolResult, guard.RootFullPath, out string createdWorkspaceRoot))
                     {
@@ -788,6 +815,32 @@ namespace oaiResponsesAvalonia
                 progress?.Report("Continuing conversation with tool outputs...");
             }
         }
+        private static bool ToolResultIndicatesFailure(string? result)
+        {
+            if (string.IsNullOrWhiteSpace(result))
+                return false;
+
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(result);
+                JsonElement root = document.RootElement;
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    if (root.TryGetProperty("ok", out JsonElement ok) && ok.ValueKind == JsonValueKind.False)
+                        return true;
+                    if (root.TryGetProperty("error", out JsonElement error) &&
+                        error.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(error.GetString()))
+                        return true;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+
+            return false;
+        }
+
         private static string NormalizeImageOutputFormat(string format)
         {
             if (string.IsNullOrWhiteSpace(format))

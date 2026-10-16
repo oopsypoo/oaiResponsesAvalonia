@@ -2,8 +2,10 @@
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using AvaloniaUI.DiagnosticsSupport;
 using oaiResponsesAvalonia.Views;
+#if DEBUG
+using AvaloniaUI.DiagnosticsSupport;
+#endif
 
 namespace oaiResponsesAvalonia;
 
@@ -15,7 +17,9 @@ public partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
-
+#if DEBUG
+        this.AttachDeveloperTools();
+#endif
     }
 
     /// <summary>

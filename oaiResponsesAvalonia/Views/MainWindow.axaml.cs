@@ -42,6 +42,8 @@ public partial class MainWindow : Window
     private readonly HistoryService _historyService;
     private readonly MediaStorageService _mediaStorageService;
     private readonly SessionCleanupService _sessionCleanupService;
+    private Button? _developerActivityButton;
+    private DeveloperToolsActivityWindow? _developerToolsActivityWindow;
 
     public event Action<List<string>>? ModelsApplied;
 
@@ -53,6 +55,7 @@ public partial class MainWindow : Window
     public ObservableCollection<ResponseAttachmentItem> PendingResponseAttachments { get; } = new();
     public ObservableCollection<MediaFile> ResponsePreviewImages { get; } = new();
     public ObservableCollection<DeveloperToolCallLogItem> DeveloperToolCallLogs { get; } = new();
+    public ObservableCollection<DeveloperToolActivityItem> DeveloperToolActivities { get; } = new();
     public LogsPanelState LogsState { get; } = new();
     public ResponsesPanelState ResponsesState { get; } = new();
 
@@ -81,6 +84,7 @@ public partial class MainWindow : Window
         _statusEllipsisTimer.Tick += (_, _) =>
         {
             _ellipsisCounter = (_ellipsisCounter + 1) % 4;
+            UpdateDeveloperActivityButtonState();
             if (ResponsesState.IsRequestInProgress)
             {
                 string baseText = StatusText.Text?.Split(new[] { '·', '.' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim()
@@ -91,9 +95,10 @@ public partial class MainWindow : Window
 
         ResponsesState.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName != nameof(ResponsesState.IsRequestInProgress) || _statusEllipsisTimer is null)
+            if (e.PropertyName != nameof(ResponsesState.IsRequestInProgress))
                 return;
 
+            UpdateDeveloperActivityButtonState();
             if (ResponsesState.IsRequestInProgress)
             {
                 _ellipsisCounter = 0;
@@ -104,6 +109,64 @@ public partial class MainWindow : Window
                 _statusEllipsisTimer.Stop();
             }
         };
+    }
+
+    private void InstallDeveloperActivityButton()
+    {
+        StackPanel? host = FindStackPanelAncestor(cmbResponsesPageTheme as Control)
+            ?? FindStackPanelAncestor(cmbResponsesMarkdownTheme as Control);
+        if (host is null)
+        {
+            _appStatus.Set("Developer Tools Activity button could not be attached to the theme controls.");
+            return;
+        }
+
+        _developerActivityButton = new Button
+        {
+            Content = "Activity",
+            Margin = new Thickness(6, 0, 0, 0),
+            IsVisible = false
+        };
+        ToolTip.SetTip(_developerActivityButton, "Show live Developer Tools activity");
+        _developerActivityButton.Click += DeveloperActivityButton_Click;
+        host.Children.Add(_developerActivityButton);
+        UpdateDeveloperActivityButtonState();
+    }
+
+    private static StackPanel? FindStackPanelAncestor(Control? control)
+    {
+        for (Control? current = control; current is not null; current = current.Parent as Control)
+        {
+            if (current is StackPanel stackPanel)
+                return stackPanel;
+        }
+
+        return null;
+    }
+
+    private void UpdateDeveloperActivityButtonState()
+    {
+        if (_developerActivityButton is null)
+            return;
+
+        _developerActivityButton.IsVisible = ResponsesState.UseDeveloperTools;
+        _developerActivityButton.IsEnabled = ResponsesState.UseDeveloperTools && !ResponsesState.IsRequestInProgress;
+    }
+
+    private void DeveloperActivityButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_developerToolsActivityWindow is null)
+        {
+            _developerToolsActivityWindow = new DeveloperToolsActivityWindow(DeveloperToolActivities);
+            _developerToolsActivityWindow.Closed += (_, _) => _developerToolsActivityWindow = null;
+            _developerToolsActivityWindow.Show(this);
+            return;
+        }
+
+        if (!_developerToolsActivityWindow.IsVisible)
+            _developerToolsActivityWindow.Show(this);
+        else
+            _developerToolsActivityWindow.Activate();
     }
 
     private async Task<int> EnsureSessionActiveAsync(EndpointType type, string firstPrompt)
@@ -139,6 +202,7 @@ public partial class MainWindow : Window
         {
             InitStatusAnimation();
             await InitResponsesControlsAsync();
+            InstallDeveloperActivityButton();
             await Task.Run(_mediaStorageService.MigrateLegacyMediaPaths);
             ApplyLogColumnVisibility();
             await LoadInitialLogsAsync();
@@ -189,6 +253,7 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(ResponsesPanelState.UseDeveloperTools))
         {
+            UpdateDeveloperActivityButtonState();
             RefreshEnvironmentCapabilityReport();
             return;
         }

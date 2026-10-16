@@ -1,7 +1,6 @@
 <Window x:Class="oaiResponsesAvalonia.Views.DeveloperToolsActivityWindow"
         xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="using:oaiResponsesAvalonia.Views"
         xmlns:data="using:oaiResponsesAvalonia.Data"
         x:DataType="x:Object"
         x:CompileBindings="True"
@@ -11,38 +10,27 @@
         MinWidth="420"
         MinHeight="280"
         WindowStartupLocation="CenterOwner">
-    <Grid RowDefinitions="Auto,Auto,*">
-        <TextBlock Grid.Row="0"
-                   Margin="16,16,16,8"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   Text="Developer Tools Activity" />
-        <TextBlock Grid.Row="1"
-                   Margin="16,0,16,12"
-                   Text="Live status and concise results for local tool calls. Expand an entry for details."
-                   TextWrapping="Wrap" />
-        <ListBox x:Name="ActivityList"
-                 Grid.Row="2"
-                 Margin="12,0,12,12">
-            <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="data:DeveloperToolActivityItem">
-                    <Expander Margin="4,3"
-                              HorizontalContentAlignment="Stretch">
-                        <Expander.Header>
-                            <StackPanel Spacing="3">
-                                <TextBlock FontWeight="SemiBold"
-                                           Text="{Binding Header}" />
-                                <TextBlock Opacity="0.8"
-                                           Text="{Binding Target}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                        </Expander.Header>
-                        <TextBlock Margin="0,8,0,4"
-                                   Text="{Binding Details}"
-                                   TextWrapping="Wrap" />
-                    </Expander>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
-    </Grid>
+    <ListBox x:Name="ActivityList"
+             Margin="12"
+             ItemsSource="{Binding}">
+        <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="data:DeveloperToolActivityItem">
+                <Expander Margin="4,3"
+                          HorizontalContentAlignment="Stretch">
+                    <Expander.Header>
+                        <StackPanel Spacing="3">
+                            <TextBlock FontWeight="SemiBold"
+                                       Text="{Binding Header}" />
+                            <TextBlock Opacity="0.8"
+                                       Text="{Binding Target}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <TextBlock Margin="0,8,0,4"
+                               Text="{Binding Details}"
+                               TextWrapping="Wrap" />
+                </Expander>
+            </DataTemplate>
+        </ListBox.ItemTemplate>
+    </ListBox>
 </Window>

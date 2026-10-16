@@ -6,3 +6,6 @@
 ## File Handling
 - For Linux Open With behavior, prefer GIO/libgio to enumerate installed handlers for a file's MIME type and launch a selected app from a dynamically populated context-menu submenu; keep the default Open action using Avalonia's TopLevel.Launcher.LaunchFileAsync when feasible.
 - When refactoring GIO application enumeration, use a reusable helper with the signature `static List<AppEntry> ReadList(IntPtr list, string? defaultId = null)` to convert native GList results and optionally mark the default app.
+
+## Developer Tools
+- For the Developer Tools activity UI, prefer a separate user-openable and closable window rather than an inline live list, to avoid consuming space in the main window.

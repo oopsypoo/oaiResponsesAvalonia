@@ -877,33 +877,11 @@
                                                 <TextBlock Grid.Row="4"
                                                            Margin="0,8,0,4"
                                                            FontWeight="SemiBold"
-                                                           Text="Available functions" />
+                                                           Text="Permissions" />
                                                 <StackPanel Grid.Row="5">
-                                                    <CheckBox Content="Search project text"
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolSearchProjectText, Mode=TwoWay}"/>
-                                                    <CheckBox Content="Read project file"
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolReadProjectFile, Mode=TwoWay}"/>
-                                                    <CheckBox Content="List project files"
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolListProjectFiles, Mode=TwoWay}"/>
-                                                      <CheckBox Content="Create .NET solution and project"
-                                                               ToolTip.Tip="Creates a constrained .NET solution and project in one new child folder below the workspace root, then switches the workspace root to that new solution folder."
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolCreateDotNetSolution, Mode=TwoWay}"
-                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}" />
-                                                    <CheckBox Content="Build, clean, or rebuild .NET project or solution"
-                                                               ToolTip.Tip="Enables dotnet build, dotnet clean, and clean-then-build for a selected .csproj, .sln, or .slnx file."
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolBuildDotNetProject, Mode=TwoWay}"
-                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}" />
-                                                    <CheckBox Content="Run .NET project (Debug)"
-                                                               ToolTip.Tip="Runs a built .NET project in Debug configuration and lets the AI inspect or stop the developer-launched process."
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolRunDotNetProject, Mode=TwoWay}"
-                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}"/>
-
-                                                    <CheckBox Content="Write project file"
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolWriteProjectFile, Mode=TwoWay}"
-                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}"/>
-                                                    <CheckBox Content="Replace in project file"
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperToolReplaceInProjectFile, Mode=TwoWay}"
-                                                               IsEnabled="{Binding #RootWindow.ResponsesState.DeveloperWriteFunctionsEnabled}"/>
+                                                    <CheckBox Content="Allow write/run"
+                                                               ToolTip.Tip="Unchecked: the AI can only read, search, and list project files. Checked: the AI may also change files and create, build, and run .NET projects."
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperAllowWriteRun, Mode=TwoWay}" />
                                                 </StackPanel>
 
                                                 <TextBlock Grid.Row="6"
@@ -911,17 +889,9 @@
                                                            FontWeight="SemiBold"
                                                            Text="Advanced options" />
                                                 <StackPanel Grid.Row="7">
-                                                    <CheckBox Content="Allow read-only only"
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperAllowReadOnlyOnly, Mode=TwoWay}" />
-                                                    <CheckBox Content="Require confirmation before read-only local calls"
-                                                               ToolTip.Tip="Prompt before the AI runs search, read, list, or diagnostics tools."
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperRequireConfirmation, Mode=TwoWay}" />
-                                                    <CheckBox Content="Require approval before AI changes files"
-                                                               ToolTip.Tip="When enabled, every file write or replacement must be reviewed and approved before it is applied."
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperRequireWriteConfirmation, Mode=TwoWay}" />
-                                                    <CheckBox Content="Require approval before AI executes project operations"
-                                                               ToolTip.Tip="When enabled, solution creation, build, run, and process-stop operations require approval before dotnet is started."
-                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperRequireExecutionConfirmation, Mode=TwoWay}"/>
+                                                    <CheckBox Content="Require approval before AI writes/executes"
+                                                               ToolTip.Tip="When enabled, every file change and project operation (create, build, run, stop) must be approved before it is applied."
+                                                              IsChecked="{Binding #RootWindow.ResponsesState.DeveloperRequireApproval, Mode=TwoWay}" />
                                                     <CheckBox Content="Show tool call logs"
                                                                ToolTip.Tip="Show the persisted audit trail of local developer tool calls. Logging continues when this is unchecked."
                                                               IsChecked="{Binding #RootWindow.ResponsesState.DeveloperShowToolLogs, Mode=TwoWay}" />

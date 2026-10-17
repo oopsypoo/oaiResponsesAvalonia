@@ -15,14 +15,14 @@ namespace oaiResponsesAvalonia.Services
 
         public bool SearchProjectTextEnabled { get; set; } = true;
         public bool ReadProjectFileEnabled { get; set; } = true;
-        public bool ListProjectFilesEnabled { get; set; } = false;
-        public bool RunDiagnosticsEnabled { get; set; } = false;
-        public bool CreateDotNetSolutionEnabled { get; set; } = false;
-        public bool BuildDotNetProjectEnabled { get; set; } = false;
-        public bool RunDotNetProjectEnabled { get; set; } = false;
+        public bool ListProjectFilesEnabled { get; set; } = true;
+        public bool RunDiagnosticsEnabled { get; set; } = true;
+        public bool CreateDotNetSolutionEnabled { get; set; } = true;
+        public bool BuildDotNetProjectEnabled { get; set; } = true;
+        public bool RunDotNetProjectEnabled { get; set; } = true;
 
-        public bool WriteProjectFileEnabled { get; set; } = false;
-        public bool ReplaceInProjectFileEnabled { get; set; } = false;
+        public bool WriteProjectFileEnabled { get; set; } = true;
+        public bool ReplaceInProjectFileEnabled { get; set; } = true;
 
         public string[] AllowedExtensions { get; set; } = new string[0];
 

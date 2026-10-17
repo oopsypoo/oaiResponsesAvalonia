@@ -571,6 +571,7 @@
                         FontWeight="SemiBold"
                         Background="#DFF2E1"
                         BorderBrush="#8FBE95"
+                        Click="ApprovePendingToolReview_Click"
                         />
 
                                                     <Button Content="Reject"
@@ -578,6 +579,7 @@
                         Height="32"
                         Background="#F6E3E3"
                         BorderBrush="#D2A4A4"
+                        Click="RejectPendingToolReview_Click"
                         />
                                                 </StackPanel>
                                             </StackPanel>

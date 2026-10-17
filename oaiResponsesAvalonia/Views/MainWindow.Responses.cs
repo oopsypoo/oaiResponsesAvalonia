@@ -174,17 +174,8 @@ namespace oaiResponsesAvalonia.Views
             ResponsesState.DeveloperRepositoryRoot = string.Empty;
             ResponsesState.DeveloperScope = "repository";
             ResponsesState.DeveloperAllowReadOnlyOnly = true;
-            ResponsesState.DeveloperRequireConfirmation = false;
-            ResponsesState.DeveloperRequireWriteConfirmation = true;
-            ResponsesState.DeveloperRequireExecutionConfirmation = true;
+            ResponsesState.DeveloperRequireApproval = true;
             ResponsesState.DeveloperShowToolLogs = true;
-            ResponsesState.DeveloperToolSearchProjectText = true;
-            ResponsesState.DeveloperToolReadProjectFile = true;
-            ResponsesState.DeveloperToolListProjectFiles = false;
-            ResponsesState.DeveloperToolRunDiagnostics = false;
-            ResponsesState.DeveloperToolCreateDotNetSolution = false;
-            ResponsesState.DeveloperToolBuildDotNetProject = false;
-            ResponsesState.DeveloperToolRunDotNetProject = false;
             ResponsesState.DeveloperAllowedExtensionsCsv = ResponsesPanelState.GetDefaultAllowedExtensionsCsv();
             ApplyResponsesStateToClient();
         }
@@ -438,19 +429,8 @@ namespace oaiResponsesAvalonia.Views
             ResponsesState.DeveloperRepositoryRoot = string.Empty;
             ResponsesState.DeveloperScope = "repository";
             ResponsesState.DeveloperAllowReadOnlyOnly = true;
-            ResponsesState.DeveloperRequireConfirmation = false;
-            ResponsesState.DeveloperRequireWriteConfirmation = true;
-            ResponsesState.DeveloperRequireExecutionConfirmation = true;
+            ResponsesState.DeveloperRequireApproval = true;
             ResponsesState.DeveloperShowToolLogs = true;
-            ResponsesState.DeveloperToolSearchProjectText = true;
-            ResponsesState.DeveloperToolReadProjectFile = true;
-            ResponsesState.DeveloperToolListProjectFiles = false;
-            ResponsesState.DeveloperToolRunDiagnostics = false;
-            ResponsesState.DeveloperToolCreateDotNetSolution = false;
-            ResponsesState.DeveloperToolBuildDotNetProject = false;
-            ResponsesState.DeveloperToolRunDotNetProject = false;
-            ResponsesState.DeveloperToolWriteProjectFile = false;
-            ResponsesState.DeveloperToolReplaceInProjectFile = false;
             ResponsesState.DeveloperPendingReviewVisible = false;
             ResponsesState.DeveloperPendingReviewTitle = string.Empty;
             ResponsesState.DeveloperPendingReviewToolName = string.Empty;
@@ -1227,38 +1207,8 @@ namespace oaiResponsesAvalonia.Views
             [JsonPropertyName("scope")]
             public string Scope { get; set; } = "repository";
 
-            [JsonPropertyName("search_project_text")]
-            public bool SearchProjectText { get; set; } = true;
-
-            [JsonPropertyName("read_project_file")]
-            public bool ReadProjectFile { get; set; } = true;
-
-            [JsonPropertyName("list_project_files")]
-            public bool ListProjectFiles { get; set; }
-
-            [JsonPropertyName("run_diagnostics")]
-            public bool RunDiagnostics { get; set; }
-            
-            [JsonPropertyName("create_dotnet_solution")]
-            public bool CreateDotNetSolution { get; set; }
-
-            [JsonPropertyName("build_dotnet_project")]
-            public bool BuildDotNetProject { get; set; }
-
-            [JsonPropertyName("run_dotnet_project")]
-            public bool RunDotNetProject { get; set; }
-
-            [JsonPropertyName("write_project_file")]
-            public bool WriteProjectFile { get; set; }
-
-            [JsonPropertyName("replace_in_project_file")]
-            public bool ReplaceInProjectFile { get; set; }
-
             [JsonPropertyName("read_only_only")]
             public bool ReadOnlyOnly { get; set; } = true;
-
-            [JsonPropertyName("require_confirmation")]
-            public bool RequireConfirmation { get; set; }
 
             [JsonPropertyName("require_write_confirmation")]
             public bool RequireWriteConfirmation { get; set; } = true;
@@ -1319,20 +1269,10 @@ namespace oaiResponsesAvalonia.Views
                     ? "repository"
                     : ResponsesState.DeveloperScope,
 
-                SearchProjectText = ResponsesState.DeveloperToolSearchProjectText,
-                ReadProjectFile = ResponsesState.DeveloperToolReadProjectFile,
-                ListProjectFiles = ResponsesState.DeveloperToolListProjectFiles,
-                RunDiagnostics = ResponsesState.DeveloperToolRunDiagnostics,
-                CreateDotNetSolution = ResponsesState.DeveloperToolCreateDotNetSolution,
-                BuildDotNetProject = ResponsesState.DeveloperToolBuildDotNetProject,
-                RunDotNetProject = ResponsesState.DeveloperToolRunDotNetProject,
-                WriteProjectFile = ResponsesState.DeveloperToolWriteProjectFile,
-                ReplaceInProjectFile = ResponsesState.DeveloperToolReplaceInProjectFile,
 
                 ReadOnlyOnly = ResponsesState.DeveloperAllowReadOnlyOnly,
-                RequireConfirmation = ResponsesState.DeveloperRequireConfirmation,
-                RequireWriteConfirmation = ResponsesState.DeveloperRequireWriteConfirmation,
-                RequireExecutionConfirmation = ResponsesState.DeveloperRequireExecutionConfirmation,
+                RequireWriteConfirmation = ResponsesState.DeveloperRequireApproval,
+                RequireExecutionConfirmation = ResponsesState.DeveloperRequireApproval,
                 ShowToolLogs = ResponsesState.DeveloperShowToolLogs,
 
                 AllowedExtensionsCsv = string.IsNullOrWhiteSpace(ResponsesState.DeveloperAllowedExtensionsCsv)
@@ -1397,20 +1337,10 @@ namespace oaiResponsesAvalonia.Views
                     ? "repository"
                     : snapshot.Scope;
 
-                ResponsesState.DeveloperToolSearchProjectText = snapshot.SearchProjectText;
-                ResponsesState.DeveloperToolReadProjectFile = snapshot.ReadProjectFile;
-                ResponsesState.DeveloperToolListProjectFiles = snapshot.ListProjectFiles;
-                ResponsesState.DeveloperToolRunDiagnostics = snapshot.RunDiagnostics;
-                ResponsesState.DeveloperToolCreateDotNetSolution = snapshot.CreateDotNetSolution;
-                ResponsesState.DeveloperToolBuildDotNetProject = snapshot.BuildDotNetProject;
-                ResponsesState.DeveloperToolRunDotNetProject = snapshot.RunDotNetProject;
-                ResponsesState.DeveloperToolWriteProjectFile = snapshot.WriteProjectFile;
-                ResponsesState.DeveloperToolReplaceInProjectFile = snapshot.ReplaceInProjectFile;
 
                 ResponsesState.DeveloperAllowReadOnlyOnly = snapshot.ReadOnlyOnly;
-                ResponsesState.DeveloperRequireConfirmation = snapshot.RequireConfirmation;
-                ResponsesState.DeveloperRequireWriteConfirmation = snapshot.RequireWriteConfirmation;
-                ResponsesState.DeveloperRequireExecutionConfirmation = snapshot.RequireExecutionConfirmation;
+                ResponsesState.DeveloperRequireApproval =
+                    snapshot.RequireWriteConfirmation || snapshot.RequireExecutionConfirmation;
                 ResponsesState.DeveloperShowToolLogs = snapshot.ShowToolLogs;
                 ResponsesState.DeveloperAllowedExtensionsCsv =
                     string.IsNullOrWhiteSpace(snapshot.AllowedExtensionsCsv)
@@ -1601,21 +1531,11 @@ namespace oaiResponsesAvalonia.Views
                 ScopeMode = ResponsesState.DeveloperScope ?? "repository",
 
                 ReadOnlyOnly = ResponsesState.DeveloperAllowReadOnlyOnly,
-                RequireConfirmation = ResponsesState.DeveloperRequireConfirmation,
-                RequireWriteConfirmation = ResponsesState.DeveloperRequireWriteConfirmation,
-                RequireExecutionConfirmation = ResponsesState.DeveloperRequireExecutionConfirmation,
+                RequireWriteConfirmation = ResponsesState.DeveloperRequireApproval,
+                RequireExecutionConfirmation = ResponsesState.DeveloperRequireApproval,
                 ShowToolLogs = ResponsesState.DeveloperShowToolLogs,
 
-                SearchProjectTextEnabled = ResponsesState.DeveloperToolSearchProjectText,
-                ReadProjectFileEnabled = ResponsesState.DeveloperToolReadProjectFile,
-                ListProjectFilesEnabled = ResponsesState.DeveloperToolListProjectFiles,
-                RunDiagnosticsEnabled = ResponsesState.DeveloperToolRunDiagnostics,
-                CreateDotNetSolutionEnabled = ResponsesState.DeveloperToolCreateDotNetSolution,
-                BuildDotNetProjectEnabled = ResponsesState.DeveloperToolBuildDotNetProject,
-                RunDotNetProjectEnabled = ResponsesState.DeveloperToolRunDotNetProject,
 
-                WriteProjectFileEnabled = ResponsesState.DeveloperToolWriteProjectFile,
-                ReplaceInProjectFileEnabled = ResponsesState.DeveloperToolReplaceInProjectFile,
 
                 AllowedExtensions = extensions,
                 MaxReadLines = 300,

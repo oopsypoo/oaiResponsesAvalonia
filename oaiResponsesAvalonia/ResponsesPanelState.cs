@@ -213,45 +213,26 @@ namespace oaiResponsesAvalonia
                 if (_developerAllowReadOnlyOnly == value) return;
                 _developerAllowReadOnlyOnly = value;
                 OnPropertyChanged(nameof(DeveloperAllowReadOnlyOnly));
-                OnPropertyChanged(nameof(DeveloperWriteFunctionsEnabled));
+                OnPropertyChanged(nameof(DeveloperAllowWriteRun));
             }
         }
 
-        public bool DeveloperWriteFunctionsEnabled => !DeveloperAllowReadOnlyOnly;
-
-        private bool _developerRequireWriteConfirmation = true;
-        public bool DeveloperRequireWriteConfirmation
+        // Inverse of DeveloperAllowReadOnlyOnly, bound to the "Allow write/run" checkbox.
+        public bool DeveloperAllowWriteRun
         {
-            get => _developerRequireWriteConfirmation;
-            set
-            {
-                if (_developerRequireWriteConfirmation == value) return;
-                _developerRequireWriteConfirmation = value;
-                OnPropertyChanged(nameof(DeveloperRequireWriteConfirmation));
-            }
+            get => !DeveloperAllowReadOnlyOnly;
+            set => DeveloperAllowReadOnlyOnly = !value;
         }
 
-        private bool _developerRequireExecutionConfirmation = true;
-        public bool DeveloperRequireExecutionConfirmation
+        private bool _developerRequireApproval = true;
+        public bool DeveloperRequireApproval
         {
-            get => _developerRequireExecutionConfirmation;
+            get => _developerRequireApproval;
             set
             {
-                if (_developerRequireExecutionConfirmation == value) return;
-                _developerRequireExecutionConfirmation = value;
-                OnPropertyChanged(nameof(DeveloperRequireExecutionConfirmation));
-            }
-        }
-
-        private bool _developerRequireConfirmation;
-        public bool DeveloperRequireConfirmation
-        {
-            get => _developerRequireConfirmation;
-            set
-            {
-                if (_developerRequireConfirmation == value) return;
-                _developerRequireConfirmation = value;
-                OnPropertyChanged(nameof(DeveloperRequireConfirmation));
+                if (_developerRequireApproval == value) return;
+                _developerRequireApproval = value;
+                OnPropertyChanged(nameof(DeveloperRequireApproval));
             }
         }
 
@@ -270,89 +251,6 @@ namespace oaiResponsesAvalonia
             }
         }
 
-        private bool _developerToolSearchProjectText = true;
-        public bool DeveloperToolSearchProjectText
-        {
-            get => _developerToolSearchProjectText;
-            set
-            {
-                if (_developerToolSearchProjectText == value) return;
-                _developerToolSearchProjectText = value;
-                OnPropertyChanged(nameof(DeveloperToolSearchProjectText));
-            }
-        }
-
-        private bool _developerToolReadProjectFile = true;
-        public bool DeveloperToolReadProjectFile
-        {
-            get => _developerToolReadProjectFile;
-            set
-            {
-                if (_developerToolReadProjectFile == value) return;
-                _developerToolReadProjectFile = value;
-                OnPropertyChanged(nameof(DeveloperToolReadProjectFile));
-            }
-        }
-
-        private bool _developerToolListProjectFiles;
-        public bool DeveloperToolListProjectFiles
-        {
-            get => _developerToolListProjectFiles;
-            set
-            {
-                if (_developerToolListProjectFiles == value) return;
-                _developerToolListProjectFiles = value;
-                OnPropertyChanged(nameof(DeveloperToolListProjectFiles));
-            }
-        }
-
-        private bool _developerToolCreateDotNetSolution;
-        public bool DeveloperToolCreateDotNetSolution
-        {
-            get => _developerToolCreateDotNetSolution;
-            set
-            {
-                if (_developerToolCreateDotNetSolution == value) return;
-                _developerToolCreateDotNetSolution = value;
-                OnPropertyChanged(nameof(DeveloperToolCreateDotNetSolution));
-            }
-        }
-
-        private bool _developerToolBuildDotNetProject;
-        public bool DeveloperToolBuildDotNetProject
-        {
-            get => _developerToolBuildDotNetProject;
-            set
-            {
-                if (_developerToolBuildDotNetProject == value) return;
-                _developerToolBuildDotNetProject = value;
-                OnPropertyChanged(nameof(DeveloperToolBuildDotNetProject));
-            }
-        }
-
-        private bool _developerToolRunDotNetProject;
-        public bool DeveloperToolRunDotNetProject
-        {
-            get => _developerToolRunDotNetProject;
-            set
-            {
-                if (_developerToolRunDotNetProject == value) return;
-                _developerToolRunDotNetProject = value;
-                OnPropertyChanged(nameof(DeveloperToolRunDotNetProject));
-            }
-        }
-
-        private bool _developerToolRunDiagnostics;
-        public bool DeveloperToolRunDiagnostics
-        {
-            get => _developerToolRunDiagnostics;
-            set
-            {
-                if (_developerToolRunDiagnostics == value) return;
-                _developerToolRunDiagnostics = value;
-                OnPropertyChanged(nameof(DeveloperToolRunDiagnostics));
-            }
-        }
         //Set static, because of availability.It's called upon many times. Use GetDefaultAllowedExtensionsCsv()
         private static string _developerAllowedExtensionsCsv = ".cs,.xaml,.axaml,.csproj,.sln,.slnx,.json,.xml,.md,.config,.props,.targets,.js,.css,.html";
         /// <summary>
@@ -391,29 +289,6 @@ namespace oaiResponsesAvalonia
             }
         }
         public bool AreRequestEditingControlsEnabled => !IsRequestInProgress;
-        private bool _developerToolWriteProjectFile;
-        public bool DeveloperToolWriteProjectFile
-        {
-            get => _developerToolWriteProjectFile;
-            set
-            {
-                if (_developerToolWriteProjectFile == value) return;
-                _developerToolWriteProjectFile = value;
-                OnPropertyChanged(nameof(DeveloperToolWriteProjectFile));
-            }
-        }
-
-        private bool _developerToolReplaceInProjectFile;
-        public bool DeveloperToolReplaceInProjectFile
-        {
-            get => _developerToolReplaceInProjectFile;
-            set
-            {
-                if (_developerToolReplaceInProjectFile == value) return;
-                _developerToolReplaceInProjectFile = value;
-                OnPropertyChanged(nameof(DeveloperToolReplaceInProjectFile));
-            }
-        }
 
         private bool _developerPendingReviewVisible;
         public bool DeveloperPendingReviewVisible

@@ -145,8 +145,8 @@ namespace oaiResponsesAvalonia
             else if (developerToolsOptions.RequireWriteConfirmation)
             {
                 toolModeInstructions = @"You have access to local developer tools that may include both read and write capabilities.
-                    Before using write_project_file or replace_in_project_file, you must first inspect the relevant files, present a concise change plan, identify which files will be changed or created, and wait for explicit user approval.
-                    Never use those file-write tools until the user has explicitly approved the proposed changes.
+                    The application asks the user to approve every file change before it is applied, so do not ask for approval in chat and do not wait for the user to type a confirmation. Inspect the relevant files first, then call the write tool directly.
+                    If the user rejects a change, the tool returns an error; do not retry the same change, and ask what they would like instead.
                     Prefer targeted edits over full-file rewrites when practical.
                     Minimize the number of files changed.
                     Do not claim to modify files directly unless a write-capable tool succeeds.";
@@ -170,7 +170,7 @@ namespace oaiResponsesAvalonia
             if (anyProjectOperationEnabled)
             {
                 projectOperationInstructions = developerToolsOptions.RequireExecutionConfirmation
-                    ? "Enabled project-operation tools create project files or execute constrained dotnet commands. Inspect relevant files, present a concise plan, and wait for explicit user approval before invoking create, build, clean, rebuild, run, or stop tools. Use clean_dotnet_project for a normal clean and rebuild_dotnet_project for clean followed by build. To clean every project in a solution, target its .sln or .slnx file. Never request or attempt arbitrary shell commands."
+                    ? "Enabled project-operation tools create project files or execute constrained dotnet commands. The application asks the user to approve each of these operations, so do not ask for approval in chat and do not wait for the user to type a confirmation; inspect relevant files, then call the tool directly. If the user rejects an operation, do not retry it. Use clean_dotnet_project for a normal clean and rebuild_dotnet_project for clean followed by build. To clean every project in a solution, target its .sln or .slnx file. Never request or attempt arbitrary shell commands."
                     : "Enabled project-operation tools create project files or execute constrained dotnet commands. Inspect relevant files first, then use only the provided structured tools. Use clean_dotnet_project for a normal clean and rebuild_dotnet_project for clean followed by build. To clean every project in a solution, target its .sln or .slnx file. Never request or attempt arbitrary shell commands. Build before running a project, and use get_process_output or stop_running_process only for processes launched by these tools.";
             }
 

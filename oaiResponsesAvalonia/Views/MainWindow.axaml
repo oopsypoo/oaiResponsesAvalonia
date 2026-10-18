@@ -210,6 +210,7 @@
             </MenuItem>
             <MenuItem Header="Tools" Name="menuTools" IsEnabled="True">
                 <MenuItem Header="Available Models" Name="menuAvlblMdls" IsEnabled="True" Click="menuAvailableModels_Click" />
+                <MenuItem Header="MCP servers" Name="menuMcpServers" IsEnabled="True" Click="menuMcpServers_Click" />
             </MenuItem>
             <MenuItem Header="Help" Name="menuHelp" IsEnabled="True">
                 <MenuItem Header="About" Name="menuAbout" IsEnabled="True" Click="menuAbout_Click"/>
@@ -655,6 +656,7 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
                                     <CheckBox Grid.Row="0"
@@ -817,6 +819,22 @@
                                                 </ComboBox>
                                             </Grid>
                                         </Grid>
+                                    </Border>
+                                    <Border Grid.Row="3"
+                                            Margin="0,0,0,8"
+                                            Padding="6"
+                                            BorderBrush="#DDDDDD"
+                                            BorderThickness="1"
+                                            Background="#FFF8F8F8">
+                                        <StackPanel>
+                                            <CheckBox x:Name="cbToolMcp"
+                                                      Content="MCP servers"
+                                                      IsChecked="{Binding #RootWindow.ResponsesState.UseMcp, Mode=TwoWay}" />
+                                            <TextBlock Margin="22,2,0,0"
+                                                       FontSize="11"
+                                                       Foreground="Gray"
+                                                       Text="{Binding #RootWindow.ResponsesState.McpSummary}" />
+                                        </StackPanel>
                                     </Border>
                                     <Border Grid.Row="4"
                                             Margin="0,0,0,8"

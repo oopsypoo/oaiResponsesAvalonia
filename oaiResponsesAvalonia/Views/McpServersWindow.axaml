@@ -1,0 +1,104 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svc="using:oaiResponsesAvalonia.Services"
+        x:Class="oaiResponsesAvalonia.Views.McpServersWindow"
+        x:DataType="svc:McpServerConfig"
+        x:CompileBindings="False"
+        Title="MCP servers"
+        Width="900"
+        Height="640"
+        MinWidth="700"
+        MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+  <Grid Margin="12" RowDefinitions="*,Auto" ColumnDefinitions="240,12,*">
+
+    <!-- Server list -->
+    <Grid Grid.Row="0" Grid.Column="0" RowDefinitions="*,Auto">
+      <ListBox x:Name="ServerList" Grid.Row="0">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="svc:McpServerConfig">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <CheckBox IsChecked="{Binding Enabled}" ToolTip.Tip="Offer this server's tools to the AI" />
+              <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,8,0,0">
+        <Button Content="Add" Click="AddServer_Click" />
+        <Button Content="Remove" Click="RemoveServer_Click" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Selected server -->
+    <ScrollViewer Grid.Row="0" Grid.Column="2"
+                  IsVisible="{Binding #ServerList.SelectedItem, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <StackPanel Spacing="6" DataContext="{Binding #ServerList.SelectedItem}">
+        <TextBlock Text="Name" FontWeight="SemiBold" />
+        <TextBox Text="{Binding Name, Mode=TwoWay}" />
+
+        <TextBlock Text="Transport" FontWeight="SemiBold" Margin="0,6,0,0" />
+        <ComboBox x:Name="TransportBox" SelectionChanged="Transport_SelectionChanged">
+          <ComboBoxItem Content="HTTP (remote server)" Tag="http" />
+          <ComboBoxItem Content="Stdio (local program)" Tag="stdio" />
+        </ComboBox>
+
+        <StackPanel IsVisible="{Binding IsHttp}" Spacing="6">
+          <TextBlock Text="URL" FontWeight="SemiBold" />
+          <TextBox Text="{Binding Url, Mode=TwoWay}" Watermark="https://example.com/mcp" />
+          <TextBlock Text="Headers (one 'Name: value' per line; use ${ENV_VAR} for secrets)" />
+          <TextBox Text="{Binding HeadersText, Mode=TwoWay}" AcceptsReturn="True" Height="60" />
+        </StackPanel>
+
+        <StackPanel IsVisible="{Binding IsStdio}" Spacing="6">
+          <TextBlock Text="Command" FontWeight="SemiBold" />
+          <TextBox Text="{Binding Command, Mode=TwoWay}" Watermark="npx" />
+          <TextBlock Text="Arguments" FontWeight="SemiBold" />
+          <TextBox Text="{Binding Arguments, Mode=TwoWay}" Watermark="-y @modelcontextprotocol/server-everything" />
+          <TextBlock Text="Environment (one KEY=VALUE per line; use ${ENV_VAR} for secrets)" />
+          <TextBox Text="{Binding EnvironmentText, Mode=TwoWay}" AcceptsReturn="True" Height="60" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">
+          <Button x:Name="ConnectButton" Content="Connect / Refresh tools" Click="Connect_Click" />
+          <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <TextBlock Text="Tools" FontWeight="SemiBold" Margin="0,8,0,0" />
+        <TextBlock Opacity="0.7" TextWrapping="Wrap"
+                   Text="Enabled: the AI may use the tool. Ask each time: every call must be approved. New tools start disabled." />
+        <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="12" Margin="0,6,0,0">
+          <CheckBox Grid.Column="0" x:Name="CheckAllEnabled" Content="Check all" Click="CheckAllEnabled_Click" />
+          <CheckBox Grid.Column="1" x:Name="CheckAllApproval" Content="Check all" Click="CheckAllApproval_Click" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Tools}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="svc:McpToolSetting">
+              <Border BorderBrush="#33808080" BorderThickness="0,0,0,1" Padding="0,6" Opacity="1">
+                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="12">
+                  <CheckBox Grid.Column="0" Content="Enabled" IsChecked="{Binding Enabled}" />
+                  <CheckBox Grid.Column="1" Content="Ask each time" IsChecked="{Binding RequireApproval}" />
+                  <StackPanel Grid.Column="2">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                      <TextBlock Text="(read-only)" Opacity="0.7"
+                                 IsVisible="{Binding ReadOnlyHint}" />
+                      <TextBlock Text="(no longer offered by server)" Foreground="OrangeRed"
+                                 IsVisible="{Binding !Available}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Opacity="0.8" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+      <Button Content="Save" Width="80" Click="Save_Click" IsDefault="True" />
+      <Button Content="Cancel" Width="80" Click="Cancel_Click" IsCancel="True" />
+    </StackPanel>
+  </Grid>
+</Window>

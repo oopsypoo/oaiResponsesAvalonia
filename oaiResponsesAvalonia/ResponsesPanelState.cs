@@ -180,6 +180,30 @@ namespace oaiResponsesAvalonia
             }
         }
 
+        private bool _useMcp;
+        public bool UseMcp
+        {
+            get => _useMcp;
+            set
+            {
+                if (_useMcp == value) return;
+                _useMcp = value;
+                OnPropertyChanged(nameof(UseMcp));
+            }
+        }
+
+        private string _mcpSummary = string.Empty;
+        public string McpSummary
+        {
+            get => _mcpSummary;
+            set
+            {
+                if (_mcpSummary == value) return;
+                _mcpSummary = value;
+                OnPropertyChanged(nameof(McpSummary));
+            }
+        }
+
         private string _developerRepositoryRoot = string.Empty;
         public string DeveloperRepositoryRoot
         {

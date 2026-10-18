@@ -93,7 +93,7 @@ namespace oaiResponsesAvalonia
             parsed.ImageOutputFormat = NormalizeImageOutputFormat(ImageGenOutputFormat);
             return parsed;
         }
-        private string BuildInstructions(DeveloperToolsOptions? developerToolsOptions)
+        private string BuildInstructions(DeveloperToolsOptions? developerToolsOptions, bool hasMcpTools = false)
         {
             var baseInstructions = @"Return all final answers as clean, well-formed GitHub-style Markdown.
                                 Use Markdown features fully when they improve clarity, including:
@@ -129,6 +129,11 @@ namespace oaiResponsesAvalonia
                                 3. code examples
                                 4. notes or caveats
                                 """;
+
+            if (hasMcpTools)
+            {
+                baseInstructions += "\n\nYou also have tools provided by external MCP servers (function names starting with mcp__). Use them when they help answer the request. The application asks the user to approve calls where needed, so do not ask for approval in chat; just call the tool.";
+            }
 
             if (developerToolsOptions == null || !developerToolsOptions.Enabled)
                 return baseInstructions;
@@ -606,12 +611,12 @@ namespace oaiResponsesAvalonia
 
             return tools.ToArray();
         }
-        private ResponsesRequest BuildRequest(object input, string? previousResponseId, DeveloperToolsOptions developerToolsOptions)
+        private ResponsesRequest BuildRequest(object input, string? previousResponseId, DeveloperToolsOptions developerToolsOptions, IReadOnlyList<object>? mcpTools = null)
         {
             var hostedTools = GetToolsForCurrentSelection().Cast<object>().ToList();
             var localFunctionTools = GetLocalFunctionTools(developerToolsOptions);
 
-            var allTools = hostedTools.Concat(localFunctionTools).ToArray();
+            var allTools = hostedTools.Concat(localFunctionTools).Concat(mcpTools ?? Array.Empty<object>()).ToArray();
 
             var request = new ResponsesRequest
             {
@@ -622,7 +627,7 @@ namespace oaiResponsesAvalonia
                 Tools = allTools,
                 ToolChoice = allTools.Length > 0 ? "auto" : null,
                 // Local file and process operations must execute in a deterministic order.
-                ParallelToolCalls = developerToolsOptions?.Enabled != true
+                ParallelToolCalls = developerToolsOptions?.Enabled != true && (mcpTools == null || mcpTools.Count == 0)
             };
 
             if (!string.IsNullOrEmpty(CurrentReasoning) && CurrentReasoning != "none")
@@ -630,7 +635,7 @@ namespace oaiResponsesAvalonia
                 request.Reasoning = new ReasoningConfig { Effort = CurrentReasoning };
             }
 
-            request.Instructions = BuildInstructions(developerToolsOptions);
+            request.Instructions = BuildInstructions(developerToolsOptions, mcpTools?.Count > 0);
 
             return request;
         }
@@ -642,16 +647,56 @@ namespace oaiResponsesAvalonia
         Func<string, string, string, Task>? onToolCallLoggedAsync = null,
         Func<string, Task>? onWorkspaceRootChangedAsync = null,
         IProgress<string>? progress = null,
-        Func<string, string, string, string, string, Task>? onToolCallActivityAsync = null)
+        Func<string, string, string, string, string, Task>? onToolCallActivityAsync = null,
+        IReadOnlyList<McpServerConfig>? mcpServers = null)
         {
-            if (developerToolsOptions == null ||
-                !developerToolsOptions.Enabled ||
-                string.IsNullOrWhiteSpace(developerToolsOptions.RepositoryRoot))
+            bool developerToolsActive = developerToolsOptions != null &&
+                developerToolsOptions.Enabled &&
+                !string.IsNullOrWhiteSpace(developerToolsOptions.RepositoryRoot);
+
+            McpToolSession? mcp = null;
+            if (mcpServers != null && mcpServers.Count > 0)
+            {
+                progress?.Report("Connecting to MCP servers...");
+                mcp = await McpToolSession.ConnectAsync(mcpServers);
+                foreach (var warning in mcp.Warnings)
+                    progress?.Report(warning);
+                if (!mcp.HasTools)
+                {
+                    await mcp.DisposeAsync();
+                    mcp = null;
+                }
+            }
+
+            if (!developerToolsActive && mcp == null)
             {
                 progress?.Report("Sending request to OpenAI...");
                 return await GetChatCompletionAsync(openAIContext, progress);
             }
 
+            try
+            {
+                return await RunToolLoopAsync(openAIContext, developerToolsActive ? developerToolsOptions! : new DeveloperToolsOptions { Enabled = false, RepositoryRoot = System.IO.Path.GetTempPath() },
+                    developerToolsActive, mcp, confirmLocalCallAsync, onToolCallLoggedAsync, onWorkspaceRootChangedAsync, progress, onToolCallActivityAsync);
+            }
+            finally
+            {
+                if (mcp != null)
+                    await mcp.DisposeAsync();
+            }
+        }
+
+        private async Task<ResponsesResult> RunToolLoopAsync(
+            List<object> openAIContext,
+            DeveloperToolsOptions developerToolsOptions,
+            bool developerToolsActive,
+            McpToolSession? mcp,
+            Func<string, string, Task<bool>>? confirmLocalCallAsync,
+            Func<string, string, string, Task>? onToolCallLoggedAsync,
+            Func<string, Task>? onWorkspaceRootChangedAsync,
+            IProgress<string>? progress,
+            Func<string, string, string, string, string, Task>? onToolCallActivityAsync)
+        {
             var guard = new WorkspaceGuard(developerToolsOptions);
             var processManager = new DeveloperProcessManager();
             var fileService = new ProjectFileToolService(developerToolsOptions, guard);
@@ -682,7 +727,7 @@ namespace oaiResponsesAvalonia
             while (true)
             {
                 progress?.Report("Building request...");
-                var request = BuildRequest(currentInput, previousResponseId, developerToolsOptions);
+                var request = BuildRequest(currentInput, previousResponseId, developerToolsOptions, mcp?.FunctionTools);
 
                 var json = JsonSerializer.Serialize(request, options);
 #if DEBUG
@@ -724,9 +769,12 @@ namespace oaiResponsesAvalonia
                 progress?.Report($"Model requested {functionCalls.Count} local tool call(s)...");
                 foreach (var call in functionCalls)
                 {
-                    bool isExecutionTool = IsExecutionDeveloperTool(call.Name);
-                    bool isWriteTool = IsWriteDeveloperTool(call.Name);
-                    bool requiresConfirmation = isExecutionTool
+                    bool isMcpTool = mcp != null && mcp.Owns(call.Name);
+                    bool isExecutionTool = !isMcpTool && IsExecutionDeveloperTool(call.Name);
+                    bool isWriteTool = !isMcpTool && IsWriteDeveloperTool(call.Name);
+                    bool requiresConfirmation = isMcpTool
+                        ? mcp!.RequiresApproval(call.Name)
+                        : isExecutionTool
                         ? developerToolsOptions.RequireExecutionConfirmation
                         : isWriteTool
                             ? developerToolsOptions.RequireWriteConfirmation
@@ -770,7 +818,11 @@ namespace oaiResponsesAvalonia
                     string toolResult;
                     try
                     {
-                        toolResult = await dispatcher.DispatchAsync(call.Name, arguments);
+                        toolResult = isMcpTool
+                            ? await mcp!.CallAsync(call.Name, arguments)
+                            : developerToolsActive
+                                ? await dispatcher.DispatchAsync(call.Name, arguments)
+                                : JsonSerializer.Serialize(new { ok = false, error = "Unknown tool." });
                     }
                     catch (Exception ex)
                     {

@@ -61,6 +61,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Opened += (_, _) => RefreshMcpSummary();
         Closed += MainWindow_Closed;
         _appStatus = new AppStatus(text => StatusText.Text = text ?? string.Empty);
 
@@ -475,6 +476,12 @@ public partial class MainWindow : Window
         _availableModelsWindow.ModelsApplied += AvailableModelsWindow_ModelsApplied;
         _availableModelsWindow.Closed += AvailableModelsWindow_Closed;
         _availableModelsWindow.Show(this);
+    }
+
+    private async void menuMcpServers_Click(object? sender, RoutedEventArgs e)
+    {
+        await _dialogs.ShowModalForResultAsync(this, new McpServersWindow());
+        RefreshMcpSummary();
     }
 
     private async void menuSettings_Click(object? sender, RoutedEventArgs e)

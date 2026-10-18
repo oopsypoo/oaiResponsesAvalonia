@@ -171,6 +171,7 @@ namespace oaiResponsesAvalonia.Views
             ResponsesState.ImageGenBackground = "auto";
             //--------Developer function-tool-calls-----------
             ResponsesState.UseDeveloperTools = false;
+            ResponsesState.UseMcp = false;
             ResponsesState.DeveloperRepositoryRoot = string.Empty;
             ResponsesState.DeveloperScope = "repository";
             ResponsesState.DeveloperAllowReadOnlyOnly = true;
@@ -426,6 +427,7 @@ namespace oaiResponsesAvalonia.Views
         private void ResetDeveloperToolsState()
         {
             ResponsesState.UseDeveloperTools = false;
+            ResponsesState.UseMcp = false;
             ResponsesState.DeveloperRepositoryRoot = string.Empty;
             ResponsesState.DeveloperScope = "repository";
             ResponsesState.DeveloperAllowReadOnlyOnly = true;
@@ -650,7 +652,8 @@ namespace oaiResponsesAvalonia.Views
                         onToolCallLoggedAsync: LogDeveloperToolCallAsync,
                         onToolCallActivityAsync: UpdateDeveloperToolActivityAsync,
                         onWorkspaceRootChangedAsync: UpdateDeveloperWorkspaceRootAsync,
-                        progress: progress);
+                        progress: progress,
+                        mcpServers: ResponsesState.UseMcp ? McpServerStore.Load() : null);
                     developerToolSettingsJson = BuildDeveloperToolSettingsJson();
                     string toolCallLogJson = BuildDeveloperToolCallLogJson();
                     if (result != null)
@@ -1201,6 +1204,9 @@ namespace oaiResponsesAvalonia.Views
             [JsonPropertyName("enabled")]
             public bool Enabled { get; set; }
 
+            [JsonPropertyName("mcp_enabled")]
+            public bool McpEnabled { get; set; }
+
             [JsonPropertyName("repository_root")]
             public string RepositoryRoot { get; set; } = string.Empty;
 
@@ -1264,6 +1270,7 @@ namespace oaiResponsesAvalonia.Views
             var snapshot = new DeveloperToolSettingsSnapshot
             {
                 Enabled = ResponsesState.UseDeveloperTools,
+                McpEnabled = ResponsesState.UseMcp,
                 RepositoryRoot = ResponsesState.DeveloperRepositoryRoot ?? string.Empty,
                 Scope = string.IsNullOrWhiteSpace(ResponsesState.DeveloperScope)
                     ? "repository"
@@ -1332,6 +1339,7 @@ namespace oaiResponsesAvalonia.Views
                     return;
 
                 ResponsesState.UseDeveloperTools = snapshot.Enabled;
+                ResponsesState.UseMcp = snapshot.McpEnabled;
                 ResponsesState.DeveloperRepositoryRoot = snapshot.RepositoryRoot ?? string.Empty;
                 ResponsesState.DeveloperScope = string.IsNullOrWhiteSpace(snapshot.Scope)
                     ? "repository"
@@ -1544,6 +1552,15 @@ namespace oaiResponsesAvalonia.Views
                 MaxWriteFileBytes = 512 * 1024
             };
         }
+        public void RefreshMcpSummary()
+        {
+            var servers = McpServerStore.Load().Where(x => x.Enabled).ToList();
+            int tools = servers.Sum(x => x.Tools.Count(t => t.Enabled));
+            ResponsesState.McpSummary = servers.Count == 0
+                ? "No servers configured (Tools > MCP servers)"
+                : $"{servers.Count} server(s), {tools} tool(s) enabled";
+        }
+
         private async Task<bool> ConfirmDeveloperToolCallAsync(string toolName, string argumentsJson)
         {
             bool isWriteTool =
@@ -1554,13 +1571,14 @@ namespace oaiResponsesAvalonia.Views
                 return await ShowPendingToolReviewAsync(toolName, argumentsJson);
 
             string message =
-                $"Allow local tool call?\n\n" +
+                $"Allow tool call?\n\n" +
                 $"Tool: {toolName}\n\n" +
                 $"Arguments:\n{argumentsJson}";
 
+            bool isMcp = toolName.StartsWith("mcp__", StringComparison.Ordinal);
             return await _dialogs.ConfirmAsync(
                 this,
-                "Confirm local developer tool call",
+                isMcp ? "Confirm MCP tool call" : "Confirm local developer tool call",
                 message);
         }
 

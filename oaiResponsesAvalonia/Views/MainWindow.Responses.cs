@@ -159,6 +159,8 @@ namespace oaiResponsesAvalonia.Views
                     Tag = model.Id
                 });
             }
+
+            ResponsesState.ImageGenModel = selectedModel;
         }
 
         private void SelectImageGenerationModel()
@@ -1155,7 +1157,10 @@ namespace oaiResponsesAvalonia.Views
                 ResponsesState.ImageGenOutputFormat = "jpeg";
                 ResponsesState.ImageGenBackground = "auto";
                 ResponsesState.ImageGenOutputCompression = 85;
-                ApplyImageToolSettingsFromJson(settingsMessage.ImageToolSettingsJson);
+                string imageToolSettingsJson = history
+                    .LastOrDefault(message => !string.IsNullOrWhiteSpace(message.ImageToolSettingsJson))
+                    ?.ImageToolSettingsJson ?? string.Empty;
+                ApplyImageToolSettingsFromJson(imageToolSettingsJson);
                 ApplyResponsesToolsToState(settingsMessage.ActiveTools);
                 ApplyDeveloperToolSettingsFromJson(settingsMessage.DeveloperToolSettingsJson);
             }

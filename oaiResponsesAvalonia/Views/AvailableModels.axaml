@@ -62,6 +62,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -93,11 +94,17 @@
                               IsCheckedChanged="chkUseRegex_IsCheckedChanged"
                               ToolTip.Tip="Check to interpret the filter as a regular expression"/>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5"
+                    <CheckBox x:Name="chkHideShutdownModels"
+                              Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5"
+                              Content="Hide models with a scheduled shutdown"
+                              IsCheckedChanged="chkHideShutdownModels_IsCheckedChanged"
+                              ToolTip.Tip="Hide models whose API response includes a shutdown date; saved model selections are unchanged"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5"
                                Text="Tip: Plain text filter is easiest. Enable regex only when needed."
                                FontSize="12"
                                Foreground="LightGray"
-                               Margin="0,8,0,0"/>
+                               Margin="0,6,0,0"/>
                 </Grid>
             </Border>
 
@@ -114,6 +121,7 @@
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
@@ -122,8 +130,13 @@
                                    Text="Available models"
                                    Classes="models-header"/>
 
+                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="6,0,12,4">
+                            <TextBlock Text="Model" FontSize="12" Foreground="LightGray"/>
+                            <TextBlock Grid.Column="1" Text="Shutdown date" FontSize="12" Foreground="LightGray"/>
+                        </Grid>
+
                         <ListBox x:Name="lbAvailableModels"
-                                 Grid.Row="1"
+                                 Grid.Row="2"
                                  FontSize="14"
                                  SelectionMode="Multiple"
                                  Background="#1E1E1E"
@@ -135,10 +148,19 @@
                                  MinWidth="280"
                                  MinHeight="260"
                                  DoubleTapped="lbAvailableModels_DoubleTapped"
-                                 KeyDown="lbAvailableModels_KeyDown"/>
+                                 KeyDown="lbAvailableModels_KeyDown">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="settings:ModelData">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                        <TextBlock Text="{Binding Id}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding ShutdownDate}" Foreground="LightGray"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
 
                         <TextBlock x:Name="txtAvailableCount"
-                                   Grid.Row="2"
+                                   Grid.Row="3"
                                    Margin="0,8,0,0"
                                    FontSize="12"
                                    Foreground="LightGray"

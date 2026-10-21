@@ -23,13 +23,16 @@ namespace oaiResponsesAvalonia
     {
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
+
+        [JsonPropertyName("shutdown_date")]
+        public string? ShutdownDate { get; set; }
     }
 
     public static class ModelApiService
     {
         private static readonly HttpClient _httpClient = new HttpClient();
         private const string ModelsEndpoint = "https://api.openai.com/v1/models";
-        public static async Task<List<string>> GetAvailableModelsAsync(string apiKey, string? endpoint = null)
+        public static async Task<List<ModelData>> GetAvailableModelsAsync(string apiKey, string? endpoint = null)
         {
             string url = string.IsNullOrWhiteSpace(endpoint)
                 ? ModelsEndpoint
@@ -51,12 +54,12 @@ namespace oaiResponsesAvalonia
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             return modelsResponse?.Data?
-                .Select(m => m.Id)
-                .Where(id => !string.IsNullOrWhiteSpace(id))
-                .Distinct()
-                .OrderBy(id => id)
+                .Where(model => !string.IsNullOrWhiteSpace(model.Id))
+                .GroupBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
                 .ToList()
-                ?? new List<string>();
+                ?? new List<ModelData>();
         }
     }
     public static class AvailableModelsStorage

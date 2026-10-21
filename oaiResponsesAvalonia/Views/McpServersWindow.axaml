@@ -45,16 +45,16 @@
 
         <StackPanel IsVisible="{Binding IsHttp}" Spacing="6">
           <TextBlock Text="URL" FontWeight="SemiBold" />
-          <TextBox Text="{Binding Url, Mode=TwoWay}" Watermark="https://example.com/mcp" />
+          <TextBox Text="{Binding Url, Mode=TwoWay}" PlaceholderText="https://example.com/mcp" />
           <TextBlock Text="Headers (one 'Name: value' per line; use ${ENV_VAR} for secrets)" />
           <TextBox Text="{Binding HeadersText, Mode=TwoWay}" AcceptsReturn="True" Height="60" />
         </StackPanel>
 
         <StackPanel IsVisible="{Binding IsStdio}" Spacing="6">
           <TextBlock Text="Command" FontWeight="SemiBold" />
-          <TextBox Text="{Binding Command, Mode=TwoWay}" Watermark="npx" />
+          <TextBox Text="{Binding Command, Mode=TwoWay}" PlaceholderText="npx" />
           <TextBlock Text="Arguments" FontWeight="SemiBold" />
-          <TextBox Text="{Binding Arguments, Mode=TwoWay}" Watermark="-y @modelcontextprotocol/server-everything" />
+          <TextBox Text="{Binding Arguments, Mode=TwoWay}" PlaceholderText="-y @modelcontextprotocol/server-everything" />
           <TextBlock Text="Environment (one KEY=VALUE per line; use ${ENV_VAR} for secrets)" />
           <TextBox Text="{Binding EnvironmentText, Mode=TwoWay}" AcceptsReturn="True" Height="60" />
         </StackPanel>

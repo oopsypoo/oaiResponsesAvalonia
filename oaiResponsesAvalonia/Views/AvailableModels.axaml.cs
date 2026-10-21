@@ -17,7 +17,7 @@ namespace oaiResponsesAvalonia.Views
     /// </summary>
     public partial class AvailableModels : Window
     {
-        private readonly List<string> _allAvailableModels;
+        private readonly List<ModelData> _allAvailableModels;
         private readonly List<string> _selectedModels;
         private readonly IDialogService _dialogs = new AvaloniaDialogService();
 
@@ -26,16 +26,16 @@ namespace oaiResponsesAvalonia.Views
         public event Action<List<string>>? ModelsApplied;
 
         public AvailableModels()
-            : this(Array.Empty<string>(), Array.Empty<string>())
+            : this(Array.Empty<ModelData>(), Array.Empty<string>())
         {
         }
 
-        public AvailableModels(IEnumerable<string> availableModels, IEnumerable<string>? currentSelectedModels = null)
+        public AvailableModels(IEnumerable<ModelData> availableModels, IEnumerable<string>? currentSelectedModels = null)
         {
             InitializeComponent();
             AddHandler(InputElement.KeyDownEvent, Window_PreviewKeyDown, RoutingStrategies.Tunnel);
-            _allAvailableModels = NormalizeDistinct(availableModels)
-                .OrderBy(model => model, StringComparer.OrdinalIgnoreCase)
+            _allAvailableModels = NormalizeModels(availableModels)
+                .OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             _selectedModels = (currentSelectedModels is not null
@@ -45,6 +45,30 @@ namespace oaiResponsesAvalonia.Views
                 .ToList();
 
             RefreshAll();
+        }
+
+        private static List<ModelData> NormalizeModels(IEnumerable<ModelData>? models)
+        {
+            var result = new List<ModelData>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (models is null)
+                return result;
+
+            foreach (ModelData? model in models)
+            {
+                string id = model?.Id?.Trim() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(id) && seen.Add(id))
+                {
+                    result.Add(new ModelData
+                    {
+                        Id = id,
+                        ShutdownDate = model?.ShutdownDate
+                    });
+                }
+            }
+
+            return result;
         }
 
         private static List<string> NormalizeDistinct(IEnumerable<string>? models)
@@ -82,45 +106,48 @@ namespace oaiResponsesAvalonia.Views
 
         private void RefreshAvailableList()
         {
-            IEnumerable<string> available = _allAvailableModels
-                .Where(model => !_selectedModels.Contains(model, StringComparer.OrdinalIgnoreCase));
-            List<string> filtered = ApplyFilter(available);
+            IEnumerable<ModelData> available = _allAvailableModels
+                .Where(model => !_selectedModels.Contains(model.Id, StringComparer.OrdinalIgnoreCase));
 
+            if (chkHideShutdownModels.IsChecked == true)
+                available = available.Where(model => string.IsNullOrWhiteSpace(model.ShutdownDate));
+
+            List<ModelData> filtered = ApplyFilter(available);
             lbAvailableModels.ItemsSource = filtered;
             txtAvailableCount.Text = _filterHasError
                 ? "Invalid regex"
                 : $"{filtered.Count} model(s)";
         }
 
-        private List<string> ApplyFilter(IEnumerable<string> source)
+        private List<ModelData> ApplyFilter(IEnumerable<ModelData> source)
         {
             _filterHasError = false;
             ClearFilterError();
 
             string filterText = tbFilter.Text?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(filterText))
-                return source.OrderBy(model => model, StringComparer.OrdinalIgnoreCase).ToList();
+                return source.OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase).ToList();
 
             if (chkUseRegex.IsChecked == true)
             {
                 try
                 {
                     var regex = new Regex(filterText, RegexOptions.IgnoreCase);
-                    return source.Where(model => regex.IsMatch(model))
-                        .OrderBy(model => model, StringComparer.OrdinalIgnoreCase)
+                    return source.Where(model => regex.IsMatch(model.Id))
+                        .OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
                         .ToList();
                 }
                 catch (ArgumentException ex)
                 {
                     _filterHasError = true;
                     ShowFilterError(ex.Message);
-                    return new List<string>();
+                    return new List<ModelData>();
                 }
             }
 
             return source
-                .Where(model => model.Contains(filterText, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(model => model, StringComparer.OrdinalIgnoreCase)
+                .Where(model => model.Id.Contains(filterText, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
 
@@ -154,16 +181,20 @@ namespace oaiResponsesAvalonia.Views
             RefreshAll();
         }
 
-        private List<string> GetVisibleAvailableModels() => lbAvailableModels.Items.Cast<string>().ToList();
+        private List<string> GetVisibleAvailableModels() =>
+            lbAvailableModels.Items.OfType<ModelData>().Select(model => model.Id).ToList();
 
         private List<string> GetSelectedModelsFromRightList() => lbSelectedModels.Items.Cast<string>().ToList();
 
         private static List<string> GetSelectedItems(ListBox listBox) =>
             listBox.SelectedItems?.OfType<string>().ToList() ?? new List<string>();
 
+        private static List<string> GetSelectedAvailableItems(ListBox listBox) =>
+            listBox.SelectedItems?.OfType<ModelData>().Select(model => model.Id).ToList() ?? new List<string>();
+
         private void Button_AddSelected_Click(object? sender, RoutedEventArgs e)
         {
-            List<string> selected = GetSelectedItems(lbAvailableModels);
+            List<string> selected = GetSelectedAvailableItems(lbAvailableModels);
             if (selected.Count > 0)
                 AddModelsToSelected(selected);
         }
@@ -250,9 +281,11 @@ namespace oaiResponsesAvalonia.Views
 
         private void chkUseRegex_IsCheckedChanged(object? sender, RoutedEventArgs e) => RefreshAvailableList();
 
+        private void chkHideShutdownModels_IsCheckedChanged(object? sender, RoutedEventArgs e) => RefreshAvailableList();
+
         private void lbAvailableModels_DoubleTapped(object? sender, TappedEventArgs e)
         {
-            if (GetSelectedItems(lbAvailableModels).Count > 0)
+            if (GetSelectedAvailableItems(lbAvailableModels).Count > 0)
                 MoveSelectedAvailableToRightAndKeepFocus();
         }
 
@@ -266,7 +299,7 @@ namespace oaiResponsesAvalonia.Views
         {
             if (e.Key == Key.Enter)
             {
-                if (GetSelectedItems(lbAvailableModels).Count > 0)
+                if (GetSelectedAvailableItems(lbAvailableModels).Count > 0)
                     MoveSelectedAvailableToRightAndKeepFocus();
                 else if (lbAvailableModels.Items.Count > 0)
                 {
@@ -344,7 +377,7 @@ namespace oaiResponsesAvalonia.Views
         private void MoveSelectedAvailableToRightAndKeepFocus()
         {
             int oldIndex = lbAvailableModels.SelectedIndex;
-            List<string> selected = GetSelectedItems(lbAvailableModels);
+            List<string> selected = GetSelectedAvailableItems(lbAvailableModels);
             if (selected.Count == 0)
                 return;
 

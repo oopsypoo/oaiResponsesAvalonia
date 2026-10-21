@@ -30,7 +30,7 @@ namespace oaiResponsesAvalonia.Views
     /// </summary>
     public partial class MainWindow
     {
-        private List<string> _allModelsFromApi = new();
+        private List<ModelData> _allModelsFromApi = new();
         private List<string> _activeModelsForResponses = new();
         private bool _isApplyingResponsesSettings;
         private bool _responsesWebViewInitialized;
@@ -96,24 +96,26 @@ namespace oaiResponsesAvalonia.Views
         private List<string> GetHardcodedResponseModels()
         {
             return new List<string>
-            {
+            {/// GPT-4, and some others are deprecated, and their support will be removed at different times.
+                ///https://developers.openai.com/api/docs/models/all
                 // Frontier GPT-5 family (reasoning-enabled)
-                "gpt-5.2",
-                "gpt-5.2-pro",
-                "gpt-5.1",
-                "gpt-5-pro",
-                "gpt-5-mini",
+                "gpt-6-luna",
+                //"gpt-5.2-pro",
+                //"gpt-5.1",
+                //"gpt-5-pro",
+                //"gpt-5-mini",
+                
                 // GPT-4.1 family (non-reasoning)
-                "gpt-4.1",
-                "gpt-4.1-mini",
+                //"gpt-4.1",
+                //"gpt-4.1-mini",
                 // GPT-4o series
-                "gpt-4o",
-                "gpt-4o-mini",
+                //"gpt-4o",
+                //"gpt-4o-mini",
                 // Dedicated reasoning models (o-series)
-                "o3",
-                "o3-pro",
-                "o3-mini",
-                "o4-mini"
+                //"o3",
+                //"o3-pro",
+                //"o3-mini",
+                //"o4-mini"
             };
         }
         private async Task LoadApiModelsCacheAsync()
@@ -138,7 +140,7 @@ namespace oaiResponsesAvalonia.Views
                 try
                 {
                     _allModelsFromApi = await ModelApiService.GetAvailableModelsAsync(OpenAPIKey);
-                    modelsToUse = _allModelsFromApi;
+                    modelsToUse = _allModelsFromApi.Select(model => model.Id).ToList();
                 }
                 catch
                 {

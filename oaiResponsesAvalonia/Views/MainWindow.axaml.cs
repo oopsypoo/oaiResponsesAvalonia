@@ -460,7 +460,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        List<string> models;
+        List<ModelData> models;
         try
         {
             models = _allModelsFromApi.Count > 0
@@ -469,7 +469,9 @@ public partial class MainWindow : Window
         }
         catch
         {
-            models = GetHardcodedResponseModels();
+            models = GetHardcodedResponseModels()
+                .Select(model => new ModelData { Id = model })
+                .ToList();
         }
 
         _availableModelsWindow = new AvailableModels(models, _activeModelsForResponses);

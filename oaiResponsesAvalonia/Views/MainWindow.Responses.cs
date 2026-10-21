@@ -482,13 +482,23 @@ namespace oaiResponsesAvalonia.Views
             ClearDeveloperToolCallLogs();
             HideResponsesImagePreview();
             ResetDeveloperToolsState();
-
+            ResetImageGenerationState();
             if (!string.IsNullOrWhiteSpace(workspaceRoot) && Directory.Exists(workspaceRoot))
                 ResponsesState.DeveloperRepositoryRoot = Path.GetFullPath(workspaceRoot);
 
             await RenderResponsesMarkdownAsync(string.Empty);
             if (_responsesClient != null)
                 _responsesClient.ClearConversation();
+        }
+        private void ResetImageGenerationState()
+        {
+            ResponsesState.UseImageGeneration = false;
+            ResponsesState.ImageGenModel = string.Empty;
+            ResponsesState.ImageGenSize = "auto";
+            ResponsesState.ImageGenQuality = "auto";
+            ResponsesState.ImageGenOutputFormat = "jpeg";
+            ResponsesState.ImageGenOutputCompression = 85;
+            ResponsesState.ImageGenBackground = "auto";
         }
         private void ResetDeveloperToolsState()
         {

@@ -964,6 +964,58 @@ namespace oaiResponsesAvalonia.Views
             }
         }
 
+        /// <summary>
+        /// Opens the platform save picker and copies the selected preview image to the chosen destination.
+        /// </summary>
+        private async void MenuItemImageSaveAs_Click(object? sender, RoutedEventArgs e)
+        {
+            var path = GetCurrentPreviewImagePath();
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                await _dialogs.ShowMessageAsync(this, "Save as", "No image selected or file not found.");
+                return;
+            }
+
+            try
+            {
+                var topLevel = TopLevel.GetTopLevel(this)
+                    ?? throw new InvalidOperationException("The window is not attached to a top level.");
+                if (!topLevel.StorageProvider.CanSave)
+                {
+                    await _dialogs.ShowMessageAsync(this, "Save as", "A save file picker is not available on this platform.");
+                    return;
+                }
+
+                var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+                {
+                    Title = "Save image as",
+                    SuggestedFileName = Path.GetFileName(path),
+                    FileTypeChoices = new[] { FilePickerFileTypes.All },
+                    ShowOverwritePrompt = true
+                });
+
+                if (destination is null)
+                    return;
+
+                if (destination.Path is { IsFile: true } destinationPath &&
+                    string.Equals(
+                        Path.GetFullPath(destinationPath.LocalPath),
+                        Path.GetFullPath(path),
+                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                await using var source = File.OpenRead(path);
+                await using var output = await destination.OpenWriteAsync();
+                await source.CopyToAsync(output);
+            }
+            catch (Exception ex)
+            {
+                await _dialogs.ShowMessageAsync(this, "Error", $"Could not save image:\n{ex.Message}", DialogSeverity.Error);
+            }
+        }
+
         private void ctxImagePreview_Opening(object? sender, CancelEventArgs e)
         {
             if (sender is not ContextMenu contextMenu)

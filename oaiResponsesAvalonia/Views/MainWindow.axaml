@@ -400,6 +400,7 @@
                                                             <Separator/>
                                                             <MenuItem Tag="OpenWithApps" Header="Open with" IsVisible="False" />
                                                             <MenuItem Tag="OpenWithDialog" Header="Open with" Click="MenuItemImageOpenWith_Click" />
+                                                            <MenuItem Header="Save as…" Click="MenuItemImageSaveAs_Click" />
                                                         </ContextMenu>
                                                     </Image.ContextMenu>
                                                 </Image>

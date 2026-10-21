@@ -1,4 +1,4 @@
-﻿<!-- xmlns:vm="using:oaiResponsesAvalonia" -->
+<!-- xmlns:vm="using:oaiResponsesAvalonia" -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -749,19 +749,40 @@
                                                     <ComboBoxItem Content="low" Tag="low"/>
                                                     <ComboBoxItem Content="medium" Tag="medium"/>
                                                     <ComboBoxItem Content="high" Tag="high"/>
+                                                    <ComboBoxItem Content="xhigh" Tag="xhigh"/>
+                                                    <ComboBoxItem Content="max" Tag="max"/>
                                                 </ComboBox>
 
                                                 <Label Grid.Row="2" Content="Image Size" Margin="0,8,0,4"/>
-                                                <ComboBox Grid.Row="3"
-                                                          x:Name="cmbImageGenSize"
-                                                          SelectedValueBinding="{Binding Tag}"
-                                                          IsEnabled="{Binding #RootWindow.ResponsesState.IsImageGenerationOptionsEnabled}"
-                                                          SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenSize, Mode=TwoWay}">
-                                                    <ComboBoxItem Content="auto" Tag="auto" IsSelected="True"/>
-                                                    <ComboBoxItem Content="1024x1024" Tag="1024x1024"/>
-                                                    <ComboBoxItem Content="1536x1024" Tag="1536x1024"/>
-                                                    <ComboBoxItem Content="1024x1536" Tag="1024x1536"/>
-                                                </ComboBox>
+                                                <Grid Grid.Row="3">
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                    </Grid.RowDefinitions>
+                                                    <ComboBox Grid.Row="0"
+                                                              x:Name="cmbImageGenSize"
+                                                              SelectedValueBinding="{Binding Tag}"
+                                                              IsEnabled="{Binding #RootWindow.ResponsesState.IsImageGenerationOptionsEnabled}"
+                                                              SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenSize, Mode=TwoWay}">
+                                                        <ComboBoxItem Content="auto" Tag="auto" IsSelected="True"/>
+                                                        <ComboBoxItem Content="1024x1024" Tag="1024x1024"/>
+                                                        <ComboBoxItem Content="1536x1024" Tag="1536x1024"/>
+                                                        <ComboBoxItem Content="1024x1536" Tag="1024x1536"/>
+                                                        <ComboBoxItem Content="Custom…" Tag="custom"/>
+                                                    </ComboBox>
+                                                    <StackPanel Grid.Row="1"
+                                                                Orientation="Horizontal"
+                                                                Spacing="6"
+                                                                Margin="0,4,0,0"
+                                                                IsVisible="{Binding #RootWindow.ResponsesState.IsCustomImageSizeSelected}">
+                                                        <TextBox Width="140"
+                                                                 PlaceholderText="WIDTHxHEIGHT"
+                                                                 Text="{Binding #RootWindow.ResponsesState.ImageGenCustomSizeText, Mode=TwoWay}"/>
+                                                        <TextBlock VerticalAlignment="Center"
+                                                                   FontSize="11"
+                                                                   Text="{Binding #RootWindow.ResponsesState.ImageGenCustomSizeValidationMessage}"/>
+                                                    </StackPanel>
+                                                </Grid>
 
                                                 <Label Grid.Row="4"
                                                        Content="Output Format"

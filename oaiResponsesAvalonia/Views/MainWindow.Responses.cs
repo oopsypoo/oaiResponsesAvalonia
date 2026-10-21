@@ -584,6 +584,12 @@ namespace oaiResponsesAvalonia.Views
             if (string.IsNullOrWhiteSpace(userPrompt) && !hasAttachedFiles)
                 return;
 
+            if (ResponsesState.UseImageGeneration && !ResponsesState.IsCustomImageSizeValid)
+            {
+                _appStatus.Set(ResponsesState.ImageGenCustomSizeValidationMessage);
+                return;
+            }
+
             ResponsesState.IsRequestInProgress = true;
             using (_appStatus.Operation("Preparing request..."))
             {
@@ -591,7 +597,7 @@ namespace oaiResponsesAvalonia.Views
                 {
                     string model = ResponsesState.SelectedModel;
                     string reasoning = ResponsesState.SelectedReasoning;
-                    string imgSize = ResponsesState.ImageGenSize;
+                    string imgSize = ResponsesState.ImageGenSizeForRequest;
                     string imgQual = ResponsesState.ImageGenQuality;
                     string searchSize = ResponsesState.SearchContextSize;
                     string imageToolSettingsJson = BuildImageToolSettingsJson();
@@ -1142,7 +1148,7 @@ namespace oaiResponsesAvalonia.Views
             _responsesClient.CurrentReasoning = ResponsesState.SelectedReasoning;
             _responsesClient.WebSearchContextSize = ResponsesState.SearchContextSize;
             _responsesClient.ImageGenQuality = ResponsesState.ImageGenQuality;
-            _responsesClient.ImageGenSize = ResponsesState.ImageGenSize;
+            _responsesClient.ImageGenSize = ResponsesState.ImageGenSizeForRequest;
             _responsesClient.ImageGenOutputFormat = ResponsesState.ImageGenOutputFormat;
             _responsesClient.ImageGenOutputCompression = ResponsesState.ImageGenOutputCompression;
             _responsesClient.ImageGenBackground = ResponsesState.ImageGenBackground;
@@ -1189,6 +1195,9 @@ namespace oaiResponsesAvalonia.Views
 
             [JsonPropertyName("size")]
             public string Size { get; set; } = "auto";
+
+            [JsonPropertyName("custom_size")]
+            public string? CustomSize { get; set; }
 
             [JsonPropertyName("output_format")]
             public string OutputFormat { get; set; } = "jpeg";
@@ -1246,6 +1255,10 @@ namespace oaiResponsesAvalonia.Views
                 Size = string.IsNullOrWhiteSpace(ResponsesState.ImageGenSize)
                     ? "auto"
                     : ResponsesState.ImageGenSize,
+
+                CustomSize = ResponsesState.IsCustomImageSizeSelected
+                    ? ResponsesState.ImageGenCustomSizeText
+                    : null,
 
                 OutputFormat = string.IsNullOrWhiteSpace(ResponsesState.ImageGenOutputFormat)
                     ? "jpeg"
@@ -1307,6 +1320,11 @@ namespace oaiResponsesAvalonia.Views
 
                 ResponsesState.ImageGenQuality =
                     string.IsNullOrWhiteSpace(snapshot.Quality) ? "auto" : snapshot.Quality;
+
+                if (!string.IsNullOrWhiteSpace(snapshot.CustomSize))
+                    ResponsesState.ImageGenCustomSizeText = snapshot.CustomSize;
+                else if (string.Equals(snapshot.Size, "custom", StringComparison.OrdinalIgnoreCase))
+                    ResponsesState.ImageGenCustomSizeText = "1024x1024";
 
                 ResponsesState.ImageGenSize =
                     string.IsNullOrWhiteSpace(snapshot.Size) ? "auto" : snapshot.Size;

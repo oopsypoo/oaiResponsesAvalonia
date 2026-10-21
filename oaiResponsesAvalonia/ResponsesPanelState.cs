@@ -1,5 +1,6 @@
 using oaiResponsesAvalonia.Data;
 using System;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace oaiResponsesAvalonia
@@ -84,15 +85,129 @@ namespace oaiResponsesAvalonia
         public string ImageGenQuality
         {
             get => _imageGenQuality;
-            set => SetProperty(ref _imageGenQuality, NormalizeImageSetting(value, "auto", "auto", "low", "medium", "high"));
+            set => SetProperty(ref _imageGenQuality, NormalizeImageSetting(value, "auto", "auto", "low", "medium", "high", "xhigh", "max"));
         }
 
         private string _imageGenSize = "auto";
         public string ImageGenSize
         {
             get => _imageGenSize;
-            set => SetProperty(ref _imageGenSize, NormalizeImageSetting(value, "auto", "auto", "1024x1024", "1536x1024", "1024x1536"));
+            set
+            {
+                string normalizedValue;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    normalizedValue = "auto";
+                }
+                else if (string.Equals(value, "custom", StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedValue = "custom";
+                }
+                else if (string.Equals(value, "auto", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(value, "1024x1024", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(value, "1536x1024", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(value, "1024x1536", StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedValue = value.ToLowerInvariant();
+                }
+                else
+                {
+                    // Older history records may already store a literal WIDTHxHEIGHT size.
+                    ImageGenCustomSizeText = value;
+                    normalizedValue = "custom";
+                }
+
+                if (SetProperty(ref _imageGenSize, normalizedValue))
+                {
+                    OnPropertyChanged(nameof(ImageGenSizeForRequest));
+                    OnPropertyChanged(nameof(IsCustomImageSizeSelected));
+                    OnPropertyChanged(nameof(ImageGenCustomSizeValidationMessage));
+                    OnPropertyChanged(nameof(IsCustomImageSizeValid));
+                }
+            }
         }
+        private string _imageGenCustomSizeText = "1024x1024";
+        public string ImageGenCustomSizeText
+        {
+            get => _imageGenCustomSizeText;
+            set
+            {
+                if (SetProperty(ref _imageGenCustomSizeText, value?.Trim() ?? string.Empty))
+                {
+                    OnPropertyChanged(nameof(ImageGenSizeForRequest));
+                    OnPropertyChanged(nameof(ImageGenCustomSizeValidationMessage));
+                    OnPropertyChanged(nameof(IsCustomImageSizeValid));
+                }
+            }
+        }
+
+        public bool IsCustomImageSizeSelected =>
+            string.Equals(ImageGenSize, "custom", StringComparison.OrdinalIgnoreCase);
+
+        public bool IsCustomImageSizeValid =>
+            !IsCustomImageSizeSelected || TryValidateCustomImageSize(ImageGenCustomSizeText, out _, out _);
+
+        public string ImageGenSizeForRequest =>
+            IsCustomImageSizeSelected ? ImageGenCustomSizeText : ImageGenSize;
+
+        public string ImageGenCustomSizeValidationMessage
+        {
+            get
+            {
+                if (!IsCustomImageSizeSelected)
+                    return string.Empty;
+
+                if (!TryValidateCustomImageSize(ImageGenCustomSizeText, out long pixels, out string error))
+                    return error;
+
+                return pixels > 2560L * 1440L
+                    ? "Valid size; resolutions above 2560x1440 are experimental."
+                    : $"Valid size ({pixels:N0} pixels).";
+            }
+        }
+
+        private static bool TryValidateCustomImageSize(string? value, out long pixelCount, out string error)
+        {
+            pixelCount = 0;
+            error = string.Empty;
+            string[] dimensions = (value ?? string.Empty).Split('x', 'X');
+            if (dimensions.Length != 2 ||
+                !int.TryParse(dimensions[0].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int width) ||
+                !int.TryParse(dimensions[1].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int height) ||
+                width <= 0 || height <= 0)
+            {
+                error = "Enter dimensions as WIDTHxHEIGHT, for example 1536x864.";
+                return false;
+            }
+
+            if (width % 16 != 0 || height % 16 != 0)
+            {
+                error = "Width and height must both be multiples of 16.";
+                return false;
+            }
+
+            if (width > 3840 || height > 3840)
+            {
+                error = "Neither dimension may exceed 3840 pixels.";
+                return false;
+            }
+
+            if ((long)width > (long)height * 3 || (long)height > (long)width * 3)
+            {
+                error = "Aspect ratio must be between 1:3 and 3:1.";
+                return false;
+            }
+
+            pixelCount = (long)width * height;
+            if (pixelCount < 655_360 || pixelCount > 8_294_400)
+            {
+                error = "Pixel count must be between 655,360 and 8,294,400.";
+                return false;
+            }
+
+            return true;
+        }
+
         private string _imageGenOutputFormat = "jpeg";
         public string ImageGenOutputFormat
         {

@@ -222,6 +222,7 @@ public partial class MainWindow : Window
             case nameof(ResponsesPanelState.SearchContextSize):
             case nameof(ResponsesPanelState.ImageGenQuality):
             case nameof(ResponsesPanelState.ImageGenSize):
+            case nameof(ResponsesPanelState.ImageGenCustomSizeText):
             case nameof(ResponsesPanelState.ImageGenOutputFormat):
             case nameof(ResponsesPanelState.ImageGenOutputCompression):
             case nameof(ResponsesPanelState.ImageGenBackground):

@@ -8,6 +8,9 @@ namespace oaiResponsesAvalonia
     {
         private sealed class Snapshot
         {
+            [JsonPropertyName("model")]
+            public string? Model { get; set; }
+
             [JsonPropertyName("quality")]
             public string? Quality { get; set; }
 
@@ -37,6 +40,9 @@ namespace oaiResponsesAvalonia
                     return string.Empty;
 
                 var parts = new List<string>();
+
+                if (!string.IsNullOrWhiteSpace(s.Model))
+                    parts.Add($"model: {s.Model}");
 
                 if (!string.IsNullOrWhiteSpace(s.OutputFormat))
                     parts.Add($"fmt: {s.OutputFormat}");

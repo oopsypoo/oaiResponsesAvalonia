@@ -118,11 +118,68 @@ namespace oaiResponsesAvalonia.Views
                 //"o4-mini"
             };
         }
+        private void PopulateImageGenerationModels()
+        {
+            if (cmbImageGenModel is null)
+                return;
+
+            string selectedModel = ResponsesState.ImageGenModel;
+            var imageModels = _allModelsFromApi
+                .Where(model => !string.IsNullOrWhiteSpace(model.Id) &&
+                                model.Id.Contains("image", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            cmbImageGenModel.Items.Clear();
+            cmbImageGenModel.Items.Add(new ComboBoxItem
+            {
+                Content = "OpenAI default",
+                Tag = string.Empty
+            });
+
+            if (!string.IsNullOrWhiteSpace(selectedModel) &&
+                !imageModels.Any(model => string.Equals(model.Id, selectedModel, StringComparison.OrdinalIgnoreCase)))
+            {
+                cmbImageGenModel.Items.Add(new ComboBoxItem
+                {
+                    Content = $"{selectedModel} (not in latest model list)",
+                    Tag = selectedModel
+                });
+            }
+
+            foreach (ModelData model in imageModels)
+            {
+                string label = string.IsNullOrWhiteSpace(model.ShutdownDate)
+                    ? model.Id
+                    : $"{model.Id} (shutdown: {model.ShutdownDate})";
+
+                cmbImageGenModel.Items.Add(new ComboBoxItem
+                {
+                    Content = label,
+                    Tag = model.Id
+                });
+            }
+        }
+
+        private void SelectImageGenerationModel()
+        {
+            string selectedModel = ResponsesState.ImageGenModel;
+            cmbImageGenModel.SelectedItem = cmbImageGenModel.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(
+                    item.Tag as string,
+                    selectedModel,
+                    StringComparison.OrdinalIgnoreCase))
+                ?? cmbImageGenModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        }
+
         private async Task LoadApiModelsCacheAsync()
         {
             try
             {
                 _allModelsFromApi = await ModelApiService.GetAvailableModelsAsync(OpenAPIKey);
+                    PopulateImageGenerationModels();
+                    SelectImageGenerationModel();
             }
             catch
             {
@@ -140,6 +197,8 @@ namespace oaiResponsesAvalonia.Views
                 try
                 {
                     _allModelsFromApi = await ModelApiService.GetAvailableModelsAsync(OpenAPIKey);
+                    PopulateImageGenerationModels();
+                    SelectImageGenerationModel();
                     modelsToUse = _allModelsFromApi.Select(model => model.Id).ToList();
                 }
                 catch
@@ -166,11 +225,14 @@ namespace oaiResponsesAvalonia.Views
             ResponsesState.UseWebSearch = false;
             ResponsesState.UseImageGeneration = false;
             ResponsesState.SearchContextSize = "medium";
+            ResponsesState.ImageGenModel = string.Empty;
             ResponsesState.ImageGenQuality = "auto";
             ResponsesState.ImageGenSize = "auto";
             ResponsesState.ImageGenOutputFormat = "jpeg";
             ResponsesState.ImageGenOutputCompression = 85;
             ResponsesState.ImageGenBackground = "auto";
+            PopulateImageGenerationModels();
+                    SelectImageGenerationModel();
             //--------Developer function-tool-calls-----------
             ResponsesState.UseDeveloperTools = false;
             ResponsesState.UseMcp = false;
@@ -1081,6 +1143,7 @@ namespace oaiResponsesAvalonia.Views
                     ? "medium"
                     : settingsMessage.SearchContextSize;
 
+                ResponsesState.ImageGenModel = string.Empty;
                 ResponsesState.ImageGenQuality = string.IsNullOrWhiteSpace(settingsMessage.ImageQuality)
                     ? "auto"
                     : settingsMessage.ImageQuality;
@@ -1147,6 +1210,7 @@ namespace oaiResponsesAvalonia.Views
             _responsesClient.CurrentModel = ResponsesState.SelectedModel;
             _responsesClient.CurrentReasoning = ResponsesState.SelectedReasoning;
             _responsesClient.WebSearchContextSize = ResponsesState.SearchContextSize;
+            _responsesClient.ImageGenModel = ResponsesState.ImageGenModel;
             _responsesClient.ImageGenQuality = ResponsesState.ImageGenQuality;
             _responsesClient.ImageGenSize = ResponsesState.ImageGenSizeForRequest;
             _responsesClient.ImageGenOutputFormat = ResponsesState.ImageGenOutputFormat;
@@ -1190,6 +1254,9 @@ namespace oaiResponsesAvalonia.Views
         }
         private sealed class ImageToolSettingsSnapshot
         {
+            [JsonPropertyName("model")]
+            public string? Model { get; set; }
+
             [JsonPropertyName("quality")]
             public string Quality { get; set; } = "auto";
 
@@ -1248,6 +1315,10 @@ namespace oaiResponsesAvalonia.Views
 
             var snapshot = new ImageToolSettingsSnapshot
             {
+                Model = string.IsNullOrWhiteSpace(ResponsesState.ImageGenModel)
+                    ? null
+                    : ResponsesState.ImageGenModel,
+
                 Quality = string.IsNullOrWhiteSpace(ResponsesState.ImageGenQuality)
                     ? "auto"
                     : ResponsesState.ImageGenQuality,
@@ -1315,6 +1386,12 @@ namespace oaiResponsesAvalonia.Views
             try
             {
                 var snapshot = JsonSerializer.Deserialize<ImageToolSettingsSnapshot>(json);
+                if (snapshot != null)
+                {
+                    ResponsesState.ImageGenModel = snapshot.Model ?? string.Empty;
+                    PopulateImageGenerationModels();
+                    SelectImageGenerationModel();
+                }
                 if (snapshot == null)
                     return;
 

@@ -828,16 +828,24 @@
                                                        Content="Background"
                                                        Margin="0,8,0,4"
                                                        ToolTip.Tip="Allows to set transparency for the background of the generated image(s). This parameter is only supported for the GPT image models. Must be one of transparent, opaque or auto."/>
-                                                <ComboBox Grid.Row="9"
-                                                          x:Name="cmbImageGenBackground"
-                                                          SelectedValueBinding="{Binding Tag}"
-                                                          SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenBackground, Mode=TwoWay}">
-                                                    <ComboBoxItem Content="auto" Tag="auto"/>
-                                                    <ComboBoxItem Content="opaque" Tag="opaque"/>
-                                                    <ComboBoxItem Content="transparent"
-                                                      Tag="transparent"
-                                                      IsEnabled="{Binding #RootWindow.ResponsesState.IsTransparentBackgroundAllowed}" />
-                                                </ComboBox>
+                                                <StackPanel Grid.Row="9" Spacing="4">
+                                                    <ComboBox x:Name="cmbImageGenBackground"
+                                                              SelectedValueBinding="{Binding Tag}"
+                                                              SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenBackground, Mode=TwoWay}">
+                                                        <ComboBoxItem Content="auto" Tag="auto"/>
+                                                        <ComboBoxItem Content="opaque" Tag="opaque"/>
+                                                        <ComboBoxItem Content="transparent"
+                                                          Tag="transparent"
+                                                          IsEnabled="{Binding #RootWindow.ResponsesState.IsTransparentBackgroundAllowed}" />
+                                                    </ComboBox>
+                                                    <Label Content="Image Model" Margin="0,4,0,0"/>
+                                                    <ComboBox x:Name="cmbImageGenModel"
+                                                              SelectedValueBinding="{Binding Tag}"
+                                                              IsEnabled="{Binding #RootWindow.ResponsesState.IsImageGenerationOptionsEnabled}"
+                                                              SelectedValue="{Binding #RootWindow.ResponsesState.ImageGenModel, Mode=TwoWay}">
+                                                        <ComboBoxItem Content="OpenAI default" Tag=""/>
+                                                    </ComboBox>
+                                                </StackPanel>
                                             </Grid>
                                         </Grid>
                                     </Border>

@@ -28,6 +28,7 @@ namespace oaiResponsesAvalonia
         public bool ConversationActive => !string.IsNullOrEmpty(LastResponseId);
         public HashSet<string> ActiveTools { get; } = new();
         public string WebSearchContextSize { get; set; } = "medium";
+        public string ImageGenModel { get; set; } = string.Empty;
         public string ImageGenQuality { get; set; } = "auto";
         public string ImageGenSize { get; set; } = "auto";
         public string ImageGenOutputFormat { get; set; } = "jpeg";
@@ -1031,7 +1032,8 @@ namespace oaiResponsesAvalonia
                     ImageGenSize,
                     ImageGenOutputFormat,
                     compression,
-                    ImageGenBackground));
+                    ImageGenBackground,
+                    ImageGenModel));
             }
 
             return tools.ToArray();
@@ -1145,9 +1147,11 @@ namespace oaiResponsesAvalonia
                 string size,
                 string outputFormat,
                 int? outputCompression,
-                string background)
+                string background,
+                string? model)
             {
                 Type = "image_generation";
+                Model = string.IsNullOrWhiteSpace(model) ? null : model.Trim();
                 Quality = quality ?? "auto";
                 Size = size ?? "auto";
                 OutputFormat = string.IsNullOrWhiteSpace(outputFormat) ? "jpeg" : outputFormat;
@@ -1157,6 +1161,10 @@ namespace oaiResponsesAvalonia
                 if (outputCompression.HasValue)
                     OutputCompression = outputCompression.Value;
             }
+
+            [JsonPropertyName("model")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public string? Model { get; set; }
 
             [JsonPropertyName("quality")]
             public string Quality { get; set; } = "auto";

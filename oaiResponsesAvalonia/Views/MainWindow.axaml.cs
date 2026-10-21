@@ -220,6 +220,7 @@ public partial class MainWindow : Window
             case nameof(ResponsesPanelState.SelectedModel):
             case nameof(ResponsesPanelState.SelectedReasoning):
             case nameof(ResponsesPanelState.SearchContextSize):
+            case nameof(ResponsesPanelState.ImageGenModel):
             case nameof(ResponsesPanelState.ImageGenQuality):
             case nameof(ResponsesPanelState.ImageGenSize):
             case nameof(ResponsesPanelState.ImageGenCustomSizeText):

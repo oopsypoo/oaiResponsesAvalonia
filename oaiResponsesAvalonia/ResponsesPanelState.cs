@@ -81,6 +81,13 @@ namespace oaiResponsesAvalonia
             set => SetProperty(ref _searchContextSize, string.IsNullOrWhiteSpace(value) ? "medium" : value);
         }
 
+        private string _imageGenModel = string.Empty;
+        public string ImageGenModel
+        {
+            get => _imageGenModel;
+            set => SetProperty(ref _imageGenModel, value?.Trim() ?? string.Empty);
+        }
+
         private string _imageGenQuality = "auto";
         public string ImageGenQuality
         {

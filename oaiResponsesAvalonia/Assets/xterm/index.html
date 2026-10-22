@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="xterm.css">
+  <script src="./xterm.js"></script>
+  <style>
+    html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { background: #111; }
+    #terminal { box-sizing: border-box; padding: 10px; }
+  </style>
+</head>
+<body>
+  <div id="terminal"></div>
+  <script>
+    (() => {
+      const terminal = new Terminal({
+        cursorBlink: true,
+        fontFamily: 'Cascadia Mono, Consolas, monospace',
+        fontSize: 14,
+        theme: { background: '#111111', foreground: '#e5e5e5' }
+      });
+      terminal.open(document.getElementById('terminal'));
+
+      let line = '';
+      let busy = false;
+      const prompt = '~/ $ ';
+      terminal.write(prompt);
+      terminal.focus();
+
+      terminal.onData(data => {
+        if (busy) return;
+
+        if (data === '\r' || data === '\n') {
+          terminal.write('\r\n');
+          busy = true;
+          window.chrome.webview.postMessage(JSON.stringify({ type: 'command', line }));
+          line = '';
+          return;
+        }
+
+        if (data === '\u007f' || data === '\b') {
+          if (line.length > 0) {
+            line = line.slice(0, -1);
+            terminal.write('\b \b');
+          }
+          return;
+        }
+
+        if (data === '\u0003') {
+          line = '';
+          terminal.write('^C\r\n' + prompt);
+          return;
+        }
+
+        if ([...data].every(character => character >= ' ' && character !== '\u007f')) {
+          line += data;
+          terminal.write(data);
+        }
+      });
+
+      window.receiveResult = result => {
+        if (typeof result.output === 'string' && result.output.length > 0) {
+          terminal.write(result.output.replace(/\r?\n/g, '\r\n'));
+          if (!result.output.endsWith('\n')) terminal.write('\r\n');
+        }
+        terminal.write(result.prompt || prompt);
+        busy = false;
+        terminal.focus();
+      };
+    })();
+  </script>
+</body>
+</html>

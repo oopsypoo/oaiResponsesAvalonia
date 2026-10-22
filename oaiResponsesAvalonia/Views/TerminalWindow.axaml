@@ -1,0 +1,17 @@
+<Window x:Class="oaiResponsesAvalonia.Views.TerminalWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:DataType="x:Object"
+        x:CompileBindings="True"
+        Title="Terminal"
+        Width="900"
+        Height="600"
+        MinWidth="520"
+        MinHeight="320"
+        WindowStartupLocation="CenterOwner">
+    <NativeWebView x:Name="TerminalWebView"
+                   EnvironmentRequested="TerminalWebView_EnvironmentRequested"
+                   WebMessageReceived="TerminalWebView_WebMessageReceived"
+                   HorizontalAlignment="Stretch"
+                   VerticalAlignment="Stretch" />
+</Window>

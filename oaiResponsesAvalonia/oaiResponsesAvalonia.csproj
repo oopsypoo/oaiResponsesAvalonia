@@ -21,6 +21,7 @@
     <AvaloniaResource Remove="Assets\MarkdownViewer\viewer-codeblock-fixes.css" />
     <AvaloniaResource Remove="Assets\MarkdownViewer\highlight.min.js" />
     <AvaloniaResource Remove="Assets\MarkdownViewer\Styles\**\*" />
+    <AvaloniaResource Remove="Assets\xterm\**\*" />
     <AvaloniaXaml Remove="Models\**" />
     <Compile Remove="Models\**" />
     <EmbeddedResource Remove="Models\**" />
@@ -71,6 +72,12 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <None Update="Assets\xterm\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 	<Target Name="DeployToKubuntu" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'linux-x64'">
 		<Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(PublishDir)..\deploy.ps1&quot; -PublishDir &quot;$(PublishDir.TrimEnd('\'))&quot;" />
 	</Target>

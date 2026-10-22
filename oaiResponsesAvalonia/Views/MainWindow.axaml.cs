@@ -43,6 +43,7 @@ public partial class MainWindow : Window
     private readonly MediaStorageService _mediaStorageService;
     private readonly SessionCleanupService _sessionCleanupService;
     private DeveloperToolsActivityWindow? _developerToolsActivityWindow;
+    private TerminalWindow? _terminalWindow;
 
     public event Action<List<string>>? ModelsApplied;
 
@@ -92,6 +93,22 @@ public partial class MainWindow : Window
             _developerToolsActivityWindow.Show(this);
         else
             _developerToolsActivityWindow.Activate();
+    }
+
+    private void OpenTerminalWindow_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_terminalWindow is null)
+        {
+            _terminalWindow = new TerminalWindow();
+            _terminalWindow.Closed += (_, _) => _terminalWindow = null;
+            _terminalWindow.Show(this);
+            return;
+        }
+
+        if (!_terminalWindow.IsVisible)
+            _terminalWindow.Show(this);
+        else
+            _terminalWindow.Activate();
     }
 
     private void InitStatusAnimation()

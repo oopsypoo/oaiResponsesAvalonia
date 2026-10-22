@@ -33,6 +33,8 @@ internal sealed class MarkdownViewerAssetServer : IAsyncDisposable
 
     public Uri TemplateUri => new(BaseUri, "template.html");
 
+    public Uri IndexUri => new(BaseUri, "index.html");
+
     public static MarkdownViewerAssetServer Start(string assetDirectory)
     {
         if (!Directory.Exists(assetDirectory))

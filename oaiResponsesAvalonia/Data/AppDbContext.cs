@@ -7,6 +7,14 @@ namespace oaiResponsesAvalonia.Data
 {
     public class AppDbContext : DbContext
     {
+        public AppDbContext()
+        {
+        }
+
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+        {
+        }
+
         public static string DatabaseFilePath { get; set; } =
             AppPaths.DatabaseFilePath;
 
@@ -120,6 +128,7 @@ namespace oaiResponsesAvalonia.Data
                     "ALTER TABLE Messages ADD COLUMN ToolCallLogJson TEXT NOT NULL DEFAULT '';");
             }
         }
+
         private static bool ColumnExists(AppDbContext db, string tableName, string columnName)
         {
             using var command = db.Database.GetDbConnection().CreateCommand();

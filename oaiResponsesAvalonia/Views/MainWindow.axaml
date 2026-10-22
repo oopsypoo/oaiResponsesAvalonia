@@ -491,6 +491,7 @@
                                             Content="Open Activity Window"
                                             IsVisible="{Binding #RootWindow.ResponsesState.UseDeveloperTools}"
                                             Click="OpenDeveloperActivityWindow_Click" />
+                                    <Button DockPanel.Dock="Right" Margin="8,0,0,0" Padding="8,4" VerticalAlignment="Center" Content="Open Terminal" IsVisible="{Binding #RootWindow.ResponsesState.UseDeveloperTools}" Click="OpenTerminalWindow_Click" />
                                 </DockPanel>
 
                                 <Grid>

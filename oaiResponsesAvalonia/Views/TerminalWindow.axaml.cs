@@ -78,7 +78,7 @@ public sealed partial class TerminalWindow : Window
         {
             try
             {
-                var errorResult = new AppConsoleResult($"error: {ex.Message}", _console.Prompt);
+                var errorResult = new AppConsoleResult($"error: {ex.Message}", _console.Prompt, Kind: "error");
                 string resultJson = JsonSerializer.Serialize(errorResult, JsonOptions);
                 await TerminalWebView.InvokeScript($"window.receiveResult({resultJson});");
             }

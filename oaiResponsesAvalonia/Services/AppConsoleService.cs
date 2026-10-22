@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 
 namespace oaiResponsesAvalonia.Services;
 
@@ -13,6 +14,7 @@ internal sealed class AppConsoleService
 {
     private const int MaximumFileBytes = 32 * 1024;
     private const int MaximumListItems = 200;
+    private const int MaximumDatabaseOutputCharacters = 200_000;
     private readonly string _rootDirectory;
     private string _currentDirectory;
     private bool _databaseConnected;
@@ -45,16 +47,23 @@ internal sealed class AppConsoleService
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
                 "disconnect" => DisconnectDatabase(args.Skip(1).ToArray()),
                 "sessions" => HandleSessions(args.Skip(1).ToArray()),
+                "tables" => HandleTables(args.ToArray()),
+                "describe" => HandleDescribe(args.Skip(1).ToArray()),
+                "messages" => HandleMessages(args.Skip(1).ToArray()),
                 "clear" => "\u001b[2J\u001b[H",
                 "quit" or "exit" => "Goodbye.",
                 _ => $"{command}: command not found. Type 'help' to see available commands."
             };
 
-            return new AppConsoleResult(output, command is "quit" or "exit" ? string.Empty : Prompt, command is "quit" or "exit");
+            bool closeWindow = command is "quit" or "exit";
+            bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or
+                "connect" or "disconnect" or "sessions" or "tables" or "describe" or "messages" or "clear" or "quit" or "exit";
+            string kind = !knownCommand ? "error" : command is "connect" or "disconnect" ? "success" : "normal";
+            return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind);
         }
         catch (Exception ex)
         {
-            return new AppConsoleResult($"error: {ex.Message}", Prompt);
+            return new AppConsoleResult($"error: {ex.Message}", Prompt, Kind: "error");
         }
     }
 
@@ -221,7 +230,7 @@ internal sealed class AppConsoleService
             .Where(message => message.ChatSessionId == id)
             .OrderByDescending(message => message.Timestamp)
             .Take(10)
-            .Select(message => new { message.Role, message.Content, message.Timestamp })
+            .Select(message => new { message.Id, message.Role, message.Content, message.Timestamp })
             .ToList();
 
         var lines = new List<string>
@@ -235,11 +244,195 @@ internal sealed class AppConsoleService
         foreach (var message in messages.AsEnumerable().Reverse())
         {
             string content = OneLine(message.Content, 240);
-            lines.Add($"[{message.Timestamp.ToLocalTime():HH:mm:ss}] {message.Role}: {content}");
+            lines.Add($"[message {message.Id} · {message.Timestamp.ToLocalTime():HH:mm:ss}] {message.Role}: {content}");
         }
 
         return string.Join("\n", lines);
     }
+
+    private string HandleTables(string[] args)
+    {
+        if (args.Length != 1)
+            throw new InvalidOperationException("usage: tables");
+        EnsureDatabaseConnected();
+
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name COLLATE NOCASE;";
+        using SqliteDataReader reader = command.ExecuteReader();
+        var tables = new List<string>();
+        while (reader.Read())
+            tables.Add(reader.GetString(0));
+
+        return tables.Count == 0 ? "no tables found." : string.Join("\n", tables);
+    }
+
+    private string HandleDescribe(string[] args)
+    {
+        if (args.Length != 1)
+            throw new InvalidOperationException("usage: describe <table>");
+        EnsureDatabaseConnected();
+
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        string tableName = FindTableName(connection, args[0]);
+        List<DatabaseColumn> columns = ReadTableColumns(connection, tableName);
+        if (columns.Count == 0)
+            return $"table '{tableName}' has no columns.";
+
+        var lines = new List<string>
+        {
+            $"{tableName} columns:",
+            "Name  Type  NotNull  Default  PrimaryKey"
+        };
+        lines.AddRange(columns.Select(column =>
+            $"{column.Name}  {column.Type}  {(column.NotNull ? "yes" : "no")}  {column.DefaultValue ?? "(none)"}  {(column.PrimaryKey ? "yes" : "no")}"));
+        return string.Join("\n", lines);
+    }
+
+    private string HandleMessages(string[] args)
+    {
+        if (args.Length < 2 || !string.Equals(args[0], "show", StringComparison.OrdinalIgnoreCase) ||
+            !int.TryParse(args[1], out int id) || id <= 0 ||
+            (args.Length != 2 && (args.Length != 4 || args[2] != "--field" || string.IsNullOrWhiteSpace(args[3]))))
+        {
+            throw new InvalidOperationException("usage: messages show <id> [--field <column>]");
+        }
+        EnsureDatabaseConnected();
+
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        string tableName = FindTableName(connection, "Messages");
+        List<DatabaseColumn> columns = ReadTableColumns(connection, tableName);
+        if (!columns.Any(column => string.Equals(column.Name, "Id", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Messages table has no Id column.");
+
+        string? selectedField = args.Length == 4 ? args[3] : null;
+        if (selectedField is not null && !columns.Any(column => string.Equals(column.Name, selectedField, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"unknown Messages column '{selectedField}'. Use 'describe Messages' to see available columns.");
+
+        string query = selectedField is null
+            ? $"SELECT * FROM {QuoteIdentifier(tableName)} WHERE {QuoteIdentifier(columns.First(column => string.Equals(column.Name, "Id", StringComparison.OrdinalIgnoreCase)).Name)} = $id LIMIT 1;"
+            : $"SELECT {QuoteIdentifier(columns.First(column => string.Equals(column.Name, selectedField, StringComparison.OrdinalIgnoreCase)).Name)} FROM {QuoteIdentifier(tableName)} WHERE {QuoteIdentifier(columns.First(column => string.Equals(column.Name, "Id", StringComparison.OrdinalIgnoreCase)).Name)} = $id LIMIT 1;";
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = query;
+        command.Parameters.AddWithValue("$id", id);
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read())
+            return $"message {id} not found.";
+
+        if (selectedField is not null)
+        {
+            string actualName = reader.GetName(0);
+            string value = FormatDatabaseValue(actualName, reader.GetValue(0));
+            if (value.Length > MaximumDatabaseOutputCharacters)
+                return $"{actualName} is {value.Length:N0} characters; it exceeds the console display limit of {MaximumDatabaseOutputCharacters:N0} characters.";
+            return $"Message {id} · {actualName}\n{value}";
+        }
+
+        var output = new StringBuilder($"Message {id}\n");
+        for (int i = 0; i < reader.FieldCount; i++)
+        {
+            string name = reader.GetName(i);
+            string value = FormatDatabaseValue(name, reader.GetValue(i));
+            string entry = $"\n{name}:\n{value}\n";
+            if (output.Length + entry.Length > MaximumDatabaseOutputCharacters)
+            {
+                output.Append($"\nOutput reached the {MaximumDatabaseOutputCharacters:N0}-character display limit. Use 'messages show {id} --field {name}' to inspect this column individually.");
+                break;
+            }
+            output.Append(entry);
+        }
+        return output.ToString().TrimEnd();
+    }
+
+    private void EnsureDatabaseConnected()
+    {
+        if (!_databaseConnected)
+            throw new InvalidOperationException("connect to the application database first.");
+    }
+
+    private static SqliteConnection OpenReadOnlyDatabase()
+    {
+        string connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = AppDbContext.DatabaseFilePath,
+            Mode = SqliteOpenMode.ReadOnly
+        }.ToString();
+        var connection = new SqliteConnection(connectionString);
+        connection.Open();
+        return connection;
+    }
+
+    private static string FindTableName(SqliteConnection connection, string requestedName)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name COLLATE NOCASE;";
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            string name = reader.GetString(0);
+            if (string.Equals(name, requestedName, StringComparison.OrdinalIgnoreCase))
+                return name;
+        }
+        throw new InvalidOperationException($"unknown table '{requestedName}'. Use 'tables' to see available tables.");
+    }
+
+    private static List<DatabaseColumn> ReadTableColumns(SqliteConnection connection, string tableName)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({QuoteIdentifier(tableName)});";
+        using SqliteDataReader reader = command.ExecuteReader();
+        var columns = new List<DatabaseColumn>();
+        while (reader.Read())
+        {
+            columns.Add(new DatabaseColumn(
+                reader.GetString(1),
+                reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                reader.GetInt32(3) != 0,
+                reader.IsDBNull(4) ? null : Convert.ToString(reader.GetValue(4)),
+                reader.GetInt32(5) != 0));
+        }
+        return columns;
+    }
+
+    private static string QuoteIdentifier(string identifier) => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+
+    private static string FormatDatabaseValue(string columnName, object value)
+    {
+        if (value is DBNull)
+            return "(NULL)";
+        if (value is byte[] bytes)
+            return $"0x{Convert.ToHexString(bytes)}";
+
+        string text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        if (columnName.EndsWith("Json", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(text))
+        {
+            try
+            {
+                using JsonDocument json = JsonDocument.Parse(text);
+                text = JsonSerializer.Serialize(json.RootElement, new JsonSerializerOptions { WriteIndented = true });
+            }
+            catch (JsonException)
+            {
+                // Preserve malformed or non-JSON values exactly as stored.
+            }
+        }
+        return MakeControlCharactersVisible(text);
+    }
+
+    private static string MakeControlCharactersVisible(string value)
+    {
+        var output = new StringBuilder(value.Length);
+        foreach (char character in value)
+        {
+            if (character == '\n' || character == '\r' || character == '\t' || !char.IsControl(character))
+                output.Append(character);
+            else
+                output.Append($"\\\\u{(int)character:x4}");
+        }
+        return output.ToString();
+    }
+
+    private sealed record DatabaseColumn(string Name, string Type, bool NotNull, string? DefaultValue, bool PrimaryKey);
 
     public AppConsoleCompletionResult GetPathCompletions(string commandLine)
     {
@@ -537,11 +730,15 @@ internal sealed class AppConsoleService
         "  disconnect               Disconnect from the app database\n" +
         "  sessions list [--limit N] List recent sessions (1-100)\n" +
         "  sessions show <id>       Show session details and recent messages\n" +
+        "  tables                   List database tables (read-only)\n" +
+        "  describe <table>         Show database column details\n" +
+        "  messages show <id>       Show every stored message field\n" +
+        "  messages show <id> --field <column>  Show one message field\n" +
         "  clear                    Clear the terminal display\n" +
         "  quit                     End the console session and close the window\n" +
         "\nThis is an app console, not an operating-system shell. File access is limited to the app data directory.";
 }
 
-internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false);
+internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false, string Kind = "normal");
 
 internal sealed record AppConsoleCompletionResult(int ReplaceFrom, IReadOnlyList<string> Candidates);

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="xterm.css">
+  <link rel="stylesheet" href="./xterm.css">
   <script src="./xterm.js"></script>
   <style>
     html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; }
@@ -19,7 +19,15 @@
         cursorBlink: true,
         fontFamily: 'Cascadia Mono, Consolas, monospace',
         fontSize: 14,
-        theme: { background: '#111111', foreground: '#e5e5e5' }
+        theme: {
+          background: '#111111',
+          foreground: '#e5e5e5',
+          cursor: '#e5e5e5',
+          black: '#1e2127', red: '#e06c75', green: '#98c379', yellow: '#e5c07b',
+          blue: '#61afef', magenta: '#c678dd', cyan: '#56b6c2', white: '#abb2bf',
+          brightBlack: '#5c6370', brightRed: '#e06c75', brightGreen: '#98c379', brightYellow: '#e5c07b',
+          brightBlue: '#61afef', brightMagenta: '#c678dd', brightCyan: '#56b6c2', brightWhite: '#ffffff'
+        }
       });
       const terminalContainer = document.getElementById('terminal');
       terminal.open(terminalContainer);
@@ -53,14 +61,20 @@
       requestAnimationFrame(fitTerminal);
 
       let line = '';
+      let cursor = 0;
       let busy = false;
       let historyIndex = -1;
       let historyDraft = '';
       const history = [];
       let prompt = '~/ $ ';
-      const commandCompletions = ['help', 'pwd', 'ls', 'cd', 'cat', 'connect', 'disconnect', 'sessions', 'clear', 'quit', 'exit'];
-      const redrawLine = () => terminal.write('\r\u001b[2K' + prompt + line);
-      terminal.write(prompt);
+      const commandCompletions = ['help', 'pwd', 'ls', 'cd', 'cat', 'connect', 'disconnect', 'sessions', 'tables', 'describe', 'messages', 'clear', 'quit', 'exit'];
+      const ansi = { reset: '\u001b[0m', cyan: '\u001b[36m', green: '\u001b[32m', yellow: '\u001b[33m', red: '\u001b[31m' };
+      const coloredPrompt = () => ansi.cyan + prompt + ansi.reset;
+      const redrawLine = () => {
+        const suffixLength = Array.from(line).slice(cursor).length;
+        terminal.write('\r\u001b[2K' + coloredPrompt() + line + (suffixLength ? `\u001b[${suffixLength}D` : ''));
+      };
+      terminal.write(coloredPrompt());
       terminal.focus();
 
       const getCompletions = () => {
@@ -75,6 +89,8 @@
           candidates = commandCompletions;
         } else if (completed.length === 1 && completed[0] === 'sessions') {
           candidates = ['list', 'show'];
+        } else if (completed.length === 1 && completed[0] === 'messages') {
+          candidates = ['show'];
         }
 
         return candidates.filter(candidate => candidate.startsWith(current || ''));
@@ -93,15 +109,47 @@
             historyIndex--;
             line = historyIndex < 0 ? historyDraft : history[history.length - 1 - historyIndex];
           }
+          cursor = Array.from(line).length;
           redrawLine();
           return;
         }
 
+        if (data === '\u001b[D' || data === '\u001b[C') {
+          const characters = Array.from(line);
+          cursor = Math.max(0, Math.min(characters.length, cursor + (data === '\u001b[D' ? -1 : 1)));
+          redrawLine();
+          return;
+        }
+
+        if (data === '\u001b[H' || data === '\u001b[1~' || data === '\u0001') {
+          cursor = 0;
+          redrawLine();
+          return;
+        }
+
+        if (data === '\u001b[F' || data === '\u001b[4~' || data === '\u0005') {
+          cursor = Array.from(line).length;
+          redrawLine();
+          return;
+        }
+
+        if (data === '\u001b[3~') {
+          const characters = Array.from(line);
+          if (cursor < characters.length) {
+            characters.splice(cursor, 1);
+            line = characters.join('');
+            redrawLine();
+          }
+          return;
+        }
+
         if (data === '\t') {
+          if (cursor !== Array.from(line).length) return;
           const candidates = getCompletions();
           if (candidates.length === 1) {
             const lastSpace = line.lastIndexOf(' ');
             line = line.slice(0, lastSpace + 1) + candidates[0] + ' ';
+            cursor = Array.from(line).length;
             redrawLine();
           } else if (candidates.length > 1) {
             terminal.write('\r\n' + candidates.join('    ') + '\r\n');
@@ -121,6 +169,7 @@
           }
           historyIndex = -1;
           historyDraft = '';
+          cursor = 0;
           busy = true;
           window.chrome.webview.postMessage(JSON.stringify({ type: 'command', line: submittedLine }));
           line = '';
@@ -128,23 +177,31 @@
         }
 
         if (data === '\u007f' || data === '\b') {
-          if (line.length > 0) {
-            line = line.slice(0, -1);
-            terminal.write('\b \b');
+          const characters = Array.from(line);
+          if (cursor > 0) {
+            characters.splice(cursor - 1, 1);
+            line = characters.join('');
+            cursor--;
+            redrawLine();
           }
           return;
         }
 
         if (data === '\u0003') {
           line = '';
+          cursor = 0;
           historyIndex = -1;
-          terminal.write('^C\r\n' + prompt);
+          terminal.write('^C\r\n' + coloredPrompt());
           return;
         }
 
         if ([...data].every(character => character >= ' ' && character !== '\u007f')) {
-          line += data;
-          terminal.write(data);
+          const characters = Array.from(line);
+          const inserted = Array.from(data);
+          characters.splice(cursor, 0, ...inserted);
+          line = characters.join('');
+          cursor += inserted.length;
+          redrawLine();
         }
       });
 
@@ -154,6 +211,7 @@
           const completed = candidates[0];
           line = line.slice(0, result.replaceFrom) + completed;
           if (!completed.endsWith('/') && !completed.endsWith('\\')) line += ' ';
+          cursor = Array.from(line).length;
           redrawLine();
         } else if (candidates.length > 1) {
           terminal.write('\r\n' + candidates.join('    ') + '\r\n');
@@ -165,7 +223,8 @@
       window.receiveResult = result => {
         if (typeof result.prompt === 'string' && result.prompt.length > 0) prompt = result.prompt;
         if (typeof result.output === 'string' && result.output.length > 0) {
-          terminal.write(result.output.replace(/\r?\n/g, '\r\n'));
+          const outputColor = result.kind === 'error' ? ansi.red : result.kind === 'success' ? ansi.green : '';
+          terminal.write(outputColor + result.output.replace(/\r?\n/g, '\r\n') + (outputColor ? ansi.reset : ''));
           if (!result.output.endsWith('\n')) terminal.write('\r\n');
         }
         busy = false;
@@ -173,7 +232,7 @@
           window.chrome.webview.postMessage(JSON.stringify({ type: 'close' }));
           return;
         }
-        terminal.write(result.prompt || prompt);
+        terminal.write(coloredPrompt());
         terminal.focus();
       };
     })();

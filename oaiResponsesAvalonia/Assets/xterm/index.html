@@ -54,17 +54,75 @@
 
       let line = '';
       let busy = false;
-      const prompt = '~/ $ ';
+      let historyIndex = -1;
+      let historyDraft = '';
+      const history = [];
+      let prompt = '~/ $ ';
+      const commandCompletions = ['help', 'pwd', 'ls', 'cd', 'cat', 'connect', 'disconnect', 'sessions', 'clear', 'quit', 'exit'];
+      const redrawLine = () => terminal.write('\r\u001b[2K' + prompt + line);
       terminal.write(prompt);
       terminal.focus();
+
+      const getCompletions = () => {
+        const trimmedLine = line.trimEnd();
+        const parts = trimmedLine ? trimmedLine.split(/\s+/) : [];
+        const hasTrailingSpace = trimmedLine.length < line.length;
+        const current = hasTrailingSpace ? '' : (parts.pop() || '');
+        const completed = parts;
+        let candidates = [];
+
+        if (completed.length === 0) {
+          candidates = commandCompletions;
+        } else if (completed.length === 1 && completed[0] === 'sessions') {
+          candidates = ['list', 'show'];
+        }
+
+        return candidates.filter(candidate => candidate.startsWith(current || ''));
+      };
 
       terminal.onData(data => {
         if (busy) return;
 
+        if (data === '\u001b[A' || data === '\u001b[B') {
+          if (history.length === 0) return;
+          if (data === '\u001b[A') {
+            if (historyIndex === -1) historyDraft = line;
+            historyIndex = Math.min(historyIndex + 1, history.length - 1);
+            line = history[history.length - 1 - historyIndex];
+          } else if (historyIndex >= 0) {
+            historyIndex--;
+            line = historyIndex < 0 ? historyDraft : history[history.length - 1 - historyIndex];
+          }
+          redrawLine();
+          return;
+        }
+
+        if (data === '\t') {
+          const candidates = getCompletions();
+          if (candidates.length === 1) {
+            const lastSpace = line.lastIndexOf(' ');
+            line = line.slice(0, lastSpace + 1) + candidates[0] + ' ';
+            redrawLine();
+          } else if (candidates.length > 1) {
+            terminal.write('\r\n' + candidates.join('    ') + '\r\n');
+            redrawLine();
+          } else {
+            window.chrome.webview.postMessage(JSON.stringify({ type: 'complete', line }));
+          }
+          return;
+        }
+
         if (data === '\r' || data === '\n') {
           terminal.write('\r\n');
+          const submittedLine = line;
+          if (submittedLine.trim()) {
+            if (history[history.length - 1] !== submittedLine) history.push(submittedLine);
+            if (history.length > 100) history.shift();
+          }
+          historyIndex = -1;
+          historyDraft = '';
           busy = true;
-          window.chrome.webview.postMessage(JSON.stringify({ type: 'command', line }));
+          window.chrome.webview.postMessage(JSON.stringify({ type: 'command', line: submittedLine }));
           line = '';
           return;
         }
@@ -79,6 +137,7 @@
 
         if (data === '\u0003') {
           line = '';
+          historyIndex = -1;
           terminal.write('^C\r\n' + prompt);
           return;
         }
@@ -89,13 +148,32 @@
         }
       });
 
+      window.receiveCompletions = result => {
+        const candidates = Array.isArray(result.candidates) ? result.candidates : [];
+        if (candidates.length === 1) {
+          const completed = candidates[0];
+          line = line.slice(0, result.replaceFrom) + completed;
+          if (!completed.endsWith('/') && !completed.endsWith('\\')) line += ' ';
+          redrawLine();
+        } else if (candidates.length > 1) {
+          terminal.write('\r\n' + candidates.join('    ') + '\r\n');
+          redrawLine();
+        }
+        terminal.focus();
+      };
+
       window.receiveResult = result => {
+        if (typeof result.prompt === 'string' && result.prompt.length > 0) prompt = result.prompt;
         if (typeof result.output === 'string' && result.output.length > 0) {
           terminal.write(result.output.replace(/\r?\n/g, '\r\n'));
           if (!result.output.endsWith('\n')) terminal.write('\r\n');
         }
-        terminal.write(result.prompt || prompt);
         busy = false;
+        if (result.closeWindow) {
+          window.chrome.webview.postMessage(JSON.stringify({ type: 'close' }));
+          return;
+        }
+        terminal.write(result.prompt || prompt);
         terminal.focus();
       };
     })();

@@ -46,10 +46,11 @@ internal sealed class AppConsoleService
                 "disconnect" => DisconnectDatabase(args.Skip(1).ToArray()),
                 "sessions" => HandleSessions(args.Skip(1).ToArray()),
                 "clear" => "\u001b[2J\u001b[H",
+                "quit" or "exit" => "Goodbye.",
                 _ => $"{command}: command not found. Type 'help' to see available commands."
             };
 
-            return new AppConsoleResult(output, Prompt);
+            return new AppConsoleResult(output, command is "quit" or "exit" ? string.Empty : Prompt, command is "quit" or "exit");
         }
         catch (Exception ex)
         {
@@ -111,8 +112,6 @@ internal sealed class AppConsoleService
             throw new InvalidOperationException("usage: cat <file>");
 
         string filePath = ResolvePath(args[0]);
-        if (string.Equals(Path.GetFileName(filePath), "settings.json", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("settings.json may contain credentials and is not displayed by the console.");
         if (!File.Exists(filePath))
             throw new FileNotFoundException($"no such file: {args[0]}");
 
@@ -241,6 +240,122 @@ internal sealed class AppConsoleService
 
         return string.Join("\n", lines);
     }
+
+    public AppConsoleCompletionResult GetPathCompletions(string commandLine)
+    {
+        int tokenStart = FindCurrentTokenStart(commandLine);
+        string rawToken = commandLine[tokenStart..];
+        string prefix = commandLine[..tokenStart];
+
+        List<string> precedingArgs;
+        try
+        {
+            precedingArgs = Tokenize(prefix);
+        }
+        catch
+        {
+            return new AppConsoleCompletionResult(tokenStart, []);
+        }
+
+        if (precedingArgs.Count == 0)
+            return new AppConsoleCompletionResult(tokenStart, []);
+
+        string command = precedingArgs[0].ToLowerInvariant();
+        if (command is not ("cd" or "cat" or "ls"))
+            return new AppConsoleCompletionResult(tokenStart, []);
+
+        string typedPath = DecodeCompletionToken(rawToken);
+        if (command == "ls" && typedPath.StartsWith("-", StringComparison.Ordinal) && typedPath.IndexOfAny(['/', (char)92]) < 0)
+            return new AppConsoleCompletionResult(tokenStart, []);
+
+        int separatorIndex = Math.Max(typedPath.LastIndexOf('/'), typedPath.LastIndexOf((char)92));
+        string directoryPart = separatorIndex < 0 ? string.Empty : typedPath[..(separatorIndex + 1)];
+        string namePrefix = separatorIndex < 0 ? typedPath : typedPath[(separatorIndex + 1)..];
+        string directory;
+
+        try
+        {
+            directory = string.IsNullOrEmpty(directoryPart) ? _currentDirectory : ResolvePath(directoryPart);
+        }
+        catch
+        {
+            return new AppConsoleCompletionResult(tokenStart, []);
+        }
+
+        if (!Directory.Exists(directory))
+            return new AppConsoleCompletionResult(tokenStart, []);
+
+        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var candidates = new List<string>();
+        try
+        {
+            foreach (string entry in Directory.EnumerateFileSystemEntries(directory)
+                         .OrderBy(path => !Directory.Exists(path))
+                         .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+            {
+                string name = Path.GetFileName(entry);
+                if (!name.StartsWith(namePrefix, comparison) || IsReparsePoint(entry))
+                    continue;
+                if ((name.StartsWith(".", StringComparison.Ordinal) || IsHidden(entry)) && !typedPath.Contains("/.", StringComparison.Ordinal) && !typedPath.Contains("\\\\.", StringComparison.Ordinal))
+                    continue;
+
+                string separator = typedPath.Contains((char)92) && !typedPath.Contains('/') ? "\\\\" : "/";
+                string completedPath = directoryPart + name + (Directory.Exists(entry) ? separator : string.Empty);
+                candidates.Add(EscapeCompletionPath(completedPath));
+                if (candidates.Count >= MaximumListItems)
+                    break;
+            }
+        }
+        catch
+        {
+            return new AppConsoleCompletionResult(tokenStart, []);
+        }
+
+        return new AppConsoleCompletionResult(tokenStart, candidates);
+    }
+
+    private static int FindCurrentTokenStart(string line)
+    {
+        bool escaped = false;
+        char quote = (char)0;
+        int start = 0;
+        for (int i = 0; i < line.Length; i++)
+        {
+            char character = line[i];
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+            if (character == (char)92 && quote != (char)39)
+            {
+                escaped = true;
+                continue;
+            }
+            if (quote != (char)0)
+            {
+                if (character == quote)
+                    quote = (char)0;
+                continue;
+            }
+            if (character is (char)39 or '\"')
+            {
+                quote = character;
+                continue;
+            }
+            if (char.IsWhiteSpace(character))
+                start = i + 1;
+        }
+        return start;
+    }
+
+    private static string DecodeCompletionToken(string token)
+    {
+        token = token.TrimStart((char)39, '\"');
+        return token.Replace("\\\\ ", " ", StringComparison.Ordinal);
+    }
+
+    private static string EscapeCompletionPath(string path) => path.Replace(" ", "\\\\ ", StringComparison.Ordinal);
 
     private string ResolvePath(string userPath)
     {
@@ -423,7 +538,10 @@ internal sealed class AppConsoleService
         "  sessions list [--limit N] List recent sessions (1-100)\n" +
         "  sessions show <id>       Show session details and recent messages\n" +
         "  clear                    Clear the terminal display\n" +
+        "  quit                     End the console session and close the window\n" +
         "\nThis is an app console, not an operating-system shell. File access is limited to the app data directory.";
 }
 
-internal sealed record AppConsoleResult(string Output, string Prompt);
+internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false);
+
+internal sealed record AppConsoleCompletionResult(int ReplaceFrom, IReadOnlyList<string> Candidates);

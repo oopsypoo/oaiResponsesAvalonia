@@ -45,15 +45,32 @@ public sealed partial class TerminalWindow : Window
 
             using JsonDocument document = JsonDocument.Parse(e.Body);
             JsonElement root = document.RootElement;
-            if (!root.TryGetProperty("type", out JsonElement typeElement) ||
-                typeElement.GetString() != "command" ||
-                !root.TryGetProperty("line", out JsonElement lineElement) ||
-                lineElement.ValueKind != JsonValueKind.String)
+            if (!root.TryGetProperty("type", out JsonElement typeElement))
+                return;
+
+            string? messageType = typeElement.GetString();
+            if (messageType == "close")
             {
+                Close();
                 return;
             }
 
-            AppConsoleResult result = _console.Execute(lineElement.GetString() ?? string.Empty);
+            if (!root.TryGetProperty("line", out JsonElement lineElement) || lineElement.ValueKind != JsonValueKind.String)
+                return;
+
+            string line = lineElement.GetString() ?? string.Empty;
+            if (messageType == "complete")
+            {
+                AppConsoleCompletionResult completions = _console.GetPathCompletions(line);
+                string completionJson = JsonSerializer.Serialize(completions, JsonOptions);
+                await TerminalWebView.InvokeScript($"window.receiveCompletions({completionJson});");
+                return;
+            }
+
+            if (messageType != "command")
+                return;
+
+            AppConsoleResult result = _console.Execute(line);
             string resultJson = JsonSerializer.Serialize(result, JsonOptions);
             await TerminalWebView.InvokeScript($"window.receiveResult({resultJson});");
         }

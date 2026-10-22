@@ -21,7 +21,36 @@
         fontSize: 14,
         theme: { background: '#111111', foreground: '#e5e5e5' }
       });
-      terminal.open(document.getElementById('terminal'));
+      const terminalContainer = document.getElementById('terminal');
+      terminal.open(terminalContainer);
+
+      // xterm.js defaults to 80 columns by 24 rows. Keep its grid fitted to
+      // the WebView viewport as the Avalonia window is resized.
+      const fitTerminal = () => {
+        const screen = terminalContainer.querySelector('.xterm-screen');
+        if (!screen || terminal.cols < 1 || terminal.rows < 1) return;
+
+        const styles = getComputedStyle(terminalContainer);
+        const availableWidth = terminalContainer.clientWidth -
+          parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+        const availableHeight = terminalContainer.clientHeight -
+          parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
+        const screenBounds = screen.getBoundingClientRect();
+        const cellWidth = screenBounds.width / terminal.cols;
+        const cellHeight = screenBounds.height / terminal.rows;
+
+        if (cellWidth <= 0 || cellHeight <= 0) return;
+
+        const cols = Math.max(2, Math.floor(availableWidth / cellWidth));
+        const rows = Math.max(1, Math.floor(availableHeight / cellHeight));
+        if (cols !== terminal.cols || rows !== terminal.rows) {
+          terminal.resize(cols, rows);
+        }
+      };
+
+      const resizeObserver = new ResizeObserver(() => requestAnimationFrame(fitTerminal));
+      resizeObserver.observe(terminalContainer);
+      requestAnimationFrame(fitTerminal);
 
       let line = '';
       let busy = false;

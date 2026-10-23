@@ -41,6 +41,17 @@ internal sealed class AppConsoleService
             if (args.Count == 0)
                 return new AppConsoleResult(string.Empty, Prompt);
 
+            string pagerMode = string.Empty;
+            int pipeIndex = args.IndexOf("|");
+            if (pipeIndex >= 0)
+            {
+                if (pipeIndex == 0 || pipeIndex != args.Count - 2 ||
+                    args[^1].ToLowerInvariant() is not ("more" or "less"))
+                    throw new InvalidOperationException("usage: <command> | more|less");
+                pagerMode = args[^1].ToLowerInvariant();
+                args = args.Take(pipeIndex).ToList();
+            }
+
             string command = args[0].ToLowerInvariant();
             string output = command switch
             {
@@ -55,7 +66,9 @@ internal sealed class AppConsoleService
                 "tables" => HandleTables(args.ToArray()),
                 "describe" => HandleDescribe(args.Skip(1).ToArray()),
                 "messages" => HandleMessages(args.Skip(1).ToArray()),
-                "db" => HandleDatabaseBrowser(args.Skip(1).ToArray()),
+                "db" => args.Count == 1 || (args.Count == 2 && args[1].Equals("help", StringComparison.OrdinalIgnoreCase))
+                    ? DatabaseHelpText
+                    : HandleDatabaseBrowser(args.Skip(1).ToArray()),
                 "clear" => "\u001b[2J\u001b[H",
                 "quit" or "exit" => "Goodbye.",
                 _ => $"{command}: command not found. Type 'help' to see available commands."
@@ -65,7 +78,7 @@ internal sealed class AppConsoleService
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or
                 "connect" or "disconnect" or "sessions" or "tables" or "describe" or "messages" or "db" or "clear" or "quit" or "exit";
             string kind = !knownCommand ? "error" : command is "connect" or "disconnect" ? "success" : "normal";
-            return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind);
+            return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode);
         }
         catch (Exception ex)
         {
@@ -361,7 +374,7 @@ internal sealed class AppConsoleService
     {
         EnsureDatabaseConnected();
         if (args.Length == 0)
-            throw new InvalidOperationException("usage: db ls [--columns 1,3] | db cd <id|..|/> | db pwd | db show [--field column] | db columns");
+            throw new InvalidOperationException("usage: db ls [--columns 1,3] | db cd <id|..|/> | db pwd | db show [--column column] | db columns");
 
         return args[0].ToLowerInvariant() switch
         {
@@ -370,7 +383,7 @@ internal sealed class AppConsoleService
             "pwd" when args.Length == 1 => GetDatabaseLocation(),
             "show" => ShowCurrentDatabaseMessage(args.Skip(1).ToArray()),
             "columns" when args.Length == 1 => ListCurrentMessageColumns(),
-            _ => throw new InvalidOperationException("usage: db ls [--columns 1,3] | db cd <id|..|/> | db pwd | db show [--field column] | db columns")
+            _ => throw new InvalidOperationException("usage: db ls [--columns 1,3] | db cd <id|..|/> | db pwd | db show [--column column] | db columns")
         };
     }
 
@@ -379,7 +392,7 @@ internal sealed class AppConsoleService
         List<int>? selectedColumns = ParseColumnArguments(args);
         using AppDbContext db = CreateReadOnlyDbContext(ConnectedDatabasePath);
         if (_databaseMessageId is int messageId)
-            return ListMessageFields(messageId);
+            return ListMessageFields(messageId, selectedColumns);
         if (_databaseSessionId is int sessionId)
             return ListSessionMessages(sessionId, selectedColumns);
         return ListDatabaseSessions(db, selectedColumns);
@@ -486,7 +499,7 @@ internal sealed class AppConsoleService
         return FormatBrowserTable(headers, rows, selectedColumns);
     }
 
-    private string ListMessageFields(int messageId)
+    private string ListMessageFields(int messageId, List<int>? selectedColumns)
     {
         using SqliteConnection connection = OpenReadOnlyDatabase();
         string table = FindTableName(connection, "Messages");
@@ -498,11 +511,14 @@ internal sealed class AppConsoleService
         using SqliteDataReader reader = command.ExecuteReader();
         if (!reader.Read())
             return $"message {messageId} not found.";
+        if (selectedColumns?.Any(index => index > reader.FieldCount) == true)
+            throw new InvalidOperationException($"column number out of range; this message has {reader.FieldCount} fields.");
         var lines = new List<string> { "#  Column                 Value" };
         for (int i = 0; i < reader.FieldCount; i++)
         {
             string name = reader.GetName(i);
-            lines.Add($"{i + 1,2} {name,-22} {OneLine(FormatDatabaseValue(name, reader.GetValue(i)), 100)}");
+            if (selectedColumns is null || selectedColumns.Contains(i + 1))
+                lines.Add($"{i + 1,2} {name,-22} {OneLine(FormatDatabaseValue(name, reader.GetValue(i)), 100)}");
         }
         return string.Join("\n", lines);
     }
@@ -513,9 +529,9 @@ internal sealed class AppConsoleService
             throw new InvalidOperationException("navigate to a message with 'db cd <message-id>' first.");
         if (args.Length == 0)
             return HandleMessages(["show", messageId.ToString()]);
-        if (args.Length == 2 && args[0] == "--field")
+        if (args.Length == 2 && args[0] is "--field" or "--column")
             return HandleMessages(["show", messageId.ToString(), "--field", args[1]]);
-        throw new InvalidOperationException("usage: db show [--field column]");
+        throw new InvalidOperationException("usage: db show [--column column]");
     }
 
     private string ListCurrentMessageColumns()
@@ -537,8 +553,8 @@ internal sealed class AppConsoleService
         var result = new List<int>();
         foreach (string part in args[1].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
         {
-            if (!int.TryParse(part, out int index) || index < 1 || !result.Contains(index))
-                throw new InvalidOperationException("column selection must be unique, comma-separated 1-based numbers (see db columns). ");
+            if (!int.TryParse(part, out int index) || index < 1 || result.Contains(index))
+                throw new InvalidOperationException("column selection must contain unique, comma-separated 1-based numbers (see db columns for message fields).");
             result.Add(index);
         }
         if (result.Count == 0)
@@ -634,7 +650,8 @@ internal sealed class AppConsoleService
             return $"0x{Convert.ToHexString(bytes)}";
 
         string text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
-        if (columnName.EndsWith("Json", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(text))
+        if (!string.IsNullOrWhiteSpace(text) && (columnName.EndsWith("Json", StringComparison.OrdinalIgnoreCase) ||
+            text.TrimStart().StartsWith('{') || text.TrimStart().StartsWith('[')))
         {
             try
             {
@@ -689,7 +706,7 @@ internal sealed class AppConsoleService
             string typed = DecodeCompletionToken(rawToken);
             if (precedingArgs.Count == 1)
             {
-                string[] subcommands = ["ls", "cd", "pwd", "show", "columns"];
+                string[] subcommands = ["help", "ls", "cd", "pwd", "show", "columns"];
                 return new AppConsoleCompletionResult(tokenStart, subcommands.Where(item => item.StartsWith(typed, StringComparison.OrdinalIgnoreCase)).ToArray());
             }
             if (_databaseConnected && precedingArgs.Count == 2 && precedingArgs[1].Equals("cd", StringComparison.OrdinalIgnoreCase))
@@ -987,6 +1004,26 @@ internal sealed class AppConsoleService
         return result;
     }
 
+    private const string DatabaseHelpText =
+        "Database browser commands (connect first; db help is also available while disconnected):\n" +
+        "  db ls [--columns N[,N...]]  List sessions, session messages, or selected message fields\n" +
+        "  db cd <id|..|/>             Enter a session/message, move up, or return to database root\n" +
+        "  db pwd                      Show the current database location\n" +
+        "  db show                     Show every field of the selected message\n" +
+        "  db show --column <name>     Show one field; JSON fields are pretty-printed\n" +
+        "  db show --field <name>      Alias for --column\n" +
+        "  db columns                  List message field names and their 1-based indexes\n" +
+        "\nWhere commands work:\n" +
+        "  At /, db ls lists sessions; --columns selects session-list columns.\n" +
+        "  In a session, db ls lists its messages; --columns selects message fields.\n" +
+        "  In a message, db ls lists field values; --columns selects field numbers.\n" +
+        "  db show and db columns require the current location to be a message.\n" +
+        "  Column numbers are 1-based; use db columns for message field indexes.\n" +
+        "  db ls --columns 1,4 accepts comma-separated, unique numbers.\n" +
+        "\nLong output: append | more or | less to any command. In the pager use Space/Down to advance, " +
+        "q to quit; less also supports Up, b, g and G.\n" +
+        "Example: db show --column RawJson | less";
+
     private const string HelpText =
         "Available commands:\n" +
         "  help                     Show this help\n" +
@@ -996,10 +1033,11 @@ internal sealed class AppConsoleService
         "  cat <file>               Display a small text file\n" +
         "  connect [file]           Connect to a database file in app data (read-only)\n" +
         "  disconnect               Disconnect from the database\n" +
+        "  db help                  Explain database browsing commands and locations\n" +
         "  db ls [--columns 1,3]    Browse sessions, messages, or message fields\n" +
         "  db cd <id|..|/>          Navigate into a session/message or move up\n" +
         "  db pwd                  Show the current database location\n" +
-        "  db show [--field name]   Show a message or one of its fields\n" +
+        "  db show [--column name]  Show a message or one of its fields\n" +
         "  db columns              List message field names and 1-based indexes\n" +
         "  sessions list [--limit N] List recent sessions (1-100)\n" +
         "  sessions show <id>       Show session details and recent messages\n" +
@@ -1007,11 +1045,12 @@ internal sealed class AppConsoleService
         "  describe <table>         Show database column details\n" +
         "  messages show <id>       Show every stored message field\n" +
         "  messages show <id> --field <column>  Show one message field\n" +
+        "  <command> | more|less    Page long output (Space/Down; q to quit)\n" +
         "  clear                    Clear the terminal display\n" +
         "  quit                     End the console session and close the window\n" +
         "\nThis is an app console, not an operating-system shell. File access is limited to the app data directory.";
 }
 
-internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false, string Kind = "normal");
+internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false, string Kind = "normal", string PagerMode = "");
 
 internal sealed record AppConsoleCompletionResult(int ReplaceFrom, IReadOnlyList<string> Candidates);

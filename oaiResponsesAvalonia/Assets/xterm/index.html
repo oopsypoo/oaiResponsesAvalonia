@@ -79,11 +79,12 @@
       let line = '';
       let cursor = 0;
       let busy = false;
+      let pager = null;
       let historyIndex = -1;
       let historyDraft = '';
       const history = [];
       let prompt = '~/ $ ';
-      const commandCompletions = ['help', 'pwd', 'ls', 'cd', 'cat', 'connect', 'disconnect', 'sessions', 'tables', 'describe', 'messages', 'clear', 'quit', 'exit'];
+      const commandCompletions = ['help', 'pwd', 'ls', 'cd', 'cat', 'connect', 'disconnect', 'sessions', 'tables', 'describe', 'messages', 'db', 'clear', 'quit', 'exit'];
       const ansi = { reset: '\u001b[0m', cyan: '\u001b[36m', green: '\u001b[32m', yellow: '\u001b[33m', red: '\u001b[31m' };
       const coloredPrompt = () => ansi.cyan + prompt + ansi.reset;
       const redrawLine = () => {
@@ -92,6 +93,40 @@
       };
       terminal.write(coloredPrompt());
       terminal.focus();
+
+      const renderPager = () => {
+        if (!pager) return;
+        const pageSize = Math.max(1, terminal.rows - 1);
+        const pageCount = Math.max(1, Math.ceil(pager.lines.length / pageSize));
+        pager.page = Math.max(0, Math.min(pager.page, pageCount - 1));
+        const pageLines = pager.lines.slice(pager.page * pageSize, (pager.page + 1) * pageSize);
+        const endOfOutput = pager.page >= pageCount - 1;
+        const hint = pager.mode === 'less'
+          ? 'Space/Down: next  Up/b: back  g/G: start/end  q: quit'
+          : 'Space/Down: next  q: quit';
+        const status = endOfOutput
+          ? `-- ${pager.page + 1}/${pageCount} (END) -- ${hint}`
+          : `-- ${pager.page + 1}/${pageCount} -- ${hint}`;
+        terminal.write('\u001b[2J\u001b[H' + pageLines.join('\r\n') + '\r\n' + status);
+      };
+      const openPager = (text, mode) => {
+        const width = Math.max(1, terminal.cols - 1);
+        const lines = [];
+        for (const sourceLine of text.replace(/\r/g, '').split('\n')) {
+          const characters = Array.from(sourceLine);
+          if (characters.length === 0) lines.push('');
+          else for (let i = 0; i < characters.length; i += width) lines.push(characters.slice(i, i + width).join(''));
+        }
+        pager = { lines, mode, page: 0 };
+        terminal.write('\u001b[?1049h');
+        renderPager();
+      };
+      const closePager = () => {
+        pager = null;
+        terminal.write('\u001b[?1049l\r\n' + coloredPrompt());
+        busy = false;
+        terminal.focus();
+      };
 
       const getCompletions = () => {
         const trimmedLine = line.trimEnd();
@@ -103,6 +138,10 @@
 
         if (completed.length === 0) {
           candidates = commandCompletions;
+        } else if (completed.length === 1 && completed[0] === 'db') {
+          candidates = ['help', 'ls', 'cd', 'pwd', 'show', 'columns'];
+        } else if (completed[completed.length - 1] === '|') {
+          candidates = ['more', 'less'];
         } else if (completed.length === 1 && completed[0] === 'sessions') {
           candidates = ['list', 'show'];
         } else if (completed.length === 1 && completed[0] === 'messages') {
@@ -113,6 +152,25 @@
       };
 
       terminal.onData(data => {
+        if (pager) {
+          if (data === 'q' || data === '\u001b' || data === '\u001b[3~') {
+            closePager();
+            return;
+          }
+          if (data === ' ' || data === '\u001b[B' || data === 'j' || data === '\u001b[6~') {
+            pager.page++;
+            renderPager();
+            return;
+          }
+          if (pager.mode === 'less') {
+            if (data === '\u001b[A' || data === 'b' || data === '\u001b[5~') pager.page--;
+            else if (data === 'g') pager.page = 0;
+            else if (data === 'G') pager.page = Math.ceil(pager.lines.length / Math.max(1, terminal.rows - 1)) - 1;
+            else return;
+            renderPager();
+          }
+          return;
+        }
         if (busy) return;
 
         if (data === '\u001b[A' || data === '\u001b[B') {
@@ -247,6 +305,10 @@
       window.receiveResult = result => {
         if (typeof result.prompt === 'string' && result.prompt.length > 0) prompt = result.prompt;
         if (typeof result.output === 'string' && result.output.length > 0) {
+          if (result.pagerMode && !result.closeWindow) {
+            openPager(result.output, result.pagerMode);
+            return;
+          }
           const outputColor = result.kind === 'error' ? ansi.red : result.kind === 'success' ? ansi.green : '';
           terminal.write(outputColor + result.output.replace(/\r?\n/g, '\r\n') + (outputColor ? ansi.reset : ''));
           if (!result.output.endsWith('\n')) terminal.write('\r\n');

@@ -17,6 +17,9 @@ internal sealed class AppConsoleService
     private const int MaximumDatabaseOutputCharacters = 200_000;
     private readonly string _rootDirectory;
     private string _currentDirectory;
+    private string? _connectedDatabasePath;
+    private int? _databaseSessionId;
+    private int? _databaseMessageId;
     private bool _databaseConnected;
 
     public AppConsoleService()
@@ -26,7 +29,9 @@ internal sealed class AppConsoleService
         _currentDirectory = _rootDirectory;
     }
 
-    public string Prompt => $"~{GetRelativeCurrentDirectory()} $ ";
+    public string Prompt => _databaseConnected
+        ? $"db[{Path.GetFileName(_connectedDatabasePath)}]:{GetDatabaseLocation()} $ "
+        : $"~{GetRelativeCurrentDirectory()} $ ";
 
     public AppConsoleResult Execute(string commandLine)
     {
@@ -50,6 +55,7 @@ internal sealed class AppConsoleService
                 "tables" => HandleTables(args.ToArray()),
                 "describe" => HandleDescribe(args.Skip(1).ToArray()),
                 "messages" => HandleMessages(args.Skip(1).ToArray()),
+                "db" => HandleDatabaseBrowser(args.Skip(1).ToArray()),
                 "clear" => "\u001b[2J\u001b[H",
                 "quit" or "exit" => "Goodbye.",
                 _ => $"{command}: command not found. Type 'help' to see available commands."
@@ -57,7 +63,7 @@ internal sealed class AppConsoleService
 
             bool closeWindow = command is "quit" or "exit";
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or
-                "connect" or "disconnect" or "sessions" or "tables" or "describe" or "messages" or "clear" or "quit" or "exit";
+                "connect" or "disconnect" or "sessions" or "tables" or "describe" or "messages" or "db" or "clear" or "quit" or "exit";
             string kind = !knownCommand ? "error" : command is "connect" or "disconnect" ? "success" : "normal";
             return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind);
         }
@@ -138,19 +144,24 @@ internal sealed class AppConsoleService
 
     private string ConnectDatabase(string[] args)
     {
-        if (args.Length > 0)
-            throw new InvalidOperationException("usage: connect");
+        if (args.Length > 1)
+            throw new InvalidOperationException("usage: connect [database-file]");
         if (_databaseConnected)
-            return "already connected to the application database (read-only).";
+            return $"already connected to {Path.GetFileName(_connectedDatabasePath)} (read-only). Use disconnect before switching databases.";
 
-        string databasePath = AppDbContext.DatabaseFilePath;
+        string databasePath = args.Length == 0 ? AppDbContext.DatabaseFilePath : ResolvePath(args[0]);
         if (!File.Exists(databasePath))
             throw new FileNotFoundException("application database was not found", databasePath);
 
+        EnsureNoReparsePoints(databasePath);
         using AppDbContext db = CreateReadOnlyDbContext(databasePath);
-        _ = db.Database.CanConnect();
+        if (!db.Database.CanConnect())
+            throw new InvalidOperationException($"could not connect to database file '{Path.GetFileName(databasePath)}'.");
+        _connectedDatabasePath = databasePath;
+        _databaseSessionId = null;
+        _databaseMessageId = null;
         _databaseConnected = true;
-        return "connected to the application database (read-only).";
+        return $"connected to {Path.GetFileName(databasePath)} (read-only). Use 'db ls' to browse.";
     }
 
     private string DisconnectDatabase(string[] args)
@@ -161,7 +172,10 @@ internal sealed class AppConsoleService
             return "not connected.";
 
         _databaseConnected = false;
-        return "disconnected from the application database.";
+        _connectedDatabasePath = null;
+        _databaseSessionId = null;
+        _databaseMessageId = null;
+        return "disconnected from the database.";
     }
 
     private string HandleSessions(string[] args)
@@ -171,8 +185,7 @@ internal sealed class AppConsoleService
         if (!_databaseConnected)
             throw new InvalidOperationException("connect to the application database first.");
 
-        string databasePath = AppDbContext.DatabaseFilePath;
-        using AppDbContext db = CreateReadOnlyDbContext(databasePath);
+        using AppDbContext db = CreateReadOnlyDbContext(ConnectedDatabasePath);
 
         return args[0].ToLowerInvariant() switch
         {
@@ -344,17 +357,234 @@ internal sealed class AppConsoleService
         return output.ToString().TrimEnd();
     }
 
+    private string HandleDatabaseBrowser(string[] args)
+    {
+        EnsureDatabaseConnected();
+        if (args.Length == 0)
+            throw new InvalidOperationException("usage: db ls [--columns 1,3] | db cd <id|..|/> | db pwd | db show [--field column] | db columns");
+
+        return args[0].ToLowerInvariant() switch
+        {
+            "ls" => ListDatabaseLocation(args.Skip(1).ToArray()),
+            "cd" => ChangeDatabaseLocation(args.Skip(1).ToArray()),
+            "pwd" when args.Length == 1 => GetDatabaseLocation(),
+            "show" => ShowCurrentDatabaseMessage(args.Skip(1).ToArray()),
+            "columns" when args.Length == 1 => ListCurrentMessageColumns(),
+            _ => throw new InvalidOperationException("usage: db ls [--columns 1,3] | db cd <id|..|/> | db pwd | db show [--field column] | db columns")
+        };
+    }
+
+    private string ListDatabaseLocation(string[] args)
+    {
+        List<int>? selectedColumns = ParseColumnArguments(args);
+        using AppDbContext db = CreateReadOnlyDbContext(ConnectedDatabasePath);
+        if (_databaseMessageId is int messageId)
+            return ListMessageFields(messageId);
+        if (_databaseSessionId is int sessionId)
+            return ListSessionMessages(sessionId, selectedColumns);
+        return ListDatabaseSessions(db, selectedColumns);
+    }
+
+    private string ChangeDatabaseLocation(string[] args)
+    {
+        if (args.Length != 1)
+            throw new InvalidOperationException("usage: db cd <session-id|message-id|..|/>");
+        string target = args[0];
+        if (target is "/" or "~")
+        {
+            _databaseSessionId = null;
+            _databaseMessageId = null;
+            return string.Empty;
+        }
+        if (target == "..")
+        {
+            if (_databaseMessageId.HasValue)
+                _databaseMessageId = null;
+            else if (_databaseSessionId.HasValue)
+                _databaseSessionId = null;
+            return string.Empty;
+        }
+        if (!int.TryParse(target, out int id) || id <= 0)
+            throw new InvalidOperationException("database navigation expects a numeric session or message id.");
+
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        if (_databaseSessionId is null)
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT 1 FROM Sessions WHERE Id = $id LIMIT 1;";
+            command.Parameters.AddWithValue("$id", id);
+            if (command.ExecuteScalar() is null)
+                throw new DirectoryNotFoundException($"session {id} not found.");
+            _databaseSessionId = id;
+            return string.Empty;
+        }
+
+        string messagesTable = FindTableName(connection, "Messages");
+        List<DatabaseColumn> columns = ReadTableColumns(connection, messagesTable);
+        string idColumn = FindColumn(columns, "Id").Name;
+        string sessionColumn = FindColumn(columns, "ChatSessionId").Name;
+        using SqliteCommand messageCommand = connection.CreateCommand();
+        messageCommand.CommandText = $"SELECT 1 FROM {QuoteIdentifier(messagesTable)} WHERE {QuoteIdentifier(idColumn)} = $id AND {QuoteIdentifier(sessionColumn)} = $sessionId LIMIT 1;";
+        messageCommand.Parameters.AddWithValue("$id", id);
+        messageCommand.Parameters.AddWithValue("$sessionId", _databaseSessionId.Value);
+        if (messageCommand.ExecuteScalar() is null)
+            throw new DirectoryNotFoundException($"message {id} not found in session {_databaseSessionId}.");
+        _databaseMessageId = id;
+        return string.Empty;
+    }
+
+    private string ListDatabaseSessions(AppDbContext db, List<int>? selectedColumns)
+    {
+        var sessions = db.Sessions.AsNoTracking()
+            .OrderByDescending(session => session.LastUsedAt)
+            .Take(MaximumListItems)
+            .Select(session => new { session.Id, session.LastUsedAt, MessageCount = session.Messages.Count, session.Title })
+            .ToList();
+        var rows = sessions.Select(session => new[]
+        {
+            session.Id.ToString(),
+            session.LastUsedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+            session.MessageCount.ToString(),
+            OneLine(session.Title, 80)
+        }).ToList();
+        return FormatBrowserTable(new[] { "Id", "LastUsedAt", "MessageCount", "Title" }, rows, selectedColumns);
+    }
+
+    private string ListSessionMessages(int sessionId, List<int>? selectedColumns)
+    {
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        string table = FindTableName(connection, "Messages");
+        List<DatabaseColumn> columns = ReadTableColumns(connection, table);
+        string idColumn = FindColumn(columns, "Id").Name;
+        string sessionColumn = FindColumn(columns, "ChatSessionId").Name;
+        string timeColumn = columns.FirstOrDefault(column => string.Equals(column.Name, "Timestamp", StringComparison.OrdinalIgnoreCase))?.Name ?? idColumn;
+        string[] headers = columns.Select(column => column.Name).ToArray();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT * FROM {QuoteIdentifier(table)} WHERE {QuoteIdentifier(sessionColumn)} = $sessionId ORDER BY {QuoteIdentifier(timeColumn)} DESC LIMIT {MaximumListItems};";
+        command.Parameters.AddWithValue("$sessionId", sessionId);
+        using SqliteDataReader reader = command.ExecuteReader();
+        var rows = new List<string[]>();
+        while (reader.Read())
+        {
+            var row = new string[reader.FieldCount];
+            for (int i = 0; i < reader.FieldCount; i++)
+                row[i] = OneLine(FormatDatabaseValue(reader.GetName(i), reader.GetValue(i)), 90);
+            rows.Add(row);
+        }
+        if (selectedColumns is null)
+        {
+            selectedColumns = new List<int>();
+            foreach (string preferred in new[] { "Id", "Role", "Timestamp", "Content" })
+            {
+                int index = Array.FindIndex(headers, header => string.Equals(header, preferred, StringComparison.OrdinalIgnoreCase));
+                if (index >= 0)
+                    selectedColumns.Add(index + 1);
+            }
+            if (selectedColumns.Count == 0)
+                selectedColumns.Add(1);
+        }
+        return FormatBrowserTable(headers, rows, selectedColumns);
+    }
+
+    private string ListMessageFields(int messageId)
+    {
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        string table = FindTableName(connection, "Messages");
+        List<DatabaseColumn> columns = ReadTableColumns(connection, table);
+        string idColumn = FindColumn(columns, "Id").Name;
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT * FROM {QuoteIdentifier(table)} WHERE {QuoteIdentifier(idColumn)} = $id LIMIT 1;";
+        command.Parameters.AddWithValue("$id", messageId);
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read())
+            return $"message {messageId} not found.";
+        var lines = new List<string> { "#  Column                 Value" };
+        for (int i = 0; i < reader.FieldCount; i++)
+        {
+            string name = reader.GetName(i);
+            lines.Add($"{i + 1,2} {name,-22} {OneLine(FormatDatabaseValue(name, reader.GetValue(i)), 100)}");
+        }
+        return string.Join("\n", lines);
+    }
+
+    private string ShowCurrentDatabaseMessage(string[] args)
+    {
+        if (_databaseMessageId is not int messageId)
+            throw new InvalidOperationException("navigate to a message with 'db cd <message-id>' first.");
+        if (args.Length == 0)
+            return HandleMessages(["show", messageId.ToString()]);
+        if (args.Length == 2 && args[0] == "--field")
+            return HandleMessages(["show", messageId.ToString(), "--field", args[1]]);
+        throw new InvalidOperationException("usage: db show [--field column]");
+    }
+
+    private string ListCurrentMessageColumns()
+    {
+        if (_databaseMessageId is not int messageId)
+            throw new InvalidOperationException("navigate to a message with 'db cd <message-id>' first.");
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        string table = FindTableName(connection, "Messages");
+        List<DatabaseColumn> columns = ReadTableColumns(connection, table);
+        return string.Join("\n", columns.Select((column, index) => $"{index + 1,2}  {column.Name}"));
+    }
+
+    private static List<int>? ParseColumnArguments(string[] args)
+    {
+        if (args.Length == 0)
+            return null;
+        if (args.Length != 2 || args[0] != "--columns")
+            throw new InvalidOperationException("usage: db ls [--columns 1,3,4]");
+        var result = new List<int>();
+        foreach (string part in args[1].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!int.TryParse(part, out int index) || index < 1 || !result.Contains(index))
+                throw new InvalidOperationException("column selection must be unique, comma-separated 1-based numbers (see db columns). ");
+            result.Add(index);
+        }
+        if (result.Count == 0)
+            throw new InvalidOperationException("provide at least one column number.");
+        return result;
+    }
+
+    private static string FormatBrowserTable(string[] headers, List<string[]> rows, List<int>? selectedColumns)
+    {
+        if (rows.Count == 0)
+            return "(empty)";
+        int[] indexes = selectedColumns?.ToArray() ?? Enumerable.Range(1, headers.Length).ToArray();
+        if (indexes.Any(index => index > headers.Length))
+            throw new InvalidOperationException($"column number out of range; this listing has {headers.Length} columns.");
+        var output = new List<string> { "#  " + string.Join("  ", indexes.Select(index => $"{index}:{headers[index - 1]}")) };
+        for (int row = 0; row < rows.Count; row++)
+            output.Add($"{row + 1,2} " + string.Join("  ", indexes.Select(index => rows[row][index - 1])));
+        if (rows.Count >= MaximumListItems)
+            output.Add($"... listing limited to {MaximumListItems} rows");
+        return string.Join("\n", output);
+    }
+
+    private static DatabaseColumn FindColumn(List<DatabaseColumn> columns, string name) =>
+        columns.FirstOrDefault(column => string.Equals(column.Name, name, StringComparison.OrdinalIgnoreCase))
+        ?? throw new InvalidOperationException($"Messages table is missing required column '{name}'.");
+
+    private string GetDatabaseLocation()
+    {
+        if (_databaseMessageId is int messageId)
+            return $"/sessions/{_databaseSessionId}/messages/{messageId}";
+        return _databaseSessionId is int sessionId ? $"/sessions/{sessionId}" : "/";
+    }
+
+    private string ConnectedDatabasePath => _connectedDatabasePath ?? throw new InvalidOperationException("connect to a database first.");
+
     private void EnsureDatabaseConnected()
     {
         if (!_databaseConnected)
             throw new InvalidOperationException("connect to the application database first.");
     }
 
-    private static SqliteConnection OpenReadOnlyDatabase()
+    private SqliteConnection OpenReadOnlyDatabase()
     {
         string connectionString = new SqliteConnectionStringBuilder
         {
-            DataSource = AppDbContext.DatabaseFilePath,
+            DataSource = ConnectedDatabasePath,
             Mode = SqliteOpenMode.ReadOnly
         }.ToString();
         var connection = new SqliteConnection(connectionString);
@@ -454,7 +684,45 @@ internal sealed class AppConsoleService
             return new AppConsoleCompletionResult(tokenStart, []);
 
         string command = precedingArgs[0].ToLowerInvariant();
-        if (command is not ("cd" or "cat" or "ls"))
+        if (command == "db")
+        {
+            string typed = DecodeCompletionToken(rawToken);
+            if (precedingArgs.Count == 1)
+            {
+                string[] subcommands = ["ls", "cd", "pwd", "show", "columns"];
+                return new AppConsoleCompletionResult(tokenStart, subcommands.Where(item => item.StartsWith(typed, StringComparison.OrdinalIgnoreCase)).ToArray());
+            }
+            if (_databaseConnected && precedingArgs.Count == 2 && precedingArgs[1].Equals("cd", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    using SqliteConnection connection = OpenReadOnlyDatabase();
+                    using SqliteCommand commandForIds = connection.CreateCommand();
+                    if (_databaseSessionId is int sessionId)
+                    {
+                        string table = FindTableName(connection, "Messages");
+                        List<DatabaseColumn> columns = ReadTableColumns(connection, table);
+                        commandForIds.CommandText = $"SELECT {QuoteIdentifier(FindColumn(columns, "Id").Name)} FROM {QuoteIdentifier(table)} WHERE {QuoteIdentifier(FindColumn(columns, "ChatSessionId").Name)} = $sessionId ORDER BY {QuoteIdentifier(FindColumn(columns, "Id").Name)} DESC LIMIT 100;";
+                        commandForIds.Parameters.AddWithValue("$sessionId", sessionId);
+                    }
+                    else
+                    {
+                        commandForIds.CommandText = "SELECT Id FROM Sessions ORDER BY LastUsedAt DESC LIMIT 100;";
+                    }
+                    using SqliteDataReader reader = commandForIds.ExecuteReader();
+                    var databaseCandidates = new List<string> { "..", "/" };
+                    while (reader.Read())
+                    {
+                        string id = Convert.ToString(reader.GetValue(0), System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+                        if (id.StartsWith(typed, StringComparison.Ordinal)) databaseCandidates.Add(id);
+                    }
+                    return new AppConsoleCompletionResult(tokenStart, databaseCandidates);
+                }
+                catch { return new AppConsoleCompletionResult(tokenStart, ["..", "/"]); }
+            }
+            return new AppConsoleCompletionResult(tokenStart, []);
+        }
+        if (command is not ("cd" or "cat" or "ls" or "connect"))
             return new AppConsoleCompletionResult(tokenStart, []);
 
         string typedPath = DecodeCompletionToken(rawToken);
@@ -726,8 +994,13 @@ internal sealed class AppConsoleService
         "  ls [-a] [path]           List files and folders\n" +
         "  cd [path]                Change directory (confined to app data)\n" +
         "  cat <file>               Display a small text file\n" +
-        "  connect                  Connect to the app database (read-only)\n" +
-        "  disconnect               Disconnect from the app database\n" +
+        "  connect [file]           Connect to a database file in app data (read-only)\n" +
+        "  disconnect               Disconnect from the database\n" +
+        "  db ls [--columns 1,3]    Browse sessions, messages, or message fields\n" +
+        "  db cd <id|..|/>          Navigate into a session/message or move up\n" +
+        "  db pwd                  Show the current database location\n" +
+        "  db show [--field name]   Show a message or one of its fields\n" +
+        "  db columns              List message field names and 1-based indexes\n" +
         "  sessions list [--limit N] List recent sessions (1-100)\n" +
         "  sessions show <id>       Show session details and recent messages\n" +
         "  tables                   List database tables (read-only)\n" +

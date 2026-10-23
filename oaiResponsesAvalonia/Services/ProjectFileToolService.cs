@@ -71,18 +71,20 @@ namespace oaiResponsesAvalonia.Services
                 var pattern = string.IsNullOrWhiteSpace(glob) ? "*.*" : glob;
                 var limit = Math.Clamp(maxResults ?? 100, 1, 500);
 
-                var files = Directory
+                var matchingFiles = Directory
                     .EnumerateFiles(root, pattern, SearchOption.AllDirectories)
                     .Where(f => _options.AllowedExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
                     .Select(_guard.ToRelativePath)
                     .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-                    .Take(limit)
                     .ToList();
+                var files = matchingFiles.Take(limit).ToList();
 
                 return JsonSerializer.Serialize(new
                 {
                     ok = true,
-                    files
+                    files,
+                    total_files = matchingFiles.Count,
+                    truncated = matchingFiles.Count > files.Count
                 }, JsonOptions);
             }
             catch (Exception ex)

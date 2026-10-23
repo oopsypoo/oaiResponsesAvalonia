@@ -195,6 +195,7 @@ namespace oaiResponsesAvalonia
                         - Read only the minimum number of files needed.
                         - Prefer narrow line ranges when reading files.
                         - Use list_project_files only when needed.
+                        - When list_project_files returns truncated=true, do not treat the returned paths as the entire workspace; narrow the listing with subpath/glob or increase max_results.
                         - Treat tool results as the source of truth.
                         - Do not assume access outside the configured workspace root.
                         - Only write files inside the configured workspace root.
@@ -365,19 +366,20 @@ namespace oaiResponsesAvalonia
                 {
                     type = "function",
                     name = "list_project_files",
-                    description = "List files under the configured workspace root. Returns relative paths only. Read-only.",
+                    description = "List allowed files under the configured workspace root. The response includes total_files and truncated; if truncated is true, narrow with subpath/glob or increase max_results. Never assume omitted files are absent. Read-only.",
                     parameters = new
                     {
                         type = "object",
                         properties = new
                         {
-                            subpath = new { type = "string" },
-                            glob = new { type = "string" },
+                            subpath = new { type = "string", description = "Optional relative subfolder inside the workspace root." },
+                            glob = new { type = "string", description = "Optional filename pattern such as *.cs or *.axaml." },
                             max_results = new
                             {
                                 type = "integer",
                                 minimum = 1,
-                                maximum = 500
+                                maximum = 500,
+                                description = "Maximum paths to return (default 100; maximum 500). If the response is truncated, use subpath/glob or request a larger limit."
                             }
                         },
                         additionalProperties = false

@@ -32,6 +32,22 @@
       const terminalContainer = document.getElementById('terminal');
       terminal.open(terminalContainer);
 
+      // WebView2 exposes chrome.webview.postMessage, while Avalonia's
+      // WebKit-based Linux WebView exposes invokeCSharpAction instead.
+      const postMessageToHost = message => {
+        const webview = window.chrome && window.chrome.webview;
+        if (webview && typeof webview.postMessage === 'function') {
+          webview.postMessage(message);
+          return true;
+        }
+        if (typeof window.invokeCSharpAction === 'function') {
+          window.invokeCSharpAction(message);
+          return true;
+        }
+        return false;
+      };
+      const writeBridgeError = () => terminal.write('\r\nTerminal host bridge is unavailable.\r\n');
+
       // xterm.js defaults to 80 columns by 24 rows. Keep its grid fitted to
       // the WebView viewport as the Avalonia window is resized.
       const fitTerminal = () => {
@@ -155,7 +171,10 @@
             terminal.write('\r\n' + candidates.join('    ') + '\r\n');
             redrawLine();
           } else {
-            window.chrome.webview.postMessage(JSON.stringify({ type: 'complete', line }));
+            if (!postMessageToHost(JSON.stringify({ type: 'complete', line }))) {
+              writeBridgeError();
+              redrawLine();
+            }
           }
           return;
         }
@@ -171,8 +190,13 @@
           historyDraft = '';
           cursor = 0;
           busy = true;
-          window.chrome.webview.postMessage(JSON.stringify({ type: 'command', line: submittedLine }));
           line = '';
+          if (!postMessageToHost(JSON.stringify({ type: 'command', line: submittedLine }))) {
+            busy = false;
+            writeBridgeError();
+            terminal.write(coloredPrompt());
+            terminal.focus();
+          }
           return;
         }
 
@@ -229,7 +253,7 @@
         }
         busy = false;
         if (result.closeWindow) {
-          window.chrome.webview.postMessage(JSON.stringify({ type: 'close' }));
+          if (!postMessageToHost(JSON.stringify({ type: 'close' }))) writeBridgeError();
           return;
         }
         terminal.write(coloredPrompt());

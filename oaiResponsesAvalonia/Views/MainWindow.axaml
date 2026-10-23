@@ -211,6 +211,7 @@
             <MenuItem Header="Tools" Name="menuTools" IsEnabled="True">
                 <MenuItem Header="Available Models" Name="menuAvlblMdls" IsEnabled="True" Click="menuAvailableModels_Click" />
                 <MenuItem Header="MCP servers" Name="menuMcpServers" IsEnabled="True" Click="menuMcpServers_Click" />
+                <MenuItem Header="Terminal" Name="menuTerminal" IsEnabled="True" Click="OpenTerminalWindow_Click" />
             </MenuItem>
             <MenuItem Header="Help" Name="menuHelp" IsEnabled="True">
                 <MenuItem Header="About" Name="menuAbout" IsEnabled="True" Click="menuAbout_Click"/>
@@ -491,7 +492,7 @@
                                             Content="Open Activity Window"
                                             IsVisible="{Binding #RootWindow.ResponsesState.UseDeveloperTools}"
                                             Click="OpenDeveloperActivityWindow_Click" />
-                                    <Button DockPanel.Dock="Right" Margin="8,0,0,0" Padding="8,4" VerticalAlignment="Center" Content="Open Terminal" IsVisible="{Binding #RootWindow.ResponsesState.UseDeveloperTools}" Click="OpenTerminalWindow_Click" />
+                                    
                                 </DockPanel>
 
                                 <Grid>

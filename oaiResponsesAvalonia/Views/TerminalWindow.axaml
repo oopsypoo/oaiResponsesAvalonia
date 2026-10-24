@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:DataType="x:Object"
         x:CompileBindings="True"
+        Icon="../Assets/oai_terminal.ico"
         Title="Terminal"
         Width="900"
         Height="600"

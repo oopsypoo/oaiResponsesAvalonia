@@ -47,15 +47,33 @@ internal sealed class AppConsoleService
                 return new AppConsoleResult(string.Empty, Prompt);
 
             string pagerMode = string.Empty;
+            string[]? pipedGrepArguments = null;
             int pipeIndex = args.IndexOf("|");
             if (pipeIndex >= 0)
             {
-                if (pipeIndex == 0 || pipeIndex != args.Count - 2 ||
-                    args[^1].ToLowerInvariant() is not ("more" or "less"))
-                    throw new InvalidOperationException("usage: <command> | more|less");
-                pagerMode = args[^1].ToLowerInvariant();
+                if (pipeIndex == 0 || args.IndexOf("|", pipeIndex + 1) >= 0 || pipeIndex == args.Count - 1)
+                    throw new InvalidOperationException("usage: <command> | grep <search-term> OR <command> | more|less");
+
+                string[] pipeCommand = args.Skip(pipeIndex + 1).ToArray();
+                if (pipeCommand[0].Equals("grep", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (pipeCommand.Length == 1)
+                        throw new InvalidOperationException("usage: <command> | grep <search-term>");
+                    pipedGrepArguments = pipeCommand.Skip(1).ToArray();
+                }
+                else if (pipeCommand.Length == 1 && pipeCommand[0].ToLowerInvariant() is "more" or "less")
+                {
+                    pagerMode = pipeCommand[0].ToLowerInvariant();
+                }
+                else
+                {
+                    throw new InvalidOperationException("usage: <command> | grep <search-term> OR <command> | more|less");
+                }
                 args = args.Take(pipeIndex).ToList();
             }
+
+            if (pipedGrepArguments?.Any(argument => argument.Equals("-h", StringComparison.OrdinalIgnoreCase) || argument.Equals("--help", StringComparison.OrdinalIgnoreCase)) == true)
+                return new AppConsoleResult(GetCommandHelp(["grep"]), Prompt, PagerMode: pagerMode);
 
             int helpIndex = args.FindIndex(argument => argument.Equals("-h", StringComparison.OrdinalIgnoreCase) || argument.Equals("--help", StringComparison.OrdinalIgnoreCase));
             if (helpIndex >= 0)
@@ -73,6 +91,7 @@ internal sealed class AppConsoleService
                 "cd" => _databaseConnected ? ChangeDatabaseLocation(args.Skip(1).ToArray()) : ChangeDirectory(args.Skip(1).ToArray()),
                 "cat" when !_databaseConnected => ReadFile(args.Skip(1).ToArray()),
                 "cat" => throw new InvalidOperationException("cat is a filesystem-context command. Disconnect from the database to use it."),
+                "grep" => Grep(args.Skip(1).ToArray(), null),
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
                 "disconnect" => DisconnectDatabase(args.Skip(1).ToArray()),
                 "sessions" => HandleSessions(args.Skip(1).ToArray()),
@@ -90,8 +109,11 @@ internal sealed class AppConsoleService
                 _ => $"{command}: command not found. Type 'help' to see available commands."
             };
 
+            if (pipedGrepArguments is not null)
+                output = Grep(pipedGrepArguments, output);
+
             bool closeWindow = command is "quit" or "exit";
-            bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or
+            bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or "grep" or
                 "connect" or "disconnect" or "sessions" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
             string kind = !knownCommand ? "error" : command is "connect" or "disconnect" ? "success" : "normal";
             return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode);
@@ -129,7 +151,8 @@ internal sealed class AppConsoleService
         string synopsis = command switch
         {
             "ls" when _databaseConnected || databaseAlias => "usage: ls [--columns N[,N...]]\nLists sessions at /, messages inside a session, or fields inside a message.",
-            "ls" => "usage: ls [-a] [path]\nLists entries in the app-data directory. -a includes hidden entries.",
+            "ls" => "usage: ls [-a] [-l] [path]\nLists entries in the app-data directory. -a includes hidden entries; -l shows type, size, and last-modified time.",
+            "grep" => "usage: grep <search-term> <file> OR <command> | grep <search-term>\nSearches literal text, case-insensitively, with line numbers and colored matches by default. File search is available in filesystem context; piped output can be searched in either context. This is an application command, not an operating-system grep.",
             "cd" when _databaseConnected || databaseAlias => "usage: cd <session-id|message-id|media|..|/>\nNavigates sessions, messages, and a message's media records; does not change filesystem directories.",
             "cd" => "usage: cd [path]\nChanges directory within the app-data directory.",
             "pwd" when _databaseConnected || databaseAlias => "usage: pwd\nShows the current database location.",
@@ -154,9 +177,12 @@ internal sealed class AppConsoleService
     private string ListDirectory(string[] args)
     {
         bool showHidden = args.Contains("-a", StringComparer.Ordinal);
-        string[] paths = args.Where(arg => arg != "-a").ToArray();
+        bool detailed = args.Contains("-l", StringComparer.Ordinal);
+        string[] paths = args.Where(arg => arg is not ("-a" or "-l")).ToArray();
+        if (args.Any(arg => arg.StartsWith("-", StringComparison.Ordinal) && arg is not ("-a" or "-l")))
+            throw new InvalidOperationException("usage: ls [-a] [-l] [path]");
         if (paths.Length > 1)
-            throw new InvalidOperationException("usage: ls [-a] [path]");
+            throw new InvalidOperationException("usage: ls [-a] [-l] [path]");
 
         string directory = paths.Length == 0 ? _currentDirectory : ResolvePath(paths[0]);
         if (!Directory.Exists(directory))
@@ -174,7 +200,17 @@ internal sealed class AppConsoleService
             if (IsReparsePoint(path))
                 continue;
 
-            entries.Add(Directory.Exists(path) ? name + "/" : name);
+            bool isDirectory = Directory.Exists(path);
+            if (detailed)
+            {
+                long size = isDirectory ? 0 : new FileInfo(path).Length;
+                DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
+                entries.Add($"{(isDirectory ? "dir" : "file"),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
+            }
+            else
+            {
+                entries.Add(isDirectory ? name + "/" : name);
+            }
             if (entries.Count >= MaximumListItems)
             {
                 entries.Add($"... listing limited to {MaximumListItems} entries");
@@ -182,7 +218,11 @@ internal sealed class AppConsoleService
             }
         }
 
-        return entries.Count == 0 ? "(empty)" : string.Join("\n", entries);
+        if (entries.Count == 0)
+            return "(empty)";
+        return detailed
+            ? "Type  Size (bytes)  Last modified     Name\n" + string.Join("\n", entries)
+            : string.Join("\n", entries);
     }
 
     private string ChangeDirectory(string[] args)
@@ -218,6 +258,72 @@ internal sealed class AppConsoleService
             throw new InvalidOperationException("binary files are not displayed by cat.");
 
         return Encoding.UTF8.GetString(bytes).TrimEnd('\r', '\n');
+    }
+
+    /// <summary>
+    /// Searches application-console output or a confined text file. This is a deliberately small, literal-search command, not a system grep process.
+    /// </summary>
+    private string Grep(string[] args, string? input)
+    {
+        var operands = new List<string>();
+        foreach (string argument in args)
+        {
+            if (argument is "-n" or "-i")
+                continue; // Line numbers and case-insensitive matching are the console defaults.
+            if (argument.StartsWith("-", StringComparison.Ordinal))
+                throw new InvalidOperationException("usage: grep <search-term> [file]; supported options: -n -i (both enabled by default)");
+            operands.Add(argument);
+        }
+
+        if (operands.Count is < 1 or > 2)
+            throw new InvalidOperationException("usage: grep <search-term> [file], or <command> | grep <search-term>");
+        if (input is not null && operands.Count != 1)
+            throw new InvalidOperationException("when filtering piped output, provide only the search term: <command> | grep <search-term>");
+
+        string searchTerm = operands[0];
+        if (string.IsNullOrEmpty(searchTerm))
+            throw new InvalidOperationException("search term cannot be empty.");
+
+        if (input is null)
+        {
+            if (operands.Count != 2)
+                throw new InvalidOperationException("grep needs a file in filesystem context or input from a pipe; example: ls | grep notes");
+            if (_databaseConnected)
+                throw new InvalidOperationException("grep file search is available only in filesystem context; in database context, pipe a command such as ls to grep.");
+            input = ReadFile([operands[1]]);
+        }
+
+        string[] lines = input.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n');
+        var matches = new List<string>();
+        for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        {
+            string line = lines[lineIndex];
+            if (line.IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+            matches.Add($"{lineIndex + 1}:" + ColorizeMatches(line, searchTerm));
+        }
+        return matches.Count == 0 ? "(no matches)" : string.Join("\n", matches);
+    }
+
+    private static string ColorizeMatches(string line, string searchTerm)
+    {
+        const string highlight = "\u001b[1;31m";
+        const string reset = "\u001b[0m";
+        var output = new StringBuilder();
+        int cursor = 0;
+        while (cursor < line.Length)
+        {
+            int match = line.IndexOf(searchTerm, cursor, StringComparison.OrdinalIgnoreCase);
+            if (match < 0)
+            {
+                output.Append(line, cursor, line.Length - cursor);
+                break;
+            }
+            output.Append(line, cursor, match - cursor);
+            output.Append(highlight).Append(line, match, searchTerm.Length).Append(reset);
+            cursor = match + searchTerm.Length;
+        }
+        return output.ToString();
     }
 
     private string ConnectDatabase(string[] args)
@@ -1289,12 +1395,15 @@ internal sealed class AppConsoleService
         "Context: filesystem (app-data directory). File access is confined to app data.\n\n" +
         "  help                         Show help for the current context\n" +
         "  pwd                          Show the current app-data directory\n" +
-        "  ls [-a] [path]               List files and folders\n" +
+        "  ls [-a] [-l] [path]          List files; -l shows type, byte size, and modified time\n" +
         "  cd [path]                    Change directory within app data\n" +
         "  cat <file>                   Display a small text file\n" +
+        "  grep <term> <file>           Search text (case-insensitive, numbered, colored)\n" +
+        "  <command> | grep <term>      Filter command output; works in both contexts\n" +
         "  connect [database-file]     Connect read-only; switches to database context\n" +
         "  quit                         Close this terminal window\n\n" +
         "Use ls -h, cd --help, or connect --help for command help.\n" +
+        "grep searches literal text; -n and -i are enabled by default, and matches are colored. It is an application command, not system grep.\n" +
         "Long output: append | more or | less (Space/Down to advance, q to quit).";
 
     private string GetDatabaseHelpText() =>
@@ -1302,6 +1411,7 @@ internal sealed class AppConsoleService
         $"Context: {(_databaseConnected ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : "database (not connected)")}. {(_databaseConnected ? "Filesystem commands are unavailable until disconnect." : "Run connect [database-file] to enter this context.")}\n\n" +
         "  help                         Show help for the current context\n" +
         "  ls [--columns N[,N...]]      List sessions, messages, fields, or media records at the current location\n" +
+        "  <command> | grep <term>      Search output with numbered, case-insensitive, colored matches\n" +
         "  cd <id|media|..|/>           Enter a session, message, or its media; move up or to root\n" +
         "  pwd                          Show the current database location\n" +
         "  show [--column <name>]       Show fields of the current message or media record\n" +
@@ -1316,7 +1426,7 @@ internal sealed class AppConsoleService
         "Use ls --columns 1,4 to select 1-based columns in the current listing. Use columns for message-field indexes.\n" +
         "show at a message or media record displays all fields; --column (or --field) selects one field and pretty-prints JSON.\n" +
         "The optional 'db' prefix remains accepted (for example, db ls), but is not required.\n" +
-        "Use ls -h or show --help for command help. Long output: append | more or | less; Space/Down advances, q quits.";
+        "Use ls -h or show --help for command help. grep searches literal text in piped application output (also in filesystem context); -n and -i are defaults and matches are colored. This is not a system shell grep. Long output: append | more or | less; Space/Down advances, q quits.";
 
 
 

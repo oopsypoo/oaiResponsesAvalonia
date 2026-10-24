@@ -23,6 +23,8 @@ internal sealed class AppConsoleService
     private string? _connectedDatabasePath;
     private int? _databaseSessionId;
     private int? _databaseMessageId;
+    private bool _databaseMediaDirectory;
+    private int? _databaseMediaId;
     private bool _databaseConnected;
 
     public AppConsoleService()
@@ -128,12 +130,12 @@ internal sealed class AppConsoleService
         {
             "ls" when _databaseConnected || databaseAlias => "usage: ls [--columns N[,N...]]\nLists sessions at /, messages inside a session, or fields inside a message.",
             "ls" => "usage: ls [-a] [path]\nLists entries in the app-data directory. -a includes hidden entries.",
-            "cd" when _databaseConnected || databaseAlias => "usage: cd <session-id|message-id|..|/>\nNavigates the database location shown in the prompt; it does not change filesystem directories.",
+            "cd" when _databaseConnected || databaseAlias => "usage: cd <session-id|message-id|media|..|/>\nNavigates sessions, messages, and a message's media records; does not change filesystem directories.",
             "cd" => "usage: cd [path]\nChanges directory within the app-data directory.",
             "pwd" when _databaseConnected || databaseAlias => "usage: pwd\nShows the current database location.",
             "pwd" => "usage: pwd\nShows the current app-data directory.",
             "show" when _databaseConnected || databaseAlias => "usage: show [--column <name>|--field <name>]\nRequires a message location. Without an option, displays all message fields; with a column, displays one value and pretty-prints JSON.",
-            "columns" when _databaseConnected || databaseAlias => "usage: columns\nRequires a message location. Lists message field names and their 1-based indexes.",
+            "columns" when _databaseConnected || databaseAlias => "usage: columns\nRequires a message or media-record location. Lists field names and their 1-based indexes.",
             "connect" => "usage: connect [database-file]\nConnects read-only to a database file under app data and switches this terminal to database context.",
             "disconnect" => "usage: disconnect\nDisconnects and returns this terminal to filesystem context.",
             "cat" => "usage: cat <file>\nDisplays a small text file in filesystem context.",
@@ -235,7 +237,11 @@ internal sealed class AppConsoleService
             throw new InvalidOperationException($"could not connect to database file '{Path.GetFileName(databasePath)}'.");
         _connectedDatabasePath = databasePath;
         _databaseSessionId = null;
+        _databaseMediaDirectory = false;
+        _databaseMediaId = null;
         _databaseMessageId = null;
+        
+        
         _databaseConnected = true;
         return $"connected to {Path.GetFileName(databasePath)} (read-only). Database context is active; use 'ls' to browse.";
     }
@@ -250,7 +256,11 @@ internal sealed class AppConsoleService
         _databaseConnected = false;
         _connectedDatabasePath = null;
         _databaseSessionId = null;
+        _databaseMediaDirectory = false;
+        _databaseMediaId = null;
         _databaseMessageId = null;
+        
+        
         return "disconnected from the database.";
     }
 
@@ -453,9 +463,16 @@ internal sealed class AppConsoleService
     private string ListDatabaseLocation(string[] args)
     {
         List<int>? selectedColumns = ParseColumnArguments(args);
+        if (_databaseMediaId is int mediaId)
+            return ListMediaFields(mediaId, selectedColumns);
+        if (_databaseMediaDirectory && _databaseMessageId is int parentMessageId)
+            return ListMessageMedia(parentMessageId, selectedColumns);
         using AppDbContext db = CreateReadOnlyDbContext(ConnectedDatabasePath);
         if (_databaseMessageId is int messageId)
+        {
             return ListMessageFields(messageId, selectedColumns);
+        }
+
         if (_databaseSessionId is int sessionId)
             return ListSessionMessages(sessionId, selectedColumns);
         return ListDatabaseSessions(db, selectedColumns);
@@ -464,26 +481,69 @@ internal sealed class AppConsoleService
     private string ChangeDatabaseLocation(string[] args)
     {
         if (args.Length != 1)
-            throw new InvalidOperationException("usage: cd <session-id|message-id|..|/>");
+            throw new InvalidOperationException("usage: cd <session-id|message-id|media|..|/>");
         string target = args[0];
         if (target is "/" or "~")
         {
             _databaseSessionId = null;
+        _databaseMediaDirectory = false;
+        _databaseMediaId = null;
             _databaseMessageId = null;
+        
+        
+            return string.Empty;
+        }
+        if (target == ".." && _databaseMediaId.HasValue)
+        {
+            _databaseMediaId = null;
+            return string.Empty;
+        }
+        if (target == ".." && _databaseMediaDirectory)
+        {
+            _databaseMediaDirectory = false;
             return string.Empty;
         }
         if (target == "..")
         {
-            if (_databaseMessageId.HasValue)
+            if (_databaseMediaId.HasValue) _databaseMediaId = null;
+                
+            else if (_databaseMediaDirectory) _databaseMediaDirectory = false;
+                
+            else if (_databaseMessageId.HasValue)
                 _databaseMessageId = null;
+        
+        
             else if (_databaseSessionId.HasValue)
                 _databaseSessionId = null;
+        _databaseMediaDirectory = false;
+        _databaseMediaId = null;
+            return string.Empty;
+        }
+        if (_databaseMessageId.HasValue && !_databaseMediaDirectory && target.Equals("media", StringComparison.OrdinalIgnoreCase))
+        {
+            _databaseMediaDirectory = true;
             return string.Empty;
         }
         if (!int.TryParse(target, out int id) || id <= 0)
             throw new InvalidOperationException("database navigation expects a numeric session or message id.");
 
         using SqliteConnection connection = OpenReadOnlyDatabase();
+        if (_databaseMediaDirectory && _databaseMessageId is int parentMessageId)
+        {
+            string mediaTable = FindTableName(connection, "Media");
+            List<DatabaseColumn> mediaColumns = ReadTableColumns(connection, mediaTable);
+            string mediaIdColumn = FindColumn(mediaColumns, "Id").Name;
+            string mediaMessageColumn = FindColumn(mediaColumns, "ChatMessageId").Name;
+            using SqliteCommand mediaCommand = connection.CreateCommand();
+            mediaCommand.CommandText = $"SELECT 1 FROM {QuoteIdentifier(mediaTable)} WHERE {QuoteIdentifier(mediaIdColumn)} = $id AND {QuoteIdentifier(mediaMessageColumn)} = $messageId LIMIT 1;";
+            mediaCommand.Parameters.AddWithValue("$id", id);
+            mediaCommand.Parameters.AddWithValue("$messageId", parentMessageId);
+            if (mediaCommand.ExecuteScalar() is null)
+                throw new DirectoryNotFoundException($"media {id} not found for message {parentMessageId}.");
+            _databaseMediaId = id;
+            return string.Empty;
+        }
+
         if (_databaseSessionId is null)
         {
             using SqliteCommand command = connection.CreateCommand();
@@ -534,7 +594,7 @@ internal sealed class AppConsoleService
         string idColumn = FindColumn(columns, "Id").Name;
         string sessionColumn = FindColumn(columns, "ChatSessionId").Name;
         string timeColumn = columns.FirstOrDefault(column => string.Equals(column.Name, "Timestamp", StringComparison.OrdinalIgnoreCase))?.Name ?? idColumn;
-        string[] headers = columns.Select(column => column.Name).ToArray();
+        string[] headers = columns.Select(column => column.Name).Append("MediaIds").ToArray();
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = $"SELECT * FROM {QuoteIdentifier(table)} WHERE {QuoteIdentifier(sessionColumn)} = $sessionId ORDER BY {QuoteIdentifier(timeColumn)} DESC LIMIT {MaximumListItems};";
         command.Parameters.AddWithValue("$sessionId", sessionId);
@@ -547,10 +607,17 @@ internal sealed class AppConsoleService
                 row[i] = OneLine(FormatDatabaseValue(reader.GetName(i), reader.GetValue(i)), 90);
             rows.Add(row);
         }
+        reader.Close();
+        int messageIdIndex = Array.FindIndex(headers, header => string.Equals(header, "Id", StringComparison.OrdinalIgnoreCase));
+        for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+        {
+            int rowMessageId = int.Parse(rows[rowIndex][messageIdIndex], System.Globalization.CultureInfo.InvariantCulture);
+            rows[rowIndex] = rows[rowIndex].Append(ListMediaIds(connection, rowMessageId)).ToArray();
+        }
         if (selectedColumns is null)
         {
             selectedColumns = new List<int>();
-            foreach (string preferred in new[] { "Id", "Role", "Timestamp", "Content" })
+            foreach (string preferred in new[] { "Id", "Role", "Timestamp", "Content", "MediaIds" })
             {
                 int index = Array.FindIndex(headers, header => string.Equals(header, preferred, StringComparison.OrdinalIgnoreCase));
                 if (index >= 0)
@@ -560,6 +627,75 @@ internal sealed class AppConsoleService
                 selectedColumns.Add(1);
         }
         return FormatBrowserTable(headers, rows, selectedColumns);
+    }
+
+    private string ListMessageMedia(int messageId, List<int>? selectedColumns)
+    {
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        string table = FindTableName(connection, "Media");
+        List<DatabaseColumn> columns = ReadTableColumns(connection, table);
+        string messageColumn = FindColumn(columns, "ChatMessageId").Name;
+        string idColumn = FindColumn(columns, "Id").Name;
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT * FROM {QuoteIdentifier(table)} WHERE {QuoteIdentifier(messageColumn)} = $messageId ORDER BY {QuoteIdentifier(idColumn)};";
+        command.Parameters.AddWithValue("$messageId", messageId);
+        using SqliteDataReader reader = command.ExecuteReader();
+        var rows = new List<string[]>();
+        while (reader.Read())
+        {
+            var row = new string[reader.FieldCount];
+            for (int index = 0; index < reader.FieldCount; index++)
+                row[index] = OneLine(FormatDatabaseValue(reader.GetName(index), reader.GetValue(index)), 100);
+            rows.Add(row);
+        }
+        return FormatBrowserTable(columns.Select(column => column.Name).ToArray(), rows, selectedColumns);
+    }
+
+    private string ListMediaFields(int mediaId, List<int>? selectedColumns)
+    {
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        string table = FindTableName(connection, "Media");
+        List<DatabaseColumn> columns = ReadTableColumns(connection, table);
+        string idColumn = FindColumn(columns, "Id").Name;
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT * FROM {QuoteIdentifier(table)} WHERE {QuoteIdentifier(idColumn)} = $id LIMIT 1;";
+        command.Parameters.AddWithValue("$id", mediaId);
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read())
+            return $"media {mediaId} not found.";
+        if (selectedColumns?.Any(index => index > reader.FieldCount) == true)
+            throw new InvalidOperationException($"column number out of range; this media record has {reader.FieldCount} fields.");
+        var lines = new List<string> { "#  Column                 Value" };
+        for (int index = 0; index < reader.FieldCount; index++)
+        {
+            string name = reader.GetName(index);
+            if (selectedColumns is null || selectedColumns.Contains(index + 1))
+                lines.Add($"{index + 1,2} {name,-22} {OneLine(FormatDatabaseValue(name, reader.GetValue(index)), 100)}");
+        }
+        return string.Join("\n", lines);
+    }
+
+    private static string ListMediaIds(SqliteConnection connection, int messageId)
+    {
+        try
+        {
+            string table = FindTableName(connection, "Media");
+            List<DatabaseColumn> columns = ReadTableColumns(connection, table);
+            string idColumn = FindColumn(columns, "Id").Name;
+            string messageColumn = FindColumn(columns, "ChatMessageId").Name;
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = $"SELECT {QuoteIdentifier(idColumn)} FROM {QuoteIdentifier(table)} WHERE {QuoteIdentifier(messageColumn)} = $messageId ORDER BY {QuoteIdentifier(idColumn)};";
+            command.Parameters.AddWithValue("$messageId", messageId);
+            var ids = new List<string>();
+            using SqliteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+                ids.Add(Convert.ToString(reader.GetValue(0), System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
+            return ids.Count == 0 ? "—" : string.Join(",", ids);
+        }
+        catch (InvalidOperationException)
+        {
+            return "—";
+        }
     }
 
     private string ListMessageFields(int messageId, List<int>? selectedColumns)
@@ -583,10 +719,56 @@ internal sealed class AppConsoleService
             if (selectedColumns is null || selectedColumns.Contains(i + 1))
                 lines.Add($"{i + 1,2} {name,-22} {OneLine(FormatDatabaseValue(name, reader.GetValue(i)), 100)}");
         }
+        reader.Close();
+        string mediaIds = ListMediaIds(connection, messageId);
+        lines.Add(string.Empty);
+        if (mediaIds == "—")
+        {
+            lines.Add("Related media: none");
+        }
+        else
+        {
+            int mediaCount = mediaIds.Split(',').Length;
+            lines.Add($"Related media ({mediaCount}) · Media.ChatMessageId → Messages.Id: {mediaIds}");
+            lines.Add("Use 'cd media' to browse these records.");
+        }
         return string.Join("\n", lines);
     }
 
     private string ShowCurrentDatabaseMessage(string[] args)
+    {
+        if (_databaseMediaId is int mediaId)
+            return ShowCurrentMedia(mediaId, args);
+        return ShowCurrentDatabaseMessageCore(args);
+    }
+
+    private string ShowCurrentMedia(int mediaId, string[] args)
+    {
+        if (args.Length != 0 && (args.Length != 2 || args[0] is not ("--field" or "--column")))
+            throw new InvalidOperationException("usage: show [--column <field>]");
+        using SqliteConnection connection = OpenReadOnlyDatabase();
+        string table = FindTableName(connection, "Media");
+        List<DatabaseColumn> columns = ReadTableColumns(connection, table);
+        string idColumn = FindColumn(columns, "Id").Name;
+        string? selectedField = args.Length == 2 ? args[1] : null;
+        if (selectedField is not null && !columns.Any(column => string.Equals(column.Name, selectedField, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"unknown Media column '{selectedField}'.");
+        string selection = selectedField is null ? "*" : QuoteIdentifier(columns.First(column => string.Equals(column.Name, selectedField, StringComparison.OrdinalIgnoreCase)).Name);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT {selection} FROM {QuoteIdentifier(table)} WHERE {QuoteIdentifier(idColumn)} = $id LIMIT 1;";
+        command.Parameters.AddWithValue("$id", mediaId);
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read())
+            return $"media {mediaId} not found.";
+        if (selectedField is not null)
+            return $"Media {mediaId} · {reader.GetName(0)}\n{FormatDatabaseValue(reader.GetName(0), reader.GetValue(0))}";
+        var output = new StringBuilder($"Media {mediaId}\n");
+        for (int index = 0; index < reader.FieldCount; index++)
+            output.Append($"\n{reader.GetName(index)}:\n{FormatDatabaseValue(reader.GetName(index), reader.GetValue(index))}\n");
+        return output.ToString().TrimEnd();
+    }
+
+    private string ShowCurrentDatabaseMessageCore(string[] args)
     {
         if (_databaseMessageId is not int messageId)
             throw new InvalidOperationException("navigate to a message with 'cd <message-id>' first.");
@@ -599,6 +781,13 @@ internal sealed class AppConsoleService
 
     private string ListCurrentMessageColumns()
     {
+        if (_databaseMediaId.HasValue || _databaseMediaDirectory)
+        {
+            using SqliteConnection mediaConnection = OpenReadOnlyDatabase();
+            string mediaTable = FindTableName(mediaConnection, "Media");
+            List<DatabaseColumn> mediaColumns = ReadTableColumns(mediaConnection, mediaTable);
+            return string.Join("\n", mediaColumns.Select((column, index) => $"{index + 1,2}  {column.Name}"));
+        }
         if (_databaseMessageId is not int messageId)
             throw new InvalidOperationException("navigate to a message with 'cd <message-id>' first.");
         using SqliteConnection connection = OpenReadOnlyDatabase();
@@ -647,7 +836,13 @@ internal sealed class AppConsoleService
     private string GetDatabaseLocation()
     {
         if (_databaseMessageId is int messageId)
+        {
+            if (_databaseMediaId is int mediaId)
+                return $"/sessions/{_databaseSessionId}/messages/{messageId}/media/{mediaId}";
+            if (_databaseMediaDirectory)
+                return $"/sessions/{_databaseSessionId}/messages/{messageId}/media";
             return $"/sessions/{_databaseSessionId}/messages/{messageId}";
+        }
         return _databaseSessionId is int sessionId ? $"/sessions/{sessionId}" : "/";
     }
 
@@ -774,6 +969,26 @@ internal sealed class AppConsoleService
             }
             if (_databaseConnected && ((command == "db" && precedingArgs.Count == 2 && precedingArgs[1].Equals("cd", StringComparison.OrdinalIgnoreCase)) || (command == "cd" && precedingArgs.Count == 1)))
             {
+                string typedId = DecodeCompletionToken(rawToken);
+                if (_databaseMessageId.HasValue && !_databaseMediaDirectory)
+                    return new AppConsoleCompletionResult(tokenStart, new[] { "..", "media" }.Where(item => item.StartsWith(typedId, StringComparison.OrdinalIgnoreCase)).ToArray());
+                if (_databaseMediaDirectory && _databaseMessageId is int parentMessageId)
+                {
+                    using SqliteConnection mediaConnection = OpenReadOnlyDatabase();
+                    string mediaTable = FindTableName(mediaConnection, "Media");
+                    List<DatabaseColumn> mediaColumns = ReadTableColumns(mediaConnection, mediaTable);
+                    using SqliteCommand mediaIdsCommand = mediaConnection.CreateCommand();
+                    mediaIdsCommand.CommandText = $"SELECT {QuoteIdentifier(FindColumn(mediaColumns, "Id").Name)} FROM {QuoteIdentifier(mediaTable)} WHERE {QuoteIdentifier(FindColumn(mediaColumns, "ChatMessageId").Name)} = $messageId ORDER BY {QuoteIdentifier(FindColumn(mediaColumns, "Id").Name)} DESC LIMIT 100;";
+                    mediaIdsCommand.Parameters.AddWithValue("$messageId", parentMessageId);
+                    var mediaCandidates = new List<string> { ".." };
+                    using SqliteDataReader mediaReader = mediaIdsCommand.ExecuteReader();
+                    while (mediaReader.Read())
+                    {
+                        string mediaId = Convert.ToString(mediaReader.GetValue(0), System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+                        if (mediaId.StartsWith(typedId, StringComparison.Ordinal)) mediaCandidates.Add(mediaId);
+                    }
+                    return new AppConsoleCompletionResult(tokenStart, mediaCandidates);
+                }
                 try
                 {
                     using SqliteConnection connection = OpenReadOnlyDatabase();
@@ -1086,20 +1301,20 @@ internal sealed class AppConsoleService
         "Application console — not a general-purpose or operating-system shell. Commands are implemented by this application; they do not run Linux, PowerShell, or other shell commands.\n" +
         $"Context: {(_databaseConnected ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : "database (not connected)")}. {(_databaseConnected ? "Filesystem commands are unavailable until disconnect." : "Run connect [database-file] to enter this context.")}\n\n" +
         "  help                         Show help for the current context\n" +
-        "  ls [--columns N[,N...]]      List sessions, messages, or fields at the current location\n" +
-        "  cd <id|..|/>                 Enter a session/message, move up, or return to database root\n" +
+        "  ls [--columns N[,N...]]      List sessions, messages, fields, or media records at the current location\n" +
+        "  cd <id|media|..|/>           Enter a session, message, or its media; move up or to root\n" +
         "  pwd                          Show the current database location\n" +
-        "  show [--column <name>]       Show all fields of current message, or one field\n" +
-        "  columns                      List current message fields and 1-based indexes\n" +
+        "  show [--column <name>]       Show fields of the current message or media record\n" +
+        "  columns                      List message/media fields and 1-based indexes\n" +
         "  sessions list [--limit N]    List recent sessions (1-100)\n" +
         "  sessions show <id>           Show session details and recent messages\n" +
         "  tables                       List database tables (read-only)\n" +
         "  describe <table>             Show database column details\n" +
         "  messages show <id> [--field <column>]  Show message data\n" +
         "  disconnect                   Return to filesystem context\n\n" +
-        "At /, ls lists sessions. Inside a session, ls lists its messages. Inside a message, ls lists its fields.\n" +
+        "At /, ls lists sessions. Inside a session, ls lists messages (including related MediaIds). Inside a message, ls lists fields; cd media enters its related Media records, if any.\n" +
         "Use ls --columns 1,4 to select 1-based columns in the current listing. Use columns for message-field indexes.\n" +
-        "show requires a message location; --column (or --field) displays one field, pretty-printing JSON.\n" +
+        "show at a message or media record displays all fields; --column (or --field) selects one field and pretty-prints JSON.\n" +
         "The optional 'db' prefix remains accepted (for example, db ls), but is not required.\n" +
         "Use ls -h or show --help for command help. Long output: append | more or | less; Space/Down advances, q quits.";
 

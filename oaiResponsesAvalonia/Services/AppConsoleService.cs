@@ -10,6 +10,9 @@ using System.Text.Json;
 
 namespace oaiResponsesAvalonia.Services;
 
+/// <summary>
+/// Implements constrained application commands, not an operating-system shell. Commands are dispatched by the active filesystem or database context.
+/// </summary>
 internal sealed class AppConsoleService
 {
     private const int MaximumFileBytes = 32 * 1024;
@@ -52,23 +55,34 @@ internal sealed class AppConsoleService
                 args = args.Take(pipeIndex).ToList();
             }
 
+            int helpIndex = args.FindIndex(argument => argument.Equals("-h", StringComparison.OrdinalIgnoreCase) || argument.Equals("--help", StringComparison.OrdinalIgnoreCase));
+            if (helpIndex >= 0)
+            {
+                string[] helpArgs = args.Where((_, index) => index != helpIndex).ToArray();
+                return new AppConsoleResult(GetCommandHelp(helpArgs), Prompt, PagerMode: pagerMode);
+            }
+
             string command = args[0].ToLowerInvariant();
             string output = command switch
             {
-                "help" => HelpText,
-                "pwd" => _currentDirectory,
-                "ls" => ListDirectory(args.Skip(1).ToArray()),
-                "cd" => ChangeDirectory(args.Skip(1).ToArray()),
-                "cat" => ReadFile(args.Skip(1).ToArray()),
+                "help" => GetContextHelpText(),
+                "pwd" => _databaseConnected ? GetDatabaseLocation() : _currentDirectory,
+                "ls" => _databaseConnected ? ListDatabaseLocation(args.Skip(1).ToArray()) : ListDirectory(args.Skip(1).ToArray()),
+                "cd" => _databaseConnected ? ChangeDatabaseLocation(args.Skip(1).ToArray()) : ChangeDirectory(args.Skip(1).ToArray()),
+                "cat" when !_databaseConnected => ReadFile(args.Skip(1).ToArray()),
+                "cat" => throw new InvalidOperationException("cat is a filesystem-context command. Disconnect from the database to use it."),
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
                 "disconnect" => DisconnectDatabase(args.Skip(1).ToArray()),
                 "sessions" => HandleSessions(args.Skip(1).ToArray()),
                 "tables" => HandleTables(args.ToArray()),
                 "describe" => HandleDescribe(args.Skip(1).ToArray()),
                 "messages" => HandleMessages(args.Skip(1).ToArray()),
-                "db" => args.Count == 1 || (args.Count == 2 && args[1].Equals("help", StringComparison.OrdinalIgnoreCase))
-                    ? DatabaseHelpText
-                    : HandleDatabaseBrowser(args.Skip(1).ToArray()),
+                "show" when _databaseConnected => ShowCurrentDatabaseMessage(args.Skip(1).ToArray()),
+                "columns" when _databaseConnected && args.Count == 1 => ListCurrentMessageColumns(),
+                "columns" when _databaseConnected => throw new InvalidOperationException("usage: columns"),
+                "columns" => throw new InvalidOperationException("columns is available only in the database context."),
+                "show" => throw new InvalidOperationException("show is available only in the database context."),
+                "db" => HandleDatabaseAlias(args.Skip(1).ToArray()),
                 "clear" => "\u001b[2J\u001b[H",
                 "quit" or "exit" => "Goodbye.",
                 _ => $"{command}: command not found. Type 'help' to see available commands."
@@ -76,7 +90,7 @@ internal sealed class AppConsoleService
 
             bool closeWindow = command is "quit" or "exit";
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or
-                "connect" or "disconnect" or "sessions" or "tables" or "describe" or "messages" or "db" or "clear" or "quit" or "exit";
+                "connect" or "disconnect" or "sessions" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
             string kind = !knownCommand ? "error" : command is "connect" or "disconnect" ? "success" : "normal";
             return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode);
         }
@@ -84,6 +98,55 @@ internal sealed class AppConsoleService
         {
             return new AppConsoleResult($"error: {ex.Message}", Prompt, Kind: "error");
         }
+    }
+
+    private string HandleDatabaseAlias(string[] args)
+    {
+        if (args.Length == 0 || (args.Length == 1 && args[0].Equals("help", StringComparison.OrdinalIgnoreCase)))
+            return GetDatabaseHelpText();
+        return HandleDatabaseBrowser(args);
+    }
+
+    private string GetContextHelpText() => _databaseConnected ? GetDatabaseHelpText() : FilesystemHelpText;
+
+    private string GetCommandHelp(string[] args)
+    {
+        if (args.Length == 0 || args[0].Equals("help", StringComparison.OrdinalIgnoreCase))
+            return GetContextHelpText();
+
+        string command = args[0].ToLowerInvariant();
+        bool databaseAlias = command == "db";
+        if (databaseAlias)
+        {
+            args = args.Skip(1).ToArray();
+            command = args.FirstOrDefault()?.ToLowerInvariant() ?? "help";
+            if (command == "help")
+                return GetDatabaseHelpText();
+        }
+
+        string synopsis = command switch
+        {
+            "ls" when _databaseConnected || databaseAlias => "usage: ls [--columns N[,N...]]\nLists sessions at /, messages inside a session, or fields inside a message.",
+            "ls" => "usage: ls [-a] [path]\nLists entries in the app-data directory. -a includes hidden entries.",
+            "cd" when _databaseConnected || databaseAlias => "usage: cd <session-id|message-id|..|/>\nNavigates the database location shown in the prompt; it does not change filesystem directories.",
+            "cd" => "usage: cd [path]\nChanges directory within the app-data directory.",
+            "pwd" when _databaseConnected || databaseAlias => "usage: pwd\nShows the current database location.",
+            "pwd" => "usage: pwd\nShows the current app-data directory.",
+            "show" when _databaseConnected || databaseAlias => "usage: show [--column <name>|--field <name>]\nRequires a message location. Without an option, displays all message fields; with a column, displays one value and pretty-prints JSON.",
+            "columns" when _databaseConnected || databaseAlias => "usage: columns\nRequires a message location. Lists message field names and their 1-based indexes.",
+            "connect" => "usage: connect [database-file]\nConnects read-only to a database file under app data and switches this terminal to database context.",
+            "disconnect" => "usage: disconnect\nDisconnects and returns this terminal to filesystem context.",
+            "cat" => "usage: cat <file>\nDisplays a small text file in filesystem context.",
+            "sessions" when _databaseConnected => "usage: sessions list [--limit N] | sessions show <id>\nLists recent sessions or displays session details.",
+            "tables" when _databaseConnected => "usage: tables\nLists database tables read-only.",
+            "describe" when _databaseConnected => "usage: describe <table>\nShows database column details.",
+            "messages" when _databaseConnected => "usage: messages show <id> [--field <column>]\nDisplays stored message fields or one selected field.",
+            "help" => GetContextHelpText(),
+            _ => "No help is available for '" + command + "' in the current context.\n" + GetContextHelpText()
+        };
+        return "Application console command help (not an operating-system shell command).\nContext: " +
+            (_databaseConnected ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : databaseAlias ? "database (not connected)" : $"filesystem at {_currentDirectory}") +
+            "\n" + synopsis;
     }
 
     private string ListDirectory(string[] args)
@@ -174,7 +237,7 @@ internal sealed class AppConsoleService
         _databaseSessionId = null;
         _databaseMessageId = null;
         _databaseConnected = true;
-        return $"connected to {Path.GetFileName(databasePath)} (read-only). Use 'db ls' to browse.";
+        return $"connected to {Path.GetFileName(databasePath)} (read-only). Database context is active; use 'ls' to browse.";
     }
 
     private string DisconnectDatabase(string[] args)
@@ -374,7 +437,7 @@ internal sealed class AppConsoleService
     {
         EnsureDatabaseConnected();
         if (args.Length == 0)
-            throw new InvalidOperationException("usage: db ls [--columns 1,3] | db cd <id|..|/> | db pwd | db show [--column column] | db columns");
+            throw new InvalidOperationException("usage: ls [--columns 1,3] | cd <id|..|/> | pwd | show [--column column] | columns");
 
         return args[0].ToLowerInvariant() switch
         {
@@ -383,7 +446,7 @@ internal sealed class AppConsoleService
             "pwd" when args.Length == 1 => GetDatabaseLocation(),
             "show" => ShowCurrentDatabaseMessage(args.Skip(1).ToArray()),
             "columns" when args.Length == 1 => ListCurrentMessageColumns(),
-            _ => throw new InvalidOperationException("usage: db ls [--columns 1,3] | db cd <id|..|/> | db pwd | db show [--column column] | db columns")
+            _ => throw new InvalidOperationException("usage: ls [--columns 1,3] | cd <id|..|/> | pwd | show [--column column] | columns")
         };
     }
 
@@ -401,7 +464,7 @@ internal sealed class AppConsoleService
     private string ChangeDatabaseLocation(string[] args)
     {
         if (args.Length != 1)
-            throw new InvalidOperationException("usage: db cd <session-id|message-id|..|/>");
+            throw new InvalidOperationException("usage: cd <session-id|message-id|..|/>");
         string target = args[0];
         if (target is "/" or "~")
         {
@@ -526,18 +589,18 @@ internal sealed class AppConsoleService
     private string ShowCurrentDatabaseMessage(string[] args)
     {
         if (_databaseMessageId is not int messageId)
-            throw new InvalidOperationException("navigate to a message with 'db cd <message-id>' first.");
+            throw new InvalidOperationException("navigate to a message with 'cd <message-id>' first.");
         if (args.Length == 0)
             return HandleMessages(["show", messageId.ToString()]);
         if (args.Length == 2 && args[0] is "--field" or "--column")
             return HandleMessages(["show", messageId.ToString(), "--field", args[1]]);
-        throw new InvalidOperationException("usage: db show [--column column]");
+        throw new InvalidOperationException("usage: show [--column column]");
     }
 
     private string ListCurrentMessageColumns()
     {
         if (_databaseMessageId is not int messageId)
-            throw new InvalidOperationException("navigate to a message with 'db cd <message-id>' first.");
+            throw new InvalidOperationException("navigate to a message with 'cd <message-id>' first.");
         using SqliteConnection connection = OpenReadOnlyDatabase();
         string table = FindTableName(connection, "Messages");
         List<DatabaseColumn> columns = ReadTableColumns(connection, table);
@@ -549,12 +612,12 @@ internal sealed class AppConsoleService
         if (args.Length == 0)
             return null;
         if (args.Length != 2 || args[0] != "--columns")
-            throw new InvalidOperationException("usage: db ls [--columns 1,3,4]");
+            throw new InvalidOperationException("usage: ls [--columns 1,3,4]");
         var result = new List<int>();
         foreach (string part in args[1].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
         {
             if (!int.TryParse(part, out int index) || index < 1 || result.Contains(index))
-                throw new InvalidOperationException("column selection must contain unique, comma-separated 1-based numbers (see db columns for message fields).");
+                throw new InvalidOperationException("column selection must contain unique, comma-separated 1-based numbers (use columns for message fields).");
             result.Add(index);
         }
         if (result.Count == 0)
@@ -701,15 +764,15 @@ internal sealed class AppConsoleService
             return new AppConsoleCompletionResult(tokenStart, []);
 
         string command = precedingArgs[0].ToLowerInvariant();
-        if (command == "db")
+        if (command == "db" || (_databaseConnected && command == "cd"))
         {
             string typed = DecodeCompletionToken(rawToken);
-            if (precedingArgs.Count == 1)
+            if (command == "db" && precedingArgs.Count == 1)
             {
                 string[] subcommands = ["help", "ls", "cd", "pwd", "show", "columns"];
                 return new AppConsoleCompletionResult(tokenStart, subcommands.Where(item => item.StartsWith(typed, StringComparison.OrdinalIgnoreCase)).ToArray());
             }
-            if (_databaseConnected && precedingArgs.Count == 2 && precedingArgs[1].Equals("cd", StringComparison.OrdinalIgnoreCase))
+            if (_databaseConnected && ((command == "db" && precedingArgs.Count == 2 && precedingArgs[1].Equals("cd", StringComparison.OrdinalIgnoreCase)) || (command == "cd" && precedingArgs.Count == 1)))
             {
                 try
                 {
@@ -739,6 +802,8 @@ internal sealed class AppConsoleService
             }
             return new AppConsoleCompletionResult(tokenStart, []);
         }
+        if (_databaseConnected && command != "cd")
+            return new AppConsoleCompletionResult(tokenStart, []);
         if (command is not ("cd" or "cat" or "ls" or "connect"))
             return new AppConsoleCompletionResult(tokenStart, []);
 
@@ -1004,26 +1069,43 @@ internal sealed class AppConsoleService
         return result;
     }
 
-    private const string DatabaseHelpText =
-        "Database browser commands (connect first; db help is also available while disconnected):\n" +
-        "  db ls [--columns N[,N...]]  List sessions, session messages, or selected message fields\n" +
-        "  db cd <id|..|/>             Enter a session/message, move up, or return to database root\n" +
-        "  db pwd                      Show the current database location\n" +
-        "  db show                     Show every field of the selected message\n" +
-        "  db show --column <name>     Show one field; JSON fields are pretty-printed\n" +
-        "  db show --field <name>      Alias for --column\n" +
-        "  db columns                  List message field names and their 1-based indexes\n" +
-        "\nWhere commands work:\n" +
-        "  At /, db ls lists sessions; --columns selects session-list columns.\n" +
-        "  In a session, db ls lists its messages; --columns selects message fields.\n" +
-        "  In a message, db ls lists field values; --columns selects field numbers.\n" +
-        "  db show and db columns require the current location to be a message.\n" +
-        "  Column numbers are 1-based; use db columns for message field indexes.\n" +
-        "  db ls --columns 1,4 accepts comma-separated, unique numbers.\n" +
-        "\nLong output: append | more or | less to any command. In the pager use Space/Down to advance, " +
-        "q to quit; less also supports Up, b, g and G.\n" +
-        "Example: db show --column RawJson | less";
+    private const string FilesystemHelpText =
+        "Application console — not a general-purpose or operating-system shell. Commands are implemented by this application; they do not run Linux, PowerShell, or other shell commands.\n" +
+        "Context: filesystem (app-data directory). File access is confined to app data.\n\n" +
+        "  help                         Show help for the current context\n" +
+        "  pwd                          Show the current app-data directory\n" +
+        "  ls [-a] [path]               List files and folders\n" +
+        "  cd [path]                    Change directory within app data\n" +
+        "  cat <file>                   Display a small text file\n" +
+        "  connect [database-file]     Connect read-only; switches to database context\n" +
+        "  quit                         Close this terminal window\n\n" +
+        "Use ls -h, cd --help, or connect --help for command help.\n" +
+        "Long output: append | more or | less (Space/Down to advance, q to quit).";
 
+    private string GetDatabaseHelpText() =>
+        "Application console — not a general-purpose or operating-system shell. Commands are implemented by this application; they do not run Linux, PowerShell, or other shell commands.\n" +
+        $"Context: {(_databaseConnected ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : "database (not connected)")}. {(_databaseConnected ? "Filesystem commands are unavailable until disconnect." : "Run connect [database-file] to enter this context.")}\n\n" +
+        "  help                         Show help for the current context\n" +
+        "  ls [--columns N[,N...]]      List sessions, messages, or fields at the current location\n" +
+        "  cd <id|..|/>                 Enter a session/message, move up, or return to database root\n" +
+        "  pwd                          Show the current database location\n" +
+        "  show [--column <name>]       Show all fields of current message, or one field\n" +
+        "  columns                      List current message fields and 1-based indexes\n" +
+        "  sessions list [--limit N]    List recent sessions (1-100)\n" +
+        "  sessions show <id>           Show session details and recent messages\n" +
+        "  tables                       List database tables (read-only)\n" +
+        "  describe <table>             Show database column details\n" +
+        "  messages show <id> [--field <column>]  Show message data\n" +
+        "  disconnect                   Return to filesystem context\n\n" +
+        "At /, ls lists sessions. Inside a session, ls lists its messages. Inside a message, ls lists its fields.\n" +
+        "Use ls --columns 1,4 to select 1-based columns in the current listing. Use columns for message-field indexes.\n" +
+        "show requires a message location; --column (or --field) displays one field, pretty-printing JSON.\n" +
+        "The optional 'db' prefix remains accepted (for example, db ls), but is not required.\n" +
+        "Use ls -h or show --help for command help. Long output: append | more or | less; Space/Down advances, q quits.";
+
+
+
+    /* Obsolete fixed help text retained only as a reference; active help is context-sensitive above.
     private const string HelpText =
         "Available commands:\n" +
         "  help                     Show this help\n" +
@@ -1049,6 +1131,7 @@ internal sealed class AppConsoleService
         "  clear                    Clear the terminal display\n" +
         "  quit                     End the console session and close the window\n" +
         "\nThis is an app console, not an operating-system shell. File access is limited to the app data directory.";
+    */
 }
 
 internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false, string Kind = "normal", string PagerMode = "");

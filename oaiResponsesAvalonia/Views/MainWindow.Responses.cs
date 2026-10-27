@@ -1663,6 +1663,13 @@ namespace oaiResponsesAvalonia.Views
             await reportWindow.ShowDialog(this);
         }
 
+        private async void btnDeveloperGitInfo_Click(object? sender, RoutedEventArgs e)
+        {
+            string status = await new GitStatusService().GetStatusAsync(ResponsesState?.DeveloperRepositoryRoot);
+            var gitInfoWindow = new GitInfoWindow(status);
+            await gitInfoWindow.ShowDialog(this);
+        }
+
         private void RefreshEnvironmentCapabilityReport()
         {
             _environmentCapabilityReport = new EnvironmentCapabilityReportService()

@@ -1,0 +1,32 @@
+<Window x:Class="oaiResponsesAvalonia.Views.GitInfoWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Git Info"
+        Width="680"
+        Height="420"
+        MinWidth="480"
+        MinHeight="300"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="12" RowDefinitions="Auto,*,Auto">
+        <TextBlock Grid.Row="0"
+                   Margin="0,0,0,8"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Text="Read-only repository status" />
+        <TextBox x:Name="GitInfoTextBox"
+                 Grid.Row="1"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 TextWrapping="NoWrap" />
+        <Button Grid.Row="2"
+                Width="90"
+                Margin="0,10,0,0"
+                HorizontalAlignment="Right"
+                Click="Close_Click"
+                Content="Close" />
+    </Grid>
+</Window>

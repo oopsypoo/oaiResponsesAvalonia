@@ -908,11 +908,16 @@
 
                                                 <Label Grid.Row="0" Content="Workspace root" />
                                                 <DockPanel Grid.Row="1" LastChildFill="True">
-                                                    <Button Content="Browse"
-                                                            Width="70"
-                                                            Margin="0,0,6,0"
-                                                            Click="btnDeveloperBrowseRoot_Click"
-                                                            />
+                                                    <StackPanel Margin="0,0,6,0" Spacing="4">
+                                                        <Button Content="Browse"
+                                                                Width="70"
+                                                                Click="btnDeveloperBrowseRoot_Click"
+                                                                />
+                                                        <Button Content="Git Info"
+                                                                Width="70"
+                                                                Click="btnDeveloperGitInfo_Click"
+                                                                />
+                                                    </StackPanel>
                                                     <TextBox Text="{Binding #RootWindow.ResponsesState.DeveloperRepositoryRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                              LostFocus="txtDeveloperWorkspaceRoot_LostFocus"
                                                              />

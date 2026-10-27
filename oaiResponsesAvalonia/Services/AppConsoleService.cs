@@ -95,6 +95,7 @@ internal sealed class AppConsoleService
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
                 "disconnect" => DisconnectDatabase(args.Skip(1).ToArray()),
                 "sessions" => HandleSessions(args.Skip(1).ToArray()),
+                "find" => FindSessions(args.Skip(1).ToArray()),
                 "tables" => HandleTables(args.ToArray()),
                 "describe" => HandleDescribe(args.Skip(1).ToArray()),
                 "messages" => HandleMessages(args.Skip(1).ToArray()),
@@ -114,7 +115,7 @@ internal sealed class AppConsoleService
 
             bool closeWindow = command is "quit" or "exit";
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or "grep" or
-                "connect" or "disconnect" or "sessions" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
+                "connect" or "disconnect" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
             string kind = !knownCommand ? "error" : command is "connect" or "disconnect" ? "success" : "normal";
             return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode);
         }
@@ -162,6 +163,7 @@ internal sealed class AppConsoleService
             "connect" => "usage: connect [database-file]\nConnects read-only to a database file under app data and switches this terminal to database context.",
             "disconnect" => "usage: disconnect\nDisconnects and returns this terminal to filesystem context.",
             "cat" => "usage: cat <file>\nDisplays a small text file in filesystem context.",
+            "find" => "usage: find sessions [--sid ID] [--has-media] [--role VALUE] [--content TEXT] [--model VALUE] [--reasoning-level VALUE] [--tool VALUE] [--same-message]\nFilters combine with AND. By default filters may match different messages; --same-message requires one message to satisfy all message filters. Results show session IDs and matching message IDs in one column per message filter; content is not printed.",
             "sessions" when _databaseConnected => "usage: sessions list [--limit N] | sessions show <id>\nLists recent sessions or displays session details.",
             "tables" when _databaseConnected => "usage: tables\nLists database tables read-only.",
             "describe" when _databaseConnected => "usage: describe <table>\nShows database column details.",
@@ -454,6 +456,167 @@ internal sealed class AppConsoleService
 
         return string.Join("\n", lines);
     }
+
+    private string FindSessions(string[] args)
+    {
+        EnsureDatabaseConnected();
+        if (args.Length == 0 || args[0].Equals("-h", StringComparison.OrdinalIgnoreCase) || args[0].Equals("--help", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("usage: find sessions [--sid ID] [--has-media] [--role VALUE] [--content TEXT] [--model VALUE] [--reasoning-level VALUE] [--tool VALUE] [--same-message]");
+        if (!args[0].Equals("sessions", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("usage: find sessions [filters]");
+
+        int? sessionId = null;
+        bool hasMedia = false;
+        bool sameMessage = false;
+        string? role = null, content = null, model = null, reasoningLevel = null, tool = null;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < args.Length; i++)
+        {
+            string flag = args[i];
+            string canonicalFlag = flag.ToLowerInvariant() switch
+            {
+                "--content-contains" => "--content",
+                "--model-used" => "--model",
+                "--active-tool" or "--active-tools" => "--tool",
+                _ => flag.ToLowerInvariant()
+            };
+            if (!seen.Add(canonicalFlag))
+                throw new InvalidOperationException($"duplicate option: {flag}");
+            switch (flag.ToLowerInvariant())
+            {
+                case "--same-message": sameMessage = true; break;
+                case "--has-media": hasMedia = true; break;
+                case "--sid":
+                    sessionId = ParseFindValue(args, ref i, flag, positiveInteger: true) is string sidText && int.TryParse(sidText, out int sid) ? sid : throw new InvalidOperationException("--sid requires a positive session ID.");
+                    break;
+                case "--role": role = ParseFindValue(args, ref i, flag); break;
+                case "--content":
+                case "--content-contains": content = ParseFindValue(args, ref i, flag); break;
+                case "--model":
+                case "--model-used": model = ParseFindValue(args, ref i, flag); break;
+                case "--reasoning-level": reasoningLevel = ParseFindValue(args, ref i, flag); break;
+                case "--tool":
+                case "--active-tool":
+                case "--active-tools": tool = ParseFindValue(args, ref i, flag); break;
+                default: throw new InvalidOperationException($"unknown find option '{flag}'. Use 'find -h' for usage.");
+            }
+        }
+
+        if (!hasMedia && role is null && content is null && model is null && reasoningLevel is null && tool is null && sessionId is null)
+            throw new InvalidOperationException("specify at least one filter. Use 'find -h' for usage.");
+
+        using AppDbContext db = CreateReadOnlyDbContext(ConnectedDatabasePath);
+        var messages = db.Messages.AsNoTracking()
+            .Where(message => sessionId == null || message.ChatSessionId == sessionId.Value)
+            .Select(message => new FindMessage(message.Id, message.ChatSessionId, message.Role, message.Content, message.ModelUsed, message.ReasoningLevel, message.ActiveTools))
+            .ToList();
+        var mediaCounts = db.Media.AsNoTracking()
+            .GroupBy(media => media.ChatMessageId)
+            .Select(group => new { MessageId = group.Key, Count = group.Count() })
+            .ToDictionary(item => item.MessageId, item => item.Count);
+
+        var filters = new List<(string Header, Func<FindMessage, bool> Matches)>();
+        if (hasMedia) filters.Add(("--has-media", message => mediaCounts.ContainsKey(message.Id)));
+        if (role is not null) filters.Add(("--role", message => string.Equals(message.Role, role, StringComparison.OrdinalIgnoreCase)));
+        if (content is not null) filters.Add(("--content", message => message.Content?.Contains(content, StringComparison.OrdinalIgnoreCase) == true));
+        if (model is not null) filters.Add(("--model", message => string.Equals(message.ModelUsed, model, StringComparison.OrdinalIgnoreCase)));
+        if (reasoningLevel is not null) filters.Add(("--reasoning-level", message => string.Equals(message.ReasoningLevel, reasoningLevel, StringComparison.OrdinalIgnoreCase)));
+        if (tool is not null) filters.Add(("--tool", message => ActiveToolMatches(message.ActiveTools, tool)));
+
+        var sessions = db.Sessions.AsNoTracking()
+            .Where(item => sessionId == null || item.Id == sessionId.Value)
+            .Select(item => new { item.Id })
+            .ToList();
+        var matchingRows = new List<string[]>();
+        foreach (var session in sessions.OrderBy(item => item.Id))
+        {
+            FindMessage[] sessionMessages = messages.Where(message => message.SessionId == session.Id).OrderBy(message => message.Id).ToArray();
+            var matchesByFilter = filters.Select(filter => sessionMessages.Where(filter.Matches).ToArray()).ToArray();
+            if (filters.Count > 0 && matchesByFilter.Any(matches => matches.Length == 0))
+                continue;
+
+            FindMessage[] sameMessageMatches = [];
+            if (sameMessage && filters.Count > 0)
+            {
+                sameMessageMatches = sessionMessages.Where(message => filters.All(filter => filter.Matches(message))).ToArray();
+                if (sameMessageMatches.Length == 0)
+                    continue;
+            }
+
+            if (filters.Count == 0)
+            {
+                matchingRows.Add(new[] { session.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+            }
+            else
+            {
+                FindMessage[] evidenceMessages = sameMessage
+                    ? sameMessageMatches
+                    : matchesByFilter.SelectMany(matches => matches).DistinctBy(message => message.Id).OrderBy(message => message.Id).ToArray();
+                foreach (FindMessage message in evidenceMessages)
+                {
+                    var row = new List<string> { session.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+                    for (int filterIndex = 0; filterIndex < filters.Count; filterIndex++)
+                    {
+                        bool isMatch = sameMessage || filters[filterIndex].Matches(message);
+                        row.Add(isMatch ? message.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty);
+                    }
+                    matchingRows.Add(row.ToArray());
+                    if (matchingRows.Count >= MaximumListItems)
+                        break;
+                }
+            }
+            if (matchingRows.Count >= MaximumListItems)
+                break;
+        }
+
+        if (matchingRows.Count == 0)
+            return "no matching sessions found.";
+
+        var headers = new List<string> { "SessionId" };
+        headers.AddRange(filters.Select(filter => filter.Header));
+        return FormatFindResults(headers.ToArray(), matchingRows);
+    }
+
+    private static string ParseFindValue(string[] args, ref int index, string option, bool positiveInteger = false)
+    {
+        if (index + 1 >= args.Length || args[index + 1].StartsWith("--", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(args[index + 1]))
+            throw new InvalidOperationException($"{option} requires a value.");
+        string value = args[++index];
+        if (positiveInteger && (!int.TryParse(value, out int id) || id <= 0))
+            throw new InvalidOperationException("--sid requires a positive session ID.");
+        return value;
+    }
+
+    private static string FormatFindResults(string[] headers, List<string[]> rows)
+    {
+        int[] widths = headers.Select((header, index) => Math.Max(header.Length, rows.Max(row => row[index].Length))).ToArray();
+        var output = new List<string> { string.Join("  ", headers.Select((header, index) => header.PadRight(widths[index]))).TrimEnd() };
+        output.Add(string.Join("  ", widths.Select(width => new string('-', width))));
+        output.AddRange(rows.Select(row => string.Join("  ", row.Select((value, index) => value.PadRight(widths[index]))).TrimEnd()));
+        if (rows.Count >= MaximumListItems)
+            output.Add($"... results limited to {MaximumListItems} rows");
+        return string.Join("\n", output);
+    }
+
+    private static IEnumerable<string> ParseActiveToolNames(string? activeTools)
+    {
+        if (string.IsNullOrWhiteSpace(activeTools)) return [];
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(activeTools);
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+                return document.RootElement.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String)
+                    .Select(item => item.GetString() ?? string.Empty).Where(item => item.Length > 0).ToArray();
+        }
+        catch (JsonException) { }
+        return activeTools.Split([',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(item => item.Trim().Trim('"').Trim('[', ']')).Where(item => item.Length > 0).ToArray();
+    }
+
+    private static bool ActiveToolMatches(string? activeTools, string requestedTool) =>
+        ParseActiveToolNames(activeTools).Any(item => string.Equals(item, requestedTool, StringComparison.OrdinalIgnoreCase));
+
+    private sealed record FindMessage(int Id, int SessionId, string Role, string Content, string ModelUsed, string ReasoningLevel, string ActiveTools);
 
     private string HandleTables(string[] args)
     {
@@ -1062,9 +1225,50 @@ internal sealed class AppConsoleService
         }
 
         if (precedingArgs.Count == 0)
-            return new AppConsoleCompletionResult(tokenStart, []);
+        {
+            string typedCommand = DecodeCompletionToken(rawToken);
+            string[] commands = ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "clear", "quit", "exit"];
+            return new AppConsoleCompletionResult(tokenStart, commands.Where(item => item.StartsWith(typedCommand, StringComparison.OrdinalIgnoreCase)).ToArray());
+        }
 
         string command = precedingArgs[0].ToLowerInvariant();
+        if (command == "find")
+        {
+            string typed = DecodeCompletionToken(rawToken);
+            string[] findArgs = precedingArgs.Skip(1).ToArray();
+            if (findArgs.Length == 0)
+                return new AppConsoleCompletionResult(tokenStart, new[] { "sessions" }.Where(item => item.StartsWith(typed, StringComparison.OrdinalIgnoreCase)).ToArray());
+            if (!findArgs[0].Equals("sessions", StringComparison.OrdinalIgnoreCase))
+                return new AppConsoleCompletionResult(tokenStart, []);
+
+            string? valueOption = findArgs.Length > 1 ? findArgs[^1].ToLowerInvariant() : null;
+            string[] valueOptions = ["--sid", "--role", "--content", "--content-contains", "--model", "--model-used", "--reasoning-level", "--tool", "--active-tool", "--active-tools"];
+            if (valueOption is not null && valueOptions.Contains(valueOption, StringComparer.OrdinalIgnoreCase))
+            {
+                if (!_databaseConnected || valueOption is "--content" or "--content-contains")
+                    return new AppConsoleCompletionResult(tokenStart, []);
+                try
+                {
+                    using AppDbContext db = CreateReadOnlyDbContext(ConnectedDatabasePath);
+                    IEnumerable<string> values = valueOption == "--sid"
+                        ? db.Sessions.AsNoTracking().Select(item => item.Id.ToString()).ToList()
+                        : valueOption == "--role"
+                            ? db.Messages.AsNoTracking().Select(item => item.Role).Distinct().ToList()
+                            : valueOption is "--model" or "--model-used"
+                                ? db.Messages.AsNoTracking().Select(item => item.ModelUsed).Distinct().ToList()
+                                : valueOption == "--reasoning-level"
+                                    ? db.Messages.AsNoTracking().Select(item => item.ReasoningLevel).Distinct().ToList()
+                                    : db.Messages.AsNoTracking().Select(item => item.ActiveTools).Distinct().ToList()
+                                        .SelectMany(ParseActiveToolNames).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                    return new AppConsoleCompletionResult(tokenStart, values.Where(value => !string.IsNullOrWhiteSpace(value) && value.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
+                        .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value, StringComparer.OrdinalIgnoreCase).Take(50).ToArray());
+                }
+                catch { return new AppConsoleCompletionResult(tokenStart, []); }
+            }
+
+            string[] findFlags = ["--sid", "--has-media", "--role", "--content", "--model", "--reasoning-level", "--tool", "--same-message"];
+            return new AppConsoleCompletionResult(tokenStart, findFlags.Where(item => item.StartsWith(typed, StringComparison.OrdinalIgnoreCase)).ToArray());
+        }
         if (command == "db" || (_databaseConnected && command == "cd"))
         {
             string typed = DecodeCompletionToken(rawToken);
@@ -1412,6 +1616,7 @@ internal sealed class AppConsoleService
         "  help                         Show help for the current context\n" +
         "  ls [--columns N[,N...]]      List sessions, messages, fields, or media records at the current location\n" +
         "  <command> | grep <term>      Search output with numbered, case-insensitive, colored matches\n" +
+        "  find sessions [filters]      Search sessions by message fields and media; see find -h\n" +
         "  cd <id|media|..|/>           Enter a session, message, or its media; move up or to root\n" +
         "  pwd                          Show the current database location\n" +
         "  show [--column <name>]       Show fields of the current message or media record\n" +
@@ -1424,6 +1629,7 @@ internal sealed class AppConsoleService
         "  disconnect                   Return to filesystem context\n\n" +
         "At /, ls lists sessions. Inside a session, ls lists messages (including related MediaIds). Inside a message, ls lists fields; cd media enters its related Media records, if any.\n" +
         "Use ls --columns 1,4 to select 1-based columns in the current listing. Use columns for message-field indexes.\n" +
+        "find sessions filters: --has-media, --role, --content, --model, --reasoning-level, --tool, and --sid. Filters combine with AND; --same-message requires them to match one message. Results show matching message IDs, sorted by session ID.\n" +
         "show at a message or media record displays all fields; --column (or --field) selects one field and pretty-prints JSON.\n" +
         "The optional 'db' prefix remains accepted (for example, db ls), but is not required.\n" +
         "Use ls -h or show --help for command help. grep searches literal text in piped application output (also in filesystem context); -n and -i are defaults and matches are colored. This is not a system shell grep. Long output: append | more or | less; Space/Down advances, q quits.";

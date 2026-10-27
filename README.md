@@ -1,19 +1,19 @@
 # oaiResponsesAvalonia
 
-**Added terminal diagnostics tool - 2026-10-27**
+## Added terminal diagnostics tool - 2026-10-27 
 
 * Added a terminal window as a diagnostics/developer tool w/linux-like tools to search and traverse database.
 * This feature is intended to remain in the Avalonia application and is not just branch-specific experimentation.
 * The branch differences between `main` and `terminal_view` are now small enough that they are expected to be merged.
 
-**Detached the avalonia-project from the wpf-project - 2026-10-12**
+## Detached the avalonia-project from the wpf-project - 2026-10-12**
 
 * New solution and name that mirrors it's project-name (i.e. header in this file)
 * New GitHub repository
 
 
 
-**First good crossplatform (Linux/Windows) build that works - 2026-10-11**
+## First good crossplatform (Linux/Windows) build that works - 2026-10-11**
 
 * Most problematic was NativeWebViewer
 * updated in windows but not in Linux when changing tabs

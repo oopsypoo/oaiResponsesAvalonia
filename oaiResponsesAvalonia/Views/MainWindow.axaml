@@ -8,7 +8,7 @@
         x:Name="RootWindow"
         
         x:CompileBindings="False"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/app.ico"
         Width="1024"
         Height="768"
         Title="oaiResponsesAvalonia">

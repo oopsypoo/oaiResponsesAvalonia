@@ -68,7 +68,8 @@
   let historyDraft = '';
   const history = [];
   let prompt = '~/ $ ';
-  const commandCompletions = ['help', 'pwd', 'ls', 'cd', 'cat', 'grep', 'find', 'connect', 'disconnect', 'sessions', 'tables', 'describe', 'messages', 'db', 'clear', 'quit', 'exit'];
+  const filesystemCommandCompletions = ['help', 'pwd', 'ls', 'cd', 'cat', 'grep', 'connect', 'clear', 'quit', 'exit'];
+  const databaseCommandCompletions = ['help', 'pwd', 'ls', 'cd', 'grep', 'find', 'disconnect', 'sessions', 'tables', 'describe', 'messages', 'show', 'columns', 'db', 'clear', 'quit', 'exit'];
   const ansi = { reset: '\u001b[0m', cyan: '\u001b[36m', green: '\u001b[32m', yellow: '\u001b[33m', red: '\u001b[31m' };
   const coloredPrompt = () => ansi.cyan + prompt + ansi.reset;
   const redrawLine = () => {
@@ -121,7 +122,7 @@
     let candidates = [];
 
     if (completed.length === 0) {
-      candidates = commandCompletions;
+      candidates = prompt.startsWith('db[') ? databaseCommandCompletions : filesystemCommandCompletions;
     } else if (completed.length === 1 && completed[0] === 'db') {
       candidates = ['help', 'ls', 'cd', 'pwd', 'show', 'columns'];
     } else if (completed[completed.length - 1] === '|') {

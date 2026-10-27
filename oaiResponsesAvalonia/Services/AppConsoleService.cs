@@ -1227,7 +1227,9 @@ internal sealed class AppConsoleService
         if (precedingArgs.Count == 0)
         {
             string typedCommand = DecodeCompletionToken(rawToken);
-            string[] commands = ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "clear", "quit", "exit"];
+            string[] commands = _databaseConnected
+                ? ["help", "pwd", "ls", "cd", "grep", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "clear", "quit", "exit"]
+                : ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "clear", "quit", "exit"];
             return new AppConsoleCompletionResult(tokenStart, commands.Where(item => item.StartsWith(typedCommand, StringComparison.OrdinalIgnoreCase)).ToArray());
         }
 

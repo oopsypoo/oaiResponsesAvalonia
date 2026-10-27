@@ -1,3 +1,5 @@
 <Solution>
-  <Project Path="oaiResponsesAvalonia/oaiResponsesAvalonia.csproj" />
+  <Project Path="oaiResponsesAvalonia/oaiResponsesAvalonia.csproj">
+    <Deploy Solution="Release|*" />
+  </Project>
 </Solution>

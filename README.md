@@ -1,6 +1,10 @@
 # oaiResponsesAvalonia
 
+**Added terminal diagnostics tool - 2026-10-27**
 
+* Added a terminal window as a diagnostics/developer tool w/linux-like tools to search and traverse database.
+* This feature is intended to remain in the Avalonia application and is not just branch-specific experimentation.
+* The branch differences between `main` and `terminal_view` are now small enough that they are expected to be merged.
 
 **Detached the avalonia-project from the wpf-project - 2026-10-12**
 

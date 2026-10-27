@@ -10,7 +10,7 @@
         ShowInTaskbar="False">
     <Border Margin="18"
             Padding="24"
-            Background="White"
+            Background="CadetBlue"
             BorderBrush="#FFE1E5EA"
             BorderThickness="1"
             CornerRadius="8">

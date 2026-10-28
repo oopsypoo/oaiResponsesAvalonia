@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
@@ -17,7 +17,7 @@ namespace oaiResponsesAvalonia.Native
         private struct OPENASINFO
         {
             public string pcszFile;
-            public string pcszClass;
+            public string? pcszClass;
             public uint oaInFlags;
         }
 

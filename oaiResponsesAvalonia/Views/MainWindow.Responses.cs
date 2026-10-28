@@ -1,4 +1,4 @@
-using Markdig;
+﻿using Markdig;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -42,11 +42,11 @@ namespace oaiResponsesAvalonia.Views
         private bool _bindingMarkdownThemeOptions;
         private bool _bindingPageThemeOptions;
         private List<MarkdownThemeOption> _markdownThemeOptions = new();
-        private MarkdownThemeOption _selectedMarkdownTheme;
+        private MarkdownThemeOption? _selectedMarkdownTheme;
         private List<PageThemeOption> _pageThemeOptions = new();
-        private PageThemeOption _selectedPageTheme;
-        private PendingToolReview _pendingToolReview;
-        private TaskCompletionSource<bool> _pendingToolReviewTcs;
+        private PageThemeOption? _selectedPageTheme;
+        private PendingToolReview? _pendingToolReview;
+        private TaskCompletionSource<bool>? _pendingToolReviewTcs;
         
         private string ApplyModelsToResponsesCombo(IEnumerable<string> models, string preferredModel = "gpt-4o")
         {
@@ -246,12 +246,12 @@ namespace oaiResponsesAvalonia.Views
             ResponsesState.DeveloperAllowedExtensionsCsv = ResponsesPanelState.GetDefaultAllowedExtensionsCsv();
             ApplyResponsesStateToClient();
         }
-        private ChatMessage GetSelectedResponseMessage()
+        private ChatMessage? GetSelectedResponseMessage()
         {
             return ResponsesState.SelectedTurn;
         }
 
-        private string GetPrimaryAttachmentPath(ChatMessage message)
+        private string? GetPrimaryAttachmentPath(ChatMessage message)
         {
             var media = message?.MediaFiles?.FirstOrDefault(m => !string.IsNullOrWhiteSpace(m.LocalPath));
             return media == null ? null : _mediaStorageService.ResolveMediaPath(media.LocalPath);
@@ -259,7 +259,7 @@ namespace oaiResponsesAvalonia.Views
 
         private bool IsImageMediaFile(MediaFile media)
         {
-            string path = _mediaStorageService.ResolveMediaPath(media?.LocalPath);
+            string? path = _mediaStorageService.ResolveMediaPath(media?.LocalPath);
             return media != null &&
                    !string.IsNullOrWhiteSpace(path) &&
                    File.Exists(path) &&
@@ -267,7 +267,7 @@ namespace oaiResponsesAvalonia.Views
                    media.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
         }
 
-        private string GetPrimaryImagePath(ChatMessage message)
+        private string? GetPrimaryImagePath(ChatMessage message)
         {
             var media = message?.MediaFiles?.FirstOrDefault(IsImageMediaFile);
             return media == null ? null : _mediaStorageService.ResolveMediaPath(media.LocalPath);
@@ -278,7 +278,7 @@ namespace oaiResponsesAvalonia.Views
             return message?.MediaFiles?.Where(IsImageMediaFile).ToList() ?? new List<MediaFile>();
         }
 
-        private void ShowResponsesImagePreview(string path)
+        private void ShowResponsesImagePreview(string? path)
         {
             path = _mediaStorageService.ResolveMediaPath(path);
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -364,7 +364,7 @@ namespace oaiResponsesAvalonia.Views
         /// Populates the image gallery from one message and previews its preferred image or first image.
         /// </summary>
         /// <remarks>The gallery contains only images attached to this message, not images from the entire conversation.</remarks>
-        private void ShowResponsesImageGallery(ChatMessage message, string preferredPath = null)
+        private void ShowResponsesImageGallery(ChatMessage message, string? preferredPath = null)
         {
             var images = GetImageMediaFiles(message);
             ReplaceResponsePreviewImages(images);
@@ -376,7 +376,7 @@ namespace oaiResponsesAvalonia.Views
                 return;
             }
 
-            MediaFile selected =
+            MediaFile? selected =
                 !string.IsNullOrWhiteSpace(preferredPath)
                     ? images.FirstOrDefault(m =>
                         string.Equals(_mediaStorageService.ResolveMediaPath(m.LocalPath), preferredPath, StringComparison.OrdinalIgnoreCase))
@@ -529,7 +529,7 @@ namespace oaiResponsesAvalonia.Views
             if (filePaths == null)
                 return;
 
-            ResponseAttachmentItem lastAddedImage = null;
+            ResponseAttachmentItem? lastAddedImage = null;
 
             foreach (string filePath in filePaths)
             {
@@ -574,7 +574,7 @@ namespace oaiResponsesAvalonia.Views
 
             if (ResponsesState.SelectedTurn != null)
             {
-                string selectedTurnImage = GetPrimaryImagePath(ResponsesState.SelectedTurn);
+                string? selectedTurnImage = GetPrimaryImagePath(ResponsesState.SelectedTurn);
                 if (!string.IsNullOrWhiteSpace(selectedTurnImage) && File.Exists(selectedTurnImage))
                     ShowResponsesImagePreview(selectedTurnImage);
                 else
@@ -611,13 +611,14 @@ namespace oaiResponsesAvalonia.Views
         /// <summary>
         /// Gets the path for the selected gallery image, current preview, or pending image attachment.
         /// </summary>
-        private string GetCurrentPreviewImagePath()
+        private string? GetCurrentPreviewImagePath()
         {
             if (lstResponsesImages?.SelectedItem is MediaFile selected &&
-                !string.IsNullOrWhiteSpace(selected.LocalPath) &&
-                File.Exists(_mediaStorageService.ResolveMediaPath(selected.LocalPath)))
+                !string.IsNullOrWhiteSpace(selected.LocalPath))
             {
-                return _mediaStorageService.ResolveMediaPath(selected.LocalPath);
+                string? selectedPath = _mediaStorageService.ResolveMediaPath(selected.LocalPath);
+                if (!string.IsNullOrWhiteSpace(selectedPath) && File.Exists(selectedPath))
+                    return selectedPath;
             }
 
             if (!string.IsNullOrWhiteSpace(_responsesPreviewImagePath) &&
@@ -710,7 +711,7 @@ namespace oaiResponsesAvalonia.Views
                         {
                             i++;
                             _appStatus.Set($"Attaching file {i}/{list.Count}: {attachment.FileName}");
-                            string storedPath = _mediaStorageService.ImportUserFile(attachment.LocalPath);
+                            string? storedPath = _mediaStorageService.ImportUserFile(attachment.LocalPath);
 
                             if (!string.IsNullOrWhiteSpace(storedPath))
                             {
@@ -890,7 +891,7 @@ namespace oaiResponsesAvalonia.Views
             if (lstResponsesImages.SelectedItem is not MediaFile selectedImage)
                 return;
 
-            string imagePath = _mediaStorageService.ResolveMediaPath(selectedImage.LocalPath);
+            string? imagePath = _mediaStorageService.ResolveMediaPath(selectedImage.LocalPath);
             if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
                 return;
 
@@ -931,7 +932,7 @@ namespace oaiResponsesAvalonia.Views
             if (lstResponsesTurns.SelectedItem is not ChatMessage message)
                 return;
 
-            string path = GetPrimaryAttachmentPath(message);
+            string? path = GetPrimaryAttachmentPath(message);
 
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 return;
@@ -1983,7 +1984,7 @@ The assistant wants to replace text in an existing file.
             return value.GetString() ?? string.Empty;
         }
 
-        private static string GetOptionalString(JsonElement root, string propertyName)
+        private static string? GetOptionalString(JsonElement root, string propertyName)
         {
             if (!root.TryGetProperty(propertyName, out JsonElement value))
                 return null;
@@ -2229,7 +2230,7 @@ The assistant wants to replace text in an existing file.
             return System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(name);
         }
 
-        private MarkdownThemeOption GetDefaultMarkdownThemeOption(List<MarkdownThemeOption> options)
+        private MarkdownThemeOption? GetDefaultMarkdownThemeOption(List<MarkdownThemeOption> options)
         {
             var github = options.FirstOrDefault(t =>
                 t.FileName.Equals("github.css", StringComparison.OrdinalIgnoreCase));
@@ -2464,7 +2465,7 @@ The assistant wants to replace text in an existing file.
         {
             try
             {
-                string message = e.Body;
+                string? message = e.Body;
                 if (string.IsNullOrWhiteSpace(message))
                     return;
                 System.Diagnostics.Debug.WriteLine($"WebView message: {message}");
@@ -2557,7 +2558,7 @@ The assistant wants to replace text in an existing file.
 
             await InvokeResponsesScriptAsync(
                 $"window.markdownViewer.setHighlightTheme({hrefArgument});");
-            string diagnostic = await wvResponsesResponse.InvokeScript("""
+            string? diagnostic = await wvResponsesResponse.InvokeScript("""
             JSON.stringify((() => {
                 const link = document.getElementById("highlight-theme");
                 const block = document.querySelector("#markdown-root pre > code");
@@ -2656,7 +2657,7 @@ The assistant wants to replace text in an existing file.
             return System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(name);
         }
 
-        private PageThemeOption GetDefaultPageThemeOption(List<PageThemeOption> options)
+        private PageThemeOption? GetDefaultPageThemeOption(List<PageThemeOption> options)
         {
             var preferred = options.FirstOrDefault(t =>
                 t.FileName.Equals("github-light-page.css", StringComparison.OrdinalIgnoreCase));

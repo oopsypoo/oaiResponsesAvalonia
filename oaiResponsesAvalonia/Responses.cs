@@ -1,4 +1,4 @@
-using oaiResponsesAvalonia.Services;
+﻿using oaiResponsesAvalonia.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -749,9 +749,10 @@ namespace oaiResponsesAvalonia
                     throw new Exception($"OpenAI Error {response.StatusCode}: {responseString}");
                 }
                 progress?.Report("Parsing response...");
-                var apiResponse = JsonSerializer.Deserialize<ResponsesResponse>(responseString, options);
+                var apiResponse = JsonSerializer.Deserialize<ResponsesResponse>(responseString, options)
+                    ?? throw new InvalidOperationException("The API response could not be deserialized.");
 
-                if (!string.IsNullOrEmpty(apiResponse?.Id))
+                if (!string.IsNullOrEmpty(apiResponse.Id))
                 {
                     previousResponseId = apiResponse.Id;
                     LastResponseId = apiResponse.Id; // okay to store, but not use as input source

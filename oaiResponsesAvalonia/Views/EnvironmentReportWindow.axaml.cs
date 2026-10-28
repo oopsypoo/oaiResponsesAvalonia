@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Interactivity;
 using oaiResponsesAvalonia.Services;
 
@@ -6,6 +6,10 @@ namespace oaiResponsesAvalonia.Views
 {
     public partial class EnvironmentReportWindow : Window
     {
+        public EnvironmentReportWindow() : this(null)
+        {
+        }
+
         public EnvironmentReportWindow(EnvironmentCapabilityReport? report)
         {
             InitializeComponent();

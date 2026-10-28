@@ -1,4 +1,4 @@
-using oaiResponsesAvalonia.Data;
+﻿using oaiResponsesAvalonia.Data;
 using System;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -18,8 +18,8 @@ namespace oaiResponsesAvalonia
             set => SetProperty(ref _promptText, value ?? string.Empty);
         }
         
-        private ChatMessage _selectedTurn;
-        public ChatMessage SelectedTurn
+        private ChatMessage? _selectedTurn;
+        public ChatMessage? SelectedTurn
         {
             get => _selectedTurn;
             set => SetProperty(ref _selectedTurn, value);

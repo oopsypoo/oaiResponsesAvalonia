@@ -99,7 +99,7 @@ public partial class MainWindow : Window
     {
         if (_terminalWindow is null)
         {
-            _terminalWindow = new TerminalWindow();
+            _terminalWindow = new TerminalWindow(ResponsesState.UseDeveloperTools, ResponsesState.DeveloperRepositoryRoot);
             _terminalWindow.Closed += (_, _) => _terminalWindow = null;
             _terminalWindow.Show(this);
             return;

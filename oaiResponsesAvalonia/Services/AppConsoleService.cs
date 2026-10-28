@@ -10,6 +10,25 @@ using System.Text.Json;
 
 namespace oaiResponsesAvalonia.Services;
 
+[Flags]
+// Console-only permissions; these do not define or replace the AI/developer-tool access policy.
+internal enum ConsoleOperationCapability
+{
+    None = 0,
+    List = 1,
+    Read = 2,
+    Search = 4,
+    ContextSwitch = 8,
+    DatabaseRead = 16
+}
+
+internal enum ConsoleContext
+{
+    Application,
+    Database,
+    Workspace
+}
+
 /// <summary>
 /// Implements constrained application commands, not an operating-system shell. Commands are dispatched by the active filesystem or database context.
 /// </summary>
@@ -20,23 +39,56 @@ internal sealed class AppConsoleService
     private const int MaximumDatabaseOutputCharacters = 200_000;
     private readonly string _rootDirectory;
     private string _currentDirectory;
+    private readonly bool _workspaceEnabled;
+    private readonly string? _workspaceRootDirectory;
+    private string? _workspaceCurrentDirectory;
     private string? _connectedDatabasePath;
+
+
+    public ConsoleContext ActiveContext { get; private set; } = ConsoleContext.Application;
     private int? _databaseSessionId;
     private int? _databaseMessageId;
     private bool _databaseMediaDirectory;
     private int? _databaseMediaId;
     private bool _databaseConnected;
 
-    public AppConsoleService()
+    public AppConsoleService(bool developerToolsEnabled = false, string? workspaceRoot = null)
     {
         _rootDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppPaths.DataDirectory));
         Directory.CreateDirectory(_rootDirectory);
         _currentDirectory = _rootDirectory;
+
+        string? normalizedWorkspaceRoot = !string.IsNullOrWhiteSpace(workspaceRoot) && Directory.Exists(workspaceRoot)
+            ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspaceRoot))
+            : null;
+        _workspaceEnabled = developerToolsEnabled && normalizedWorkspaceRoot is not null && !IsReparsePoint(normalizedWorkspaceRoot);
+        _workspaceRootDirectory = _workspaceEnabled
+            ? normalizedWorkspaceRoot
+            : null;
+        _workspaceCurrentDirectory = _workspaceRootDirectory;
     }
 
-    public string Prompt => _databaseConnected
-        ? $"db[{Path.GetFileName(_connectedDatabasePath)}]:{GetDatabaseLocation()} $ "
-        : $"~{GetRelativeCurrentDirectory()} $ ";
+    public string Prompt => ActiveContext switch
+    {
+        ConsoleContext.Database => $"db[{Path.GetFileName(_connectedDatabasePath)}]:{GetDatabaseLocation()} $ ",
+        ConsoleContext.Workspace => $"workspace:{GetRelativeCurrentDirectory(workspace: true)} $ ",
+        _ => $"app:~{GetRelativeCurrentDirectory()} $ "
+    };
+
+    private string CurrentFilesystemRoot => ActiveContext == ConsoleContext.Workspace
+        ? _workspaceRootDirectory ?? throw new InvalidOperationException("workspace context is not configured.")
+        : _rootDirectory;
+
+    private string CurrentFilesystemDirectory => ActiveContext == ConsoleContext.Workspace
+        ? _workspaceCurrentDirectory ?? CurrentFilesystemRoot
+        : _currentDirectory;
+
+    private ConsoleOperationCapability AllowedCapabilities => ActiveContext switch
+    {
+        ConsoleContext.Workspace => ConsoleOperationCapability.List | ConsoleOperationCapability.Read | ConsoleOperationCapability.Search | ConsoleOperationCapability.ContextSwitch,
+        ConsoleContext.Database => ConsoleOperationCapability.List | ConsoleOperationCapability.Search | ConsoleOperationCapability.ContextSwitch | ConsoleOperationCapability.DatabaseRead,
+        _ => ConsoleOperationCapability.List | ConsoleOperationCapability.Read | ConsoleOperationCapability.Search | ConsoleOperationCapability.ContextSwitch | ConsoleOperationCapability.DatabaseRead
+    };
 
     public AppConsoleResult Execute(string commandLine)
     {
@@ -83,15 +135,22 @@ internal sealed class AppConsoleService
             }
 
             string command = args[0].ToLowerInvariant();
+            bool grepReadsFile = command == "grep" && args.Skip(1).Count(argument => !argument.StartsWith("-", StringComparison.Ordinal)) > 1;
+            EnsureCommandCapability(command, grepReadsFile);
+            if (pipedGrepArguments is not null)
+                EnsureCapability(ConsoleOperationCapability.Search, "grep");
             string output = command switch
             {
                 "help" => GetContextHelpText(),
-                "pwd" => _databaseConnected ? GetDatabaseLocation() : _currentDirectory,
-                "ls" => _databaseConnected ? ListDatabaseLocation(args.Skip(1).ToArray()) : ListDirectory(args.Skip(1).ToArray()),
-                "cd" => _databaseConnected ? ChangeDatabaseLocation(args.Skip(1).ToArray()) : ChangeDirectory(args.Skip(1).ToArray()),
-                "cat" when !_databaseConnected => ReadFile(args.Skip(1).ToArray()),
-                "cat" => throw new InvalidOperationException("cat is a filesystem-context command. Disconnect from the database to use it."),
+                "pwd" => ActiveContext == ConsoleContext.Database ? GetDatabaseLocation() : CurrentFilesystemDirectory,
+                "ls" => ActiveContext == ConsoleContext.Database ? ListDatabaseLocation(args.Skip(1).ToArray()) : ListDirectory(args.Skip(1).ToArray()),
+                "cd" => ActiveContext == ConsoleContext.Database ? ChangeDatabaseLocation(args.Skip(1).ToArray()) : ChangeDirectory(args.Skip(1).ToArray()),
+                "cat" when ActiveContext != ConsoleContext.Database => ReadFile(args.Skip(1).ToArray()),
+                "cat" => throw new InvalidOperationException("cat is a filesystem-context command. Switch to application or workspace context to use it."),
                 "grep" => Grep(args.Skip(1).ToArray(), null),
+                "workspace" => EnterWorkspace(args.Skip(1).ToArray()),
+                "app" or "application" => SwitchToApplication(args.Skip(1).ToArray()),
+                "database" => SwitchToDatabase(args.Skip(1).ToArray()),
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
                 "disconnect" => DisconnectDatabase(args.Skip(1).ToArray()),
                 "sessions" => HandleSessions(args.Skip(1).ToArray()),
@@ -99,9 +158,9 @@ internal sealed class AppConsoleService
                 "tables" => HandleTables(args.ToArray()),
                 "describe" => HandleDescribe(args.Skip(1).ToArray()),
                 "messages" => HandleMessages(args.Skip(1).ToArray()),
-                "show" when _databaseConnected => ShowCurrentDatabaseMessage(args.Skip(1).ToArray()),
-                "columns" when _databaseConnected && args.Count == 1 => ListCurrentMessageColumns(),
-                "columns" when _databaseConnected => throw new InvalidOperationException("usage: columns"),
+                "show" when ActiveContext == ConsoleContext.Database => ShowCurrentDatabaseMessage(args.Skip(1).ToArray()),
+                "columns" when ActiveContext == ConsoleContext.Database && args.Count == 1 => ListCurrentMessageColumns(),
+                "columns" when ActiveContext == ConsoleContext.Database => throw new InvalidOperationException("usage: columns"),
                 "columns" => throw new InvalidOperationException("columns is available only in the database context."),
                 "show" => throw new InvalidOperationException("show is available only in the database context."),
                 "db" => HandleDatabaseAlias(args.Skip(1).ToArray()),
@@ -115,14 +174,69 @@ internal sealed class AppConsoleService
 
             bool closeWindow = command is "quit" or "exit";
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or "grep" or
-                "connect" or "disconnect" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
-            string kind = !knownCommand ? "error" : command is "connect" or "disconnect" ? "success" : "normal";
+                "connect" or "disconnect" or "workspace" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
+            string kind = !knownCommand ? "error" : command is "connect" or "disconnect" or "workspace" or "app" or "application" or "database" ? "success" : "normal";
             return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode);
         }
         catch (Exception ex)
         {
             return new AppConsoleResult($"error: {ex.Message}", Prompt, Kind: "error");
         }
+    }
+
+    private void EnsureCommandCapability(string command, bool grepReadsFile = false)
+    {
+        if (command == "connect" && ActiveContext != ConsoleContext.Application)
+            throw new InvalidOperationException("switch to application context before connecting to a database.");
+        if (command is "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" && ActiveContext != ConsoleContext.Database)
+            throw new InvalidOperationException($"'{command}' requires the database context. Use 'database' to switch contexts.");
+
+        ConsoleOperationCapability required = command switch
+        {
+            "ls" => ConsoleOperationCapability.List,
+            "cat" => ConsoleOperationCapability.Read,
+            "grep" => ConsoleOperationCapability.Search | (grepReadsFile ? ConsoleOperationCapability.Read : ConsoleOperationCapability.None),
+            "connect" or "disconnect" or "workspace" or "app" or "application" or "database" => ConsoleOperationCapability.ContextSwitch,
+            "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" => ConsoleOperationCapability.DatabaseRead,
+            "db" => ConsoleOperationCapability.DatabaseRead,
+            _ => ConsoleOperationCapability.None
+        };
+
+        EnsureCapability(required, command);
+    }
+
+    private void EnsureCapability(ConsoleOperationCapability required, string operation)
+    {
+        if ((AllowedCapabilities & required) != required)
+            throw new InvalidOperationException($"'{operation}' is not available in the {ActiveContext.ToString().ToLowerInvariant()} context.");
+    }
+
+    private string EnterWorkspace(string[] args)
+    {
+        if (args.Length != 0)
+            throw new InvalidOperationException("usage: workspace");
+        if (!_workspaceEnabled || _workspaceRootDirectory is null)
+            throw new InvalidOperationException("workspace context is unavailable. Enable Developer Tools and configure an existing workspace root first.");
+
+        ActiveContext = ConsoleContext.Workspace;
+        return $"workspace context active at {_workspaceRootDirectory} (read-only).";
+    }
+
+    private string SwitchToApplication(string[] args)
+    {
+        if (args.Length != 0)
+            throw new InvalidOperationException("usage: app");
+        ActiveContext = ConsoleContext.Application;
+        return "application-data context active.";
+    }
+
+    private string SwitchToDatabase(string[] args)
+    {
+        if (args.Length != 0)
+            throw new InvalidOperationException("usage: database");
+        EnsureDatabaseConnected();
+        ActiveContext = ConsoleContext.Database;
+        return $"database context active: {Path.GetFileName(_connectedDatabasePath)}.";
     }
 
     private string HandleDatabaseAlias(string[] args)
@@ -132,7 +246,12 @@ internal sealed class AppConsoleService
         return HandleDatabaseBrowser(args);
     }
 
-    private string GetContextHelpText() => _databaseConnected ? GetDatabaseHelpText() : FilesystemHelpText;
+    private string GetContextHelpText() => ActiveContext switch
+    {
+        ConsoleContext.Database => GetDatabaseHelpText(),
+        ConsoleContext.Workspace => WorkspaceHelpText,
+        _ => FilesystemHelpText
+    };
 
     private string GetCommandHelp(string[] args)
     {
@@ -151,28 +270,31 @@ internal sealed class AppConsoleService
 
         string synopsis = command switch
         {
-            "ls" when _databaseConnected || databaseAlias => "usage: ls [--columns N[,N...]]\nLists sessions at /, messages inside a session, or fields inside a message.",
-            "ls" => "usage: ls [-a] [-l] [path]\nLists entries in the app-data directory. -a includes hidden entries; -l shows type, size, and last-modified time.",
-            "grep" => "usage: grep <search-term> <file> OR <command> | grep <search-term>\nSearches literal text, case-insensitively, with line numbers and colored matches by default. File search is available in filesystem context; piped output can be searched in either context. This is an application command, not an operating-system grep.",
-            "cd" when _databaseConnected || databaseAlias => "usage: cd <session-id|message-id|media|..|/>\nNavigates sessions, messages, and a message's media records; does not change filesystem directories.",
-            "cd" => "usage: cd [path]\nChanges directory within the app-data directory.",
-            "pwd" when _databaseConnected || databaseAlias => "usage: pwd\nShows the current database location.",
+            "ls" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: ls [--columns N[,N...]]\nLists sessions at /, messages inside a session, or fields inside a message.",
+            "ls" => "usage: ls [-a] [-l] [path]\nLists entries in the current filesystem context (application data or workspace). -a includes hidden entries; -l shows type, size, and last-modified time.",
+            "grep" => "usage: grep <search-term> <file> OR <command> | grep <search-term>\nSearches literal text, case-insensitively, with line numbers and colored matches by default. File search is available in application and workspace contexts; piped output can be searched in database context too. This is an application command, not an operating-system grep.",
+            "cd" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: cd <session-id|message-id|media|..|/>\nNavigates sessions, messages, and a message's media records; does not change filesystem directories.",
+            "cd" => "usage: cd [path]\nChanges directory within the current filesystem context.",
+            "pwd" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: pwd\nShows the current database location.",
             "pwd" => "usage: pwd\nShows the current app-data directory.",
-            "show" when _databaseConnected || databaseAlias => "usage: show [--column <name>|--field <name>]\nRequires a message location. Without an option, displays all message fields; with a column, displays one value and pretty-prints JSON.",
-            "columns" when _databaseConnected || databaseAlias => "usage: columns\nRequires a message or media-record location. Lists field names and their 1-based indexes.",
+            "show" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: show [--column <name>|--field <name>]\nRequires a message location. Without an option, displays all message fields; with a column, displays one value and pretty-prints JSON.",
+            "columns" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: columns\nRequires a message or media-record location. Lists field names and their 1-based indexes.",
             "connect" => "usage: connect [database-file]\nConnects read-only to a database file under app data and switches this terminal to database context.",
-            "disconnect" => "usage: disconnect\nDisconnects and returns this terminal to filesystem context.",
-            "cat" => "usage: cat <file>\nDisplays a small text file in filesystem context.",
+            "disconnect" => "usage: disconnect\nDisconnects and returns this terminal to application-data context.",
+            "cat" => "usage: cat <file>\nDisplays a small text file in the current filesystem context.",
+            "workspace" => "usage: workspace\nEnters the configured workspace context in read-only mode. Requires Developer Tools to be enabled and an existing workspace root.",
+            "app" or "application" => "usage: app\nReturns to the application-data context.",
+            "database" => "usage: database\nSwitches to the currently connected database context.",
             "find" => "usage: find sessions [--sid ID] [--has-media] [--role VALUE] [--content TEXT] [--model VALUE] [--reasoning-level VALUE] [--tool VALUE] [--same-message]\nFilters combine with AND. By default filters may match different messages; --same-message requires one message to satisfy all message filters. Results show session IDs and matching message IDs in one column per message filter; content is not printed.",
-            "sessions" when _databaseConnected => "usage: sessions list [--limit N] | sessions show <id>\nLists recent sessions or displays session details.",
-            "tables" when _databaseConnected => "usage: tables\nLists database tables read-only.",
-            "describe" when _databaseConnected => "usage: describe <table>\nShows database column details.",
-            "messages" when _databaseConnected => "usage: messages show <id> [--field <column>]\nDisplays stored message fields or one selected field.",
+            "sessions" when ActiveContext == ConsoleContext.Database => "usage: sessions list [--limit N] | sessions show <id>\nLists recent sessions or displays session details.",
+            "tables" when ActiveContext == ConsoleContext.Database => "usage: tables\nLists database tables read-only.",
+            "describe" when ActiveContext == ConsoleContext.Database => "usage: describe <table>\nShows database column details.",
+            "messages" when ActiveContext == ConsoleContext.Database => "usage: messages show <id> [--field <column>]\nDisplays stored message fields or one selected field.",
             "help" => GetContextHelpText(),
             _ => "No help is available for '" + command + "' in the current context.\n" + GetContextHelpText()
         };
         return "Application console command help (not an operating-system shell command).\nContext: " +
-            (_databaseConnected ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : databaseAlias ? "database (not connected)" : $"filesystem at {_currentDirectory}") +
+            (ActiveContext == ConsoleContext.Database ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : ActiveContext == ConsoleContext.Workspace ? $"workspace at {CurrentFilesystemDirectory}" : databaseAlias ? "database (not connected)" : $"application data at {_currentDirectory}") +
             "\n" + synopsis;
     }
 
@@ -186,9 +308,11 @@ internal sealed class AppConsoleService
         if (paths.Length > 1)
             throw new InvalidOperationException("usage: ls [-a] [-l] [path]");
 
-        string directory = paths.Length == 0 ? _currentDirectory : ResolvePath(paths[0]);
+        bool workspace = ActiveContext == ConsoleContext.Workspace;
+        string directory = paths.Length == 0 ? CurrentFilesystemDirectory : ResolvePath(paths[0], workspace);
         if (!Directory.Exists(directory))
             throw new DirectoryNotFoundException($"not a directory: {paths.FirstOrDefault() ?? directory}");
+        EnsureNoReparsePoints(directory, workspace);
 
         var entries = new List<string>();
         foreach (string path in Directory.EnumerateFileSystemEntries(directory)
@@ -232,12 +356,17 @@ internal sealed class AppConsoleService
         if (args.Length > 1)
             throw new InvalidOperationException("usage: cd [path]");
 
-        string target = args.Length == 0 || args[0] == "~" ? _rootDirectory : ResolvePath(args[0]);
+        bool workspace = ActiveContext == ConsoleContext.Workspace;
+        string root = workspace ? CurrentFilesystemRoot : _rootDirectory;
+        string target = args.Length == 0 || args[0] == "~" ? root : ResolvePath(args[0], workspace);
         if (!Directory.Exists(target))
             throw new DirectoryNotFoundException($"no such directory: {args.FirstOrDefault()}");
 
-        EnsureNoReparsePoints(target);
-        _currentDirectory = target;
+        EnsureNoReparsePoints(target, workspace);
+        if (workspace)
+            _workspaceCurrentDirectory = target;
+        else
+            _currentDirectory = target;
         return string.Empty;
     }
 
@@ -246,11 +375,12 @@ internal sealed class AppConsoleService
         if (args.Length != 1)
             throw new InvalidOperationException("usage: cat <file>");
 
-        string filePath = ResolvePath(args[0]);
+        bool workspace = ActiveContext == ConsoleContext.Workspace;
+        string filePath = ResolvePath(args[0], workspace);
         if (!File.Exists(filePath))
             throw new FileNotFoundException($"no such file: {args[0]}");
 
-        EnsureNoReparsePoints(filePath);
+        EnsureNoReparsePoints(filePath, workspace);
         var info = new FileInfo(filePath);
         if (info.Length > MaximumFileBytes)
             throw new InvalidOperationException($"file is larger than the {MaximumFileBytes / 1024} KiB console limit.");
@@ -290,8 +420,8 @@ internal sealed class AppConsoleService
         {
             if (operands.Count != 2)
                 throw new InvalidOperationException("grep needs a file in filesystem context or input from a pipe; example: ls | grep notes");
-            if (_databaseConnected)
-                throw new InvalidOperationException("grep file search is available only in filesystem context; in database context, pipe a command such as ls to grep.");
+            if (ActiveContext == ConsoleContext.Database)
+                throw new InvalidOperationException("grep file search is available only in application or workspace context; in database context, pipe a command such as ls to grep.");
             input = ReadFile([operands[1]]);
         }
 
@@ -333,7 +463,10 @@ internal sealed class AppConsoleService
         if (args.Length > 1)
             throw new InvalidOperationException("usage: connect [database-file]");
         if (_databaseConnected)
-            return $"already connected to {Path.GetFileName(_connectedDatabasePath)} (read-only). Use disconnect before switching databases.";
+        {
+            ActiveContext = ConsoleContext.Database;
+            return $"already connected to {Path.GetFileName(_connectedDatabasePath)} (read-only); database context is active. Use disconnect before switching databases.";
+        }
 
         string databasePath = args.Length == 0 ? AppDbContext.DatabaseFilePath : ResolvePath(args[0]);
         if (!File.Exists(databasePath))
@@ -351,6 +484,7 @@ internal sealed class AppConsoleService
         
         
         _databaseConnected = true;
+        ActiveContext = ConsoleContext.Database;
         return $"connected to {Path.GetFileName(databasePath)} (read-only). Database context is active; use 'ls' to browse.";
     }
 
@@ -359,9 +493,13 @@ internal sealed class AppConsoleService
         if (args.Length > 0)
             throw new InvalidOperationException("usage: disconnect");
         if (!_databaseConnected)
-            return "not connected.";
+        {
+            ActiveContext = ConsoleContext.Application;
+            return "not connected; returned to application-data context.";
+        }
 
         _databaseConnected = false;
+        ActiveContext = ConsoleContext.Application;
         _connectedDatabasePath = null;
         _databaseSessionId = null;
         _databaseMediaDirectory = false;
@@ -1227,9 +1365,12 @@ internal sealed class AppConsoleService
         if (precedingArgs.Count == 0)
         {
             string typedCommand = DecodeCompletionToken(rawToken);
-            string[] commands = _databaseConnected
-                ? ["help", "pwd", "ls", "cd", "grep", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "clear", "quit", "exit"]
-                : ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "clear", "quit", "exit"];
+            string[] commands = ActiveContext switch
+            {
+                ConsoleContext.Database => ["help", "pwd", "ls", "cd", "grep", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "workspace", "app", "clear", "quit", "exit"],
+                ConsoleContext.Workspace => ["help", "pwd", "ls", "cd", "cat", "grep", "workspace", "app", "database", "disconnect", "clear", "quit", "exit"],
+                _ => ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "disconnect", "workspace", "database", "clear", "quit", "exit"]
+            };
             return new AppConsoleCompletionResult(tokenStart, commands.Where(item => item.StartsWith(typedCommand, StringComparison.OrdinalIgnoreCase)).ToArray());
         }
 
@@ -1247,7 +1388,7 @@ internal sealed class AppConsoleService
             string[] valueOptions = ["--sid", "--role", "--content", "--content-contains", "--model", "--model-used", "--reasoning-level", "--tool", "--active-tool", "--active-tools"];
             if (valueOption is not null && valueOptions.Contains(valueOption, StringComparer.OrdinalIgnoreCase))
             {
-                if (!_databaseConnected || valueOption is "--content" or "--content-contains")
+                if (ActiveContext != ConsoleContext.Database || valueOption is "--content" or "--content-contains")
                     return new AppConsoleCompletionResult(tokenStart, []);
                 try
                 {
@@ -1271,7 +1412,7 @@ internal sealed class AppConsoleService
             string[] findFlags = ["--sid", "--has-media", "--role", "--content", "--model", "--reasoning-level", "--tool", "--same-message"];
             return new AppConsoleCompletionResult(tokenStart, findFlags.Where(item => item.StartsWith(typed, StringComparison.OrdinalIgnoreCase)).ToArray());
         }
-        if (command == "db" || (_databaseConnected && command == "cd"))
+        if (command == "db" || (ActiveContext == ConsoleContext.Database && command == "cd"))
         {
             string typed = DecodeCompletionToken(rawToken);
             if (command == "db" && precedingArgs.Count == 1)
@@ -1279,7 +1420,7 @@ internal sealed class AppConsoleService
                 string[] subcommands = ["help", "ls", "cd", "pwd", "show", "columns"];
                 return new AppConsoleCompletionResult(tokenStart, subcommands.Where(item => item.StartsWith(typed, StringComparison.OrdinalIgnoreCase)).ToArray());
             }
-            if (_databaseConnected && ((command == "db" && precedingArgs.Count == 2 && precedingArgs[1].Equals("cd", StringComparison.OrdinalIgnoreCase)) || (command == "cd" && precedingArgs.Count == 1)))
+            if (ActiveContext == ConsoleContext.Database && ((command == "db" && precedingArgs.Count == 2 && precedingArgs[1].Equals("cd", StringComparison.OrdinalIgnoreCase)) || (command == "cd" && precedingArgs.Count == 1)))
             {
                 string typedId = DecodeCompletionToken(rawToken);
                 if (_databaseMessageId.HasValue && !_databaseMediaDirectory)
@@ -1329,7 +1470,7 @@ internal sealed class AppConsoleService
             }
             return new AppConsoleCompletionResult(tokenStart, []);
         }
-        if (_databaseConnected && command != "cd")
+        if (ActiveContext == ConsoleContext.Database && command != "cd")
             return new AppConsoleCompletionResult(tokenStart, []);
         if (command is not ("cd" or "cat" or "ls" or "connect"))
             return new AppConsoleCompletionResult(tokenStart, []);
@@ -1345,7 +1486,8 @@ internal sealed class AppConsoleService
 
         try
         {
-            directory = string.IsNullOrEmpty(directoryPart) ? _currentDirectory : ResolvePath(directoryPart);
+            bool workspace = ActiveContext == ConsoleContext.Workspace;
+            directory = string.IsNullOrEmpty(directoryPart) ? CurrentFilesystemDirectory : ResolvePath(directoryPart, workspace);
         }
         catch
         {
@@ -1427,52 +1569,56 @@ internal sealed class AppConsoleService
 
     private static string EscapeCompletionPath(string path) => path.Replace(" ", "\\\\ ", StringComparison.Ordinal);
 
-    private string ResolvePath(string userPath)
+    private string ResolvePath(string userPath, bool workspace = false)
     {
         if (string.IsNullOrWhiteSpace(userPath))
             throw new InvalidOperationException("path cannot be empty.");
 
+        string root = workspace ? CurrentFilesystemRoot : _rootDirectory;
+        string currentDirectory = workspace ? CurrentFilesystemDirectory : _currentDirectory;
         string normalized = userPath.Replace('/', Path.DirectorySeparatorChar);
         string candidate;
         if (userPath == "~")
         {
-            candidate = _rootDirectory;
+            candidate = root;
         }
         else if (userPath.StartsWith("~/", StringComparison.Ordinal) || userPath.StartsWith("~\\", StringComparison.Ordinal))
         {
-            candidate = Path.Combine(_rootDirectory, normalized[2..]);
+            candidate = Path.Combine(root, normalized[2..]);
         }
         else if (userPath.StartsWith("/", StringComparison.Ordinal))
         {
-            candidate = Path.Combine(_rootDirectory, normalized.TrimStart(Path.DirectorySeparatorChar));
+            candidate = Path.Combine(root, normalized.TrimStart(Path.DirectorySeparatorChar));
         }
         else if (Path.IsPathRooted(normalized))
         {
-            throw new InvalidOperationException("absolute host paths are not available; use paths relative to the app data directory.");
+            throw new InvalidOperationException("absolute host paths are not available; use a path relative to the current context root.");
         }
         else
         {
-            candidate = Path.Combine(_currentDirectory, normalized);
+            candidate = Path.Combine(currentDirectory, normalized);
         }
 
         string fullPath = Path.GetFullPath(candidate);
-        string comparisonRoot = _rootDirectory + Path.DirectorySeparatorChar;
+        string relativePath = Path.GetRelativePath(root, fullPath);
         StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (!fullPath.Equals(_rootDirectory, comparison) && !fullPath.StartsWith(comparisonRoot, comparison))
-            throw new InvalidOperationException("path is outside the app data directory.");
+        if (Path.IsPathRooted(relativePath) || relativePath == ".." || relativePath.StartsWith(".." + Path.DirectorySeparatorChar, comparison))
+            throw new InvalidOperationException(workspace ? "path is outside the configured workspace." : "path is outside the app data directory.");
 
-        EnsureNoReparsePoints(fullPath);
+        EnsureNoReparsePoints(fullPath, workspace);
         return fullPath;
     }
 
-    private void EnsureNoReparsePoints(string path)
+    private void EnsureNoReparsePoints(string path, bool workspace = false)
     {
+        string root = workspace ? CurrentFilesystemRoot : _rootDirectory;
         string fullPath = Path.GetFullPath(path);
-        if (fullPath.Equals(_rootDirectory, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (fullPath.Equals(root, comparison))
             return;
 
-        string relative = Path.GetRelativePath(_rootDirectory, fullPath);
-        string current = _rootDirectory;
+        string relative = Path.GetRelativePath(root, fullPath);
+        string current = root;
         foreach (string part in relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
         {
             current = Path.Combine(current, part);
@@ -1505,9 +1651,11 @@ internal sealed class AppConsoleService
         }
     }
 
-    private string GetRelativeCurrentDirectory()
+    private string GetRelativeCurrentDirectory(bool workspace = false)
     {
-        string relative = Path.GetRelativePath(_rootDirectory, _currentDirectory);
+        string root = workspace ? CurrentFilesystemRoot : _rootDirectory;
+        string directory = workspace ? CurrentFilesystemDirectory : _currentDirectory;
+        string relative = Path.GetRelativePath(root, directory);
         return relative == "." ? string.Empty : "/" + relative.Replace(Path.DirectorySeparatorChar, '/');
     }
 
@@ -1598,23 +1746,39 @@ internal sealed class AppConsoleService
 
     private const string FilesystemHelpText =
         "Application console — not a general-purpose or operating-system shell. Commands are implemented by this application; they do not run Linux, PowerShell, or other shell commands.\n" +
-        "Context: filesystem (app-data directory). File access is confined to app data.\n\n" +
+        "Context: application data. Filesystem access is confined to the app-data directory.\n\n" +
         "  help                         Show help for the current context\n" +
         "  pwd                          Show the current app-data directory\n" +
         "  ls [-a] [-l] [path]          List files; -l shows type, byte size, and modified time\n" +
         "  cd [path]                    Change directory within app data\n" +
         "  cat <file>                   Display a small text file\n" +
         "  grep <term> <file>           Search text (case-insensitive, numbered, colored)\n" +
-        "  <command> | grep <term>      Filter command output; works in both contexts\n" +
+        "  <command> | grep <term>      Filter command output\n" +
         "  connect [database-file]     Connect read-only; switches to database context\n" +
+        "  workspace                   Enter the configured workspace (read-only)\n" +
         "  quit                         Close this terminal window\n\n" +
-        "Use ls -h, cd --help, or connect --help for command help.\n" +
+        "Use app to return here from another context. Workspace access requires Developer Tools and a configured existing root.\n" +
         "grep searches literal text; -n and -i are enabled by default, and matches are colored. It is an application command, not system grep.\n" +
         "Long output: append | more or | less (Space/Down to advance, q to quit).";
 
+    private const string WorkspaceHelpText =
+        "Application console — workspace context (read-only). This is not a general-purpose or operating-system shell.\n" +
+        "Filesystem access is confined to the configured workspace root; symbolic links and reparse points are not followed.\n\n" +
+        "  help                         Show workspace help\n" +
+        "  pwd                          Show the current workspace directory\n" +
+        "  ls [-a] [-l] [path]          List workspace files and directories\n" +
+        "  cd [path]                    Change directory within the workspace\n" +
+        "  cat <file>                   Display a small text file\n" +
+        "  grep <term> <file>           Search workspace text\n" +
+        "  <command> | grep <term>      Filter command output\n" +
+        "  app                          Return to application-data context\n" +
+        "  database                     Switch to the connected database context\n" +
+        "  disconnect                   Disconnect the database and return to app context\n\n" +
+        "Workspace commands are application-provided, not operating-system commands. File creation, modification, builds, and process execution are not available here yet.";
+
     private string GetDatabaseHelpText() =>
         "Application console — not a general-purpose or operating-system shell. Commands are implemented by this application; they do not run Linux, PowerShell, or other shell commands.\n" +
-        $"Context: {(_databaseConnected ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : "database (not connected)")}. {(_databaseConnected ? "Filesystem commands are unavailable until disconnect." : "Run connect [database-file] to enter this context.")}\n\n" +
+        $"Context: {(_databaseConnected ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : "database (not connected)")}. {(_databaseConnected ? "Use workspace or app to switch contexts; the database connection remains available until disconnect." : "Run connect [database-file] from app context to enter this context.")}\n\n" +
         "  help                         Show help for the current context\n" +
         "  ls [--columns N[,N...]]      List sessions, messages, fields, or media records at the current location\n" +
         "  <command> | grep <term>      Search output with numbered, case-insensitive, colored matches\n" +
@@ -1628,7 +1792,9 @@ internal sealed class AppConsoleService
         "  tables                       List database tables (read-only)\n" +
         "  describe <table>             Show database column details\n" +
         "  messages show <id> [--field <column>]  Show message data\n" +
-        "  disconnect                   Return to filesystem context\n\n" +
+        "  workspace                   Switch to the configured workspace (read-only)\n" +
+        "  app                          Return to application-data context\n" +
+        "  disconnect                   Disconnect and return to application-data context\n\n" +
         "At /, ls lists sessions. Inside a session, ls lists messages (including related MediaIds). Inside a message, ls lists fields; cd media enters its related Media records, if any.\n" +
         "Use ls --columns 1,4 to select 1-based columns in the current listing. Use columns for message-field indexes.\n" +
         "find sessions filters: --has-media, --role, --content, --model, --reasoning-level, --tool, and --sid. Filters combine with AND; --same-message requires them to match one message. Results show matching message IDs, sorted by session ID.\n" +

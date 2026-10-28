@@ -15,10 +15,15 @@ public sealed partial class TerminalWindow : Window
     };
 
     private readonly MarkdownViewerAssetServer _assetServer;
-    private readonly AppConsoleService _console = new();
+    private readonly AppConsoleService _console;
 
-    public TerminalWindow()
+    public TerminalWindow() : this(false, null)
     {
+    }
+
+    public TerminalWindow(bool developerToolsEnabled, string? workspaceRoot)
+    {
+        _console = new AppConsoleService(developerToolsEnabled, workspaceRoot);
         InitializeComponent();
 
         string assetDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "xterm");

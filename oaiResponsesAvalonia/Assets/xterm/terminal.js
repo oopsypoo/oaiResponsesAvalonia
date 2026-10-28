@@ -64,6 +64,7 @@
   let cursor = 0;
   let busy = false;
   let pager = null;
+  const pendingWorkspaceNotifications = [];
   let historyIndex = -1;
   let historyDraft = '';
   const history = [];
@@ -108,9 +109,29 @@
   };
   const closePager = () => {
     pager = null;
-    terminal.write('\u001b[?1049l\r\n' + coloredPrompt());
+    terminal.write('\u001b[?1049l\r\n');
     busy = false;
+    if (pendingWorkspaceNotifications.length > 0) flushWorkspaceNotifications();
+    else terminal.write(coloredPrompt());
     terminal.focus();
+  };
+
+  const applyWorkspaceNotification = change => {
+    if (typeof change.prompt === 'string' && change.prompt.length > 0) prompt = change.prompt;
+    const pagerWasOpen = !!pager;
+    if (change.cancelActiveWorkspacePager && pager) {
+      pager = null;
+      terminal.write('\u001b[?1049l\r\n');
+      busy = false;
+    }
+    if (!pagerWasOpen && line.length > 0) terminal.write('\r\u001b[2K');
+    terminal.write('\r\n' + ansi.yellow + change.message + ansi.reset + '\r\n');
+    redrawLine();
+    terminal.focus();
+  };
+  const flushWorkspaceNotifications = () => {
+    while (pendingWorkspaceNotifications.length > 0 && !busy && !pager)
+      applyWorkspaceNotification(pendingWorkspaceNotifications.shift());
   };
 
   const getCompletions = () => {
@@ -287,8 +308,26 @@
     terminal.focus();
   };
 
+  window.workspaceConfigurationChanged = change => {
+    if (!change || typeof change.message !== 'string') return;
+    if (pager && change.cancelActiveWorkspacePager) {
+      applyWorkspaceNotification(change);
+      return;
+    }
+    if (busy || pager) {
+      pendingWorkspaceNotifications.push(change);
+      return;
+    }
+    applyWorkspaceNotification(change);
+  };
+
   window.receiveResult = result => {
     if (typeof result.prompt === 'string' && result.prompt.length > 0) prompt = result.prompt;
+    if (!result.closeWindow && pendingWorkspaceNotifications.some(change => change.cancelActiveWorkspacePager)) {
+      busy = false;
+      flushWorkspaceNotifications();
+      return;
+    }
     if (typeof result.output === 'string' && result.output.length > 0) {
       if (result.pagerMode && !result.closeWindow) {
         openPager(result.output, result.pagerMode);
@@ -301,6 +340,11 @@
     busy = false;
     if (result.closeWindow) {
       if (!postMessageToHost(JSON.stringify({ type: 'close' }))) writeBridgeError();
+      return;
+    }
+    if (pendingWorkspaceNotifications.length > 0) {
+      flushWorkspaceNotifications();
+      terminal.focus();
       return;
     }
     terminal.write(coloredPrompt());

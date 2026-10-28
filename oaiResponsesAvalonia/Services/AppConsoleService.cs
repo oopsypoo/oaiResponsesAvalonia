@@ -39,8 +39,8 @@ internal sealed class AppConsoleService
     private const int MaximumDatabaseOutputCharacters = 200_000;
     private readonly string _rootDirectory;
     private string _currentDirectory;
-    private readonly bool _workspaceEnabled;
-    private readonly string? _workspaceRootDirectory;
+    private bool _workspaceEnabled;
+    private string? _workspaceRootDirectory;
     private string? _workspaceCurrentDirectory;
     private string? _connectedDatabasePath;
 
@@ -62,10 +62,54 @@ internal sealed class AppConsoleService
             ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspaceRoot))
             : null;
         _workspaceEnabled = developerToolsEnabled && normalizedWorkspaceRoot is not null && !IsReparsePoint(normalizedWorkspaceRoot);
-        _workspaceRootDirectory = _workspaceEnabled
-            ? normalizedWorkspaceRoot
+        _workspaceRootDirectory = normalizedWorkspaceRoot;
+        _workspaceCurrentDirectory = normalizedWorkspaceRoot;
+    }
+
+    public AppConsoleWorkspaceConfigurationChange? UpdateWorkspaceConfiguration(bool developerToolsEnabled, string? workspaceRoot)
+    {
+        string? normalizedWorkspaceRoot = !string.IsNullOrWhiteSpace(workspaceRoot) && Directory.Exists(workspaceRoot)
+            ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspaceRoot))
             : null;
-        _workspaceCurrentDirectory = _workspaceRootDirectory;
+        bool nextWorkspaceEnabled = developerToolsEnabled && normalizedWorkspaceRoot is not null && !IsReparsePoint(normalizedWorkspaceRoot);
+        StringComparison pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        bool rootChanged = !string.Equals(_workspaceRootDirectory, normalizedWorkspaceRoot, pathComparison);
+        bool wasWorkspaceActive = ActiveContext == ConsoleContext.Workspace;
+        bool wasWorkspaceEnabled = _workspaceEnabled;
+
+        _workspaceRootDirectory = normalizedWorkspaceRoot;
+        _workspaceEnabled = nextWorkspaceEnabled;
+        if (rootChanged)
+            _workspaceCurrentDirectory = normalizedWorkspaceRoot;
+
+        if (wasWorkspaceActive && !nextWorkspaceEnabled)
+        {
+            ActiveContext = ConsoleContext.Application;
+            string reason = !developerToolsEnabled
+                ? "Developer Tools turned off. Workspace access revoked; switched to app context."
+                : "Workspace root is unavailable. Workspace access revoked; switched to app context.";
+            return new AppConsoleWorkspaceConfigurationChange(reason, CancelActiveWorkspacePager: true);
+        }
+
+        if (!nextWorkspaceEnabled && wasWorkspaceEnabled)
+        {
+            string reason = !developerToolsEnabled
+                ? "Developer Tools turned off; workspace context is now unavailable."
+                : "Workspace root is unavailable; workspace context is now unavailable.";
+            return new AppConsoleWorkspaceConfigurationChange(reason, CancelActiveWorkspacePager: false);
+        }
+
+        if (rootChanged)
+        {
+            string newRoot = normalizedWorkspaceRoot ?? "(not configured or unavailable)";
+            string resetNotice = wasWorkspaceActive && nextWorkspaceEnabled ? " Workspace context reset to its root." : string.Empty;
+            return new AppConsoleWorkspaceConfigurationChange($"Workspace root changed. New workspace root: {newRoot}.{resetNotice}", CancelActiveWorkspacePager: wasWorkspaceActive);
+        }
+
+        if (!wasWorkspaceEnabled && nextWorkspaceEnabled)
+            return new AppConsoleWorkspaceConfigurationChange($"Developer Tools enabled. Workspace context is available at {normalizedWorkspaceRoot}.", CancelActiveWorkspacePager: false);
+
+        return null;
     }
 
     public string Prompt => ActiveContext switch
@@ -1834,5 +1878,6 @@ internal sealed class AppConsoleService
 }
 
 internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false, string Kind = "normal", string PagerMode = "");
+internal sealed record AppConsoleWorkspaceConfigurationChange(string Message, bool CancelActiveWorkspacePager);
 
 internal sealed record AppConsoleCompletionResult(int ReplaceFrom, IReadOnlyList<string> Candidates);

@@ -223,6 +223,10 @@ public partial class MainWindow : Window
 
     private void ResponsesState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(ResponsesPanelState.UseDeveloperTools) or nameof(ResponsesPanelState.DeveloperRepositoryRoot))
+            _terminalWindow?.UpdateWorkspaceConfiguration(ResponsesState.UseDeveloperTools, ResponsesState.DeveloperRepositoryRoot);
+
+
         if (e.PropertyName == nameof(ResponsesPanelState.UseDeveloperTools))
         {
             RefreshEnvironmentCapabilityReport();

@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using oaiResponsesAvalonia.Services;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -16,6 +17,9 @@ public sealed partial class TerminalWindow : Window
 
     private readonly MarkdownViewerAssetServer _assetServer;
     private readonly AppConsoleService _console;
+    private readonly Queue<AppConsoleWorkspaceConfigurationChange> _pendingWorkspaceNotifications = new();
+    private bool _terminalPageReady;
+    private bool _flushingWorkspaceNotifications;
 
     public TerminalWindow() : this(false, null)
     {
@@ -32,8 +36,63 @@ public sealed partial class TerminalWindow : Window
             throw new FileNotFoundException("The bundled xterm.js page was not found.", indexPath);
 
         _assetServer = MarkdownViewerAssetServer.Start(assetDirectory);
-        Opened += (_, _) => TerminalWebView.Navigate(_assetServer.IndexUri);
+        Opened += (_, _) =>
+        {
+            TerminalWebView.NavigationCompleted += TerminalWebView_NavigationCompleted;
+            TerminalWebView.Navigate(_assetServer.IndexUri);
+        };
         Closed += TerminalWindow_Closed;
+    }
+
+    public void UpdateWorkspaceConfiguration(bool developerToolsEnabled, string? workspaceRoot)
+    {
+        AppConsoleWorkspaceConfigurationChange? change = _console.UpdateWorkspaceConfiguration(developerToolsEnabled, workspaceRoot);
+        if (change is null)
+            return;
+
+        _pendingWorkspaceNotifications.Enqueue(change);
+        if (_terminalPageReady)
+            _ = FlushWorkspaceNotificationsAsync();
+    }
+
+    private async void TerminalWebView_NavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess)
+            return;
+
+        _terminalPageReady = true;
+        await FlushWorkspaceNotificationsAsync();
+    }
+
+    private async Task FlushWorkspaceNotificationsAsync()
+    {
+        if (!_terminalPageReady || _flushingWorkspaceNotifications)
+            return;
+
+        _flushingWorkspaceNotifications = true;
+        try
+        {
+            while (_pendingWorkspaceNotifications.Count > 0)
+            {
+                AppConsoleWorkspaceConfigurationChange change = _pendingWorkspaceNotifications.Peek();
+                string payload = JsonSerializer.Serialize(new
+                {
+                    message = change.Message,
+                    prompt = _console.Prompt,
+                    cancelActiveWorkspacePager = change.CancelActiveWorkspacePager
+                }, JsonOptions);
+                await TerminalWebView.InvokeScript($"window.workspaceConfigurationChanged({payload});");
+                _pendingWorkspaceNotifications.Dequeue();
+            }
+        }
+        catch
+        {
+            // The web page may be navigating or closing; keep queued notifications for a later successful navigation.
+        }
+        finally
+        {
+            _flushingWorkspaceNotifications = false;
+        }
     }
 
     private void TerminalWebView_EnvironmentRequested(object? sender, WebViewEnvironmentRequestedEventArgs e)

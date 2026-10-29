@@ -9,7 +9,6 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 
 ## Responses API
 
-* \[ ] Image generation tool: there's some kind of misconception between using "Image model" and not using it. "Openai Default" does not work..***fix***
 * \[ ] Review API requests, responses, and supported features against current official Responses API information; update the application and tests where needed.
 * \[ ] Make API compatibility easier to maintain by keeping API behavior clear, testable, and separate from presentation code.
 * \[ ] In Image generation: make functions that can resize and other operations on an AI-generated image in a conversation. Use Imagemagick? Check system for what is available?
@@ -18,7 +17,7 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 
 * \[ ] Visual improvement: colors (green) for commands/tools in help-commands?
 * \[ ] Tidy up help messages (messy). Too much! (or just format the information better?)
-* \[ ] autocompletion on paths/files (it only shows what is available and does not actually fill out what is possible to fill out)(important for effectiveness)
+* \[x] autocompletion on paths/files (it only shows what is available and does not actually fill out what is possible to fill out)(important for effectiveness)
 * \[ ] command '***open***': autocompletion can suggest 'programs from ´*open with*`-context menu'?
 * \[ ] when opening terminal the first time: should it be opened at ´workspace`? if ´workspace root`(Developer Tools) is chosen?
 * \[ ] Improve terminal workflows for starting, creating, inspecting, and building projects without introducing unrestricted shell or filesystem access by default.

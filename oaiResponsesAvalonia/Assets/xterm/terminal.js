@@ -302,8 +302,24 @@
       cursor = Array.from(line).length;
       redrawLine();
     } else if (candidates.length > 1) {
-      terminal.write('\r\n' + candidates.join('    ') + '\r\n');
-      redrawLine();
+      const candidateCharacters = candidates.map(candidate => Array.from(candidate));
+      const firstCandidate = candidateCharacters[0];
+      let commonLength = 0;
+      while (commonLength < firstCandidate.length &&
+        candidateCharacters.every(candidate => candidate[commonLength] === firstCandidate[commonLength])) {
+        commonLength++;
+      }
+
+      const commonPrefix = firstCandidate.slice(0, commonLength).join('');
+      const currentToken = line.slice(result.replaceFrom);
+      if (commonPrefix.startsWith(currentToken) && commonLength > Array.from(currentToken).length) {
+        line = line.slice(0, result.replaceFrom) + commonPrefix;
+        cursor = Array.from(line).length;
+        redrawLine();
+      } else {
+        terminal.write('\r\n' + candidates.join('    ') + '\r\n');
+        redrawLine();
+      }
     }
     terminal.focus();
   };

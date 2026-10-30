@@ -138,7 +138,7 @@ internal sealed class AppConsoleService
     {
         try
         {
-            List<string> args = Tokenize(commandLine);
+            List<string> args = ExpandShortOptions(Tokenize(commandLine));
             if (args.Count == 0)
                 return new AppConsoleResult(string.Empty, Prompt);
 
@@ -168,13 +168,19 @@ internal sealed class AppConsoleService
                 args = args.Take(pipeIndex).ToList();
             }
 
-            if (pipedGrepArguments?.Any(argument => argument.Equals("-h", StringComparison.OrdinalIgnoreCase) || argument.Equals("--help", StringComparison.OrdinalIgnoreCase)) == true)
+            if (pipedGrepArguments?.Any(IsHelpOption) == true)
+            {
+                if (pipedGrepArguments.Length != 1)
+                    throw new InvalidOperationException("-h/--help cannot be combined with other parameters.");
                 return new AppConsoleResult(GetCommandHelp(["grep"]), Prompt, PagerMode: pagerMode);
+            }
 
-            int helpIndex = args.FindIndex(argument => argument.Equals("-h", StringComparison.OrdinalIgnoreCase) || argument.Equals("--help", StringComparison.OrdinalIgnoreCase));
+            int helpIndex = args.FindIndex(IsHelpOption);
             if (helpIndex >= 0)
             {
-                string[] helpArgs = args.Where((_, index) => index != helpIndex).ToArray();
+                if (helpIndex != args.Count - 1 || helpIndex > 1)
+                    throw new InvalidOperationException("-h/--help cannot be combined with other parameters.");
+                string[] helpArgs = args.Take(helpIndex).ToArray();
                 return new AppConsoleResult(GetCommandHelp(helpArgs), Prompt, PagerMode: pagerMode);
             }
 
@@ -423,7 +429,7 @@ internal sealed class AppConsoleService
         string synopsis = command switch
         {
             "ls" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: ls [--columns N[,N...]]\nLists sessions at /, messages inside a session, or fields inside a message.",
-            "ls" => "usage: ls [-a] [-l] [path]\nLists entries in the current filesystem context (application data or workspace). -a includes hidden entries; -l shows type, size, and last-modified time.",
+            "ls" => "usage: ls [-a] [-l] [path]\nLists entries in the current filesystem context (application data or workspace). -a includes hidden entries; -l shows type, size, and last-modified time. Short options can be combined, for example -la.",
             "grep" => "usage: grep <search-term> <file> OR <command> | grep <search-term>\nSearches literal text, case-insensitively, with line numbers and colored matches by default. File search is available in application and workspace contexts; piped output can be searched in database context too. This is an application command, not an operating-system grep.",
             "cd" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: cd <session-id|message-id|media|..|/>\nNavigates sessions, messages, and a message's media records; does not change filesystem directories.",
             "cd" => "usage: cd [path]\nChanges directory within the current filesystem context.",
@@ -1844,6 +1850,32 @@ internal sealed class AppConsoleService
         return text.Length <= maxLength ? text : text[..maxLength] + "…";
     }
 
+    private static bool IsHelpOption(string argument) =>
+        argument.Equals("-h", StringComparison.OrdinalIgnoreCase) ||
+        argument.Equals("--help", StringComparison.OrdinalIgnoreCase);
+
+    private static List<string> ExpandShortOptions(List<string> arguments)
+    {
+        var expanded = new List<string>(arguments.Count);
+        foreach (string argument in arguments)
+        {
+            if (argument.Length <= 2 || argument[0] != '-' || argument.StartsWith("--", StringComparison.Ordinal) ||
+                !argument[1..].All(character => character is >= 'a' and <= 'z' or >= 'A' and <= 'Z'))
+            {
+                expanded.Add(argument);
+                continue;
+            }
+
+            if (argument[1..].Any(character => char.ToLowerInvariant(character) == 'h'))
+                throw new InvalidOperationException("-h cannot be combined with other short options.");
+
+            foreach (char option in argument[1..])
+                expanded.Add("-" + option);
+        }
+
+        return expanded;
+    }
+
     private static List<string> Tokenize(string text)
     {
         var result = new List<string>();
@@ -1915,7 +1947,7 @@ internal sealed class AppConsoleService
         "Context: application data. Filesystem access is confined to the app-data directory.\n\n" +
         "  help                         Show help for the current context\n" +
         "  pwd                          Show the current app-data directory\n" +
-        "  ls [-a] [-l] [path]          List files; -l shows type, byte size, and modified time\n" +
+        "  ls [-a] [-l] [path]          List files; -l shows type, byte size, and modified time; combine flags with -la\n" +
         "  cd [path]                    Change directory within app data\n" +
         "  cat <file>                   Display a small text file\n" +
         "  grep <term> <file>           Search text (case-insensitive, numbered, colored)\n" +
@@ -1932,7 +1964,7 @@ internal sealed class AppConsoleService
         "Filesystem access is confined to the configured workspace root; symbolic links and reparse points are not followed.\n\n" +
         "  help                         Show workspace help\n" +
         "  pwd                          Show the current workspace directory\n" +
-        "  ls [-a] [-l] [path]          List workspace files and directories\n" +
+        "  ls [-a] [-l] [path]          List workspace files and directories; combine flags with -la\n" +
         "  cd [path]                    Change directory within the workspace\n" +
         "  cat <file>                   Display a small text file\n" +
         "  grep <term> <file>           Search workspace text\n" +

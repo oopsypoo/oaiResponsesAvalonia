@@ -95,13 +95,52 @@
       : `-- ${pager.page + 1}/${pageCount} -- ${hint}`;
     terminal.write('\u001b[2J\u001b[H' + pageLines.join('\r\n') + '\r\n' + status);
   };
+  // Wrap by visible characters, not raw string length: ANSI SGR color/style sequences are invisible.
+  // Carry the active SGR style onto wrapped segments and reset it at each segment boundary.
+  const wrapAnsiLine = (sourceLine, width) => {
+    const segments = [];
+    let segment = '';
+    let visibleLength = 0;
+    let activeSgr = '';
+    for (let index = 0; index < sourceLine.length;) {
+      if (sourceLine[index] === '\u001b' && sourceLine[index + 1] === '[') {
+        const end = sourceLine.indexOf('m', index + 2);
+        if (end >= 0) {
+          const sequence = sourceLine.slice(index, end + 1);
+          segment += sequence;
+          const parameters = sequence.slice(2, -1).split(';').map(value => value || '0');
+          const resetIndex = parameters.lastIndexOf('0');
+          if (resetIndex >= 0) {
+            const remainingStyles = parameters.slice(resetIndex + 1);
+            activeSgr = remainingStyles.length ? `\u001b[${remainingStyles.join(';')}m` : '';
+          } else {
+            activeSgr += sequence;
+          }
+          index = end + 1;
+          continue;
+        }
+      }
+
+      const character = String.fromCodePoint(sourceLine.codePointAt(index));
+      segment += character;
+      visibleLength++;
+      index += character.length;
+      const hasVisibleRemainder = sourceLine.slice(index).replace(/\u001b\[[0-9;]*m/g, '').length > 0;
+      if (visibleLength >= width && hasVisibleRemainder) {
+        segments.push(segment + (activeSgr ? '\u001b[0m' : ''));
+        segment = activeSgr;
+        visibleLength = 0;
+      }
+    }
+    segments.push(segment);
+    return segments;
+  };
+
   const openPager = (text, mode) => {
     const width = Math.max(1, terminal.cols - 1);
     const lines = [];
     for (const sourceLine of text.replace(/\r/g, '').split('\n')) {
-      const characters = Array.from(sourceLine);
-      if (characters.length === 0) lines.push('');
-      else for (let i = 0; i < characters.length; i += width) lines.push(characters.slice(i, i + width).join(''));
+      lines.push(...wrapAnsiLine(sourceLine, width));
     }
     pager = { lines, mode, page: 0 };
     terminal.write('\u001b[?1049h');

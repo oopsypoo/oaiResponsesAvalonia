@@ -15,8 +15,9 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 
 ## Terminal and developer tools
 
-* \[ ] Visual improvement: colors (green) for commands/tools in help-commands?
-* \[ ] Tidy up help messages (messy). Too much! (or just format the information better?)
+* \[x] Visual improvement: colors (green) for commands/tools in help-commands?
+* \[x] Tidy up help messages (messy). Too much! (or just format the information better?) 
+	-better now. Still some irritating things
 * \[x] autocompletion on paths/files (it only shows what is available and does not actually fill out what is possible to fill out)(important for effectiveness)
 * \[ ] command '***open***': autocompletion can suggest 'programs from ´*open with*`-context menu'?
 * \[ ] when opening terminal the first time: should it be opened at ´workspace`? if ´workspace root`(Developer Tools) is chosen?
@@ -24,6 +25,7 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * \[ ] Make common development operations easier to discover, follow, and diagnose, including clear output and handling of long-running tasks.
 * \[ ] Use current API and tool information from MCP servers where appropriate; make its source and freshness visible, and handle unavailable or changed information safely.
 * \[ ] Define the intended behavior and access boundaries for the Developer Tools **Scope** options (**Current repository**, **Workspace**, **Custom**), then re-enable the hidden Scope control. Confirm that each option applies the expected boundaries.
+* \[x] Developer Tools activity window: cannot open and see the specific activity (sometimes) on platform Windows 11
 
 ## Release and documentation
 

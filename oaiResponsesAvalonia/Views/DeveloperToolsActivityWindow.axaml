@@ -10,10 +10,11 @@
         MinWidth="420"
         MinHeight="280"
         WindowStartupLocation="CenterOwner">
-    <ListBox x:Name="ActivityList"
-             Margin="12"
-             ItemsSource="{Binding}">
-        <ListBox.ItemTemplate>
+    <ScrollViewer Margin="12"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl ItemsSource="{Binding}">
+        <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="data:DeveloperToolActivityItem">
                 <Expander Margin="4,3"
                           HorizontalContentAlignment="Stretch">
@@ -31,6 +32,7 @@
                                TextWrapping="Wrap" />
                 </Expander>
             </DataTemplate>
-        </ListBox.ItemTemplate>
-    </ListBox>
+        </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </ScrollViewer>
 </Window>

@@ -293,9 +293,117 @@ internal sealed class AppConsoleService
     private string GetContextHelpText() => ActiveContext switch
     {
         ConsoleContext.Database => GetDatabaseHelpText(),
-        ConsoleContext.Workspace => WorkspaceHelpText,
-        _ => FilesystemHelpText
+        ConsoleContext.Workspace => FormatContextHelp(WorkspaceHelpText),
+        _ => FormatContextHelp(FilesystemHelpText)
     };
+
+    // Keep help content below as plain text. Apply ANSI styling only in these helpers; never embed
+    // escape sequences in descriptions. Leave prose uncolored, reserve green for examples/code, and
+    // preserve the existing warning/error output paths. Keep terminal.js's pager ANSI-aware.
+    private const string HelpReset = "\u001b[0m";
+    private const string HelpCommandStyle = "\u001b[1;96m"; // Bright cyan, bold.
+    private const string HelpSubcommandStyle = "\u001b[1;97m"; // White, bold.
+    private const string HelpFlagStyle = "\u001b[96m"; // Cyan.
+    private const string HelpPlaceholderStyle = "\u001b[3;93m"; // Italic bright yellow.
+    private const string HelpHeadingStyle = "\u001b[1;95m"; // Bold bright magenta.
+    private const string HelpExampleStyle = "\u001b[32m"; // Green; use for command examples only.
+
+    private static string FormatHelpHeading(string heading) => HelpHeadingStyle + heading + HelpReset;
+
+    private static string FormatContextHelp(string text)
+    {
+        // Avoid double styling when database help is reached through the context-help dispatcher.
+        if (text.Contains("\u001b[", StringComparison.Ordinal))
+            return text;
+
+        string[] lines = text.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n');
+        var formatted = new StringBuilder();
+        for (int index = 0; index < lines.Length; index++)
+        {
+            if (index > 0)
+                formatted.Append('\n');
+
+            string line = lines[index];
+            if (line is "NAVIGATION" or "COLUMNS AND SEARCH" or "NOTES")
+            {
+                formatted.Append(FormatHelpHeading(line));
+                continue;
+            }
+            int separator = line.StartsWith("  ", StringComparison.Ordinal) ? line.IndexOf("  ", 2, StringComparison.Ordinal) : -1;
+            if (separator > 2)
+            {
+                string usage = line[2..separator].TrimEnd();
+                formatted.Append("  ").Append(FormatHelpUsage(usage)).Append(line[(2 + usage.Length)..]);
+            }
+            else
+            {
+                formatted.Append(line);
+            }
+        }
+        return formatted.ToString();
+    }
+
+    private static string FormatHelpUsage(string usage)
+    {
+        string[] tokens = usage.Split(' ');
+        var formatted = new StringBuilder();
+        bool firstCommand = true;
+        bool nextSubcommand = false;
+
+        foreach (string token in tokens)
+        {
+            if (formatted.Length > 0)
+                formatted.Append(' ');
+            if (token.Length == 0)
+                continue;
+
+            string style = string.Empty;
+            string visibleToken = token;
+            if (firstCommand)
+            {
+                style = HelpCommandStyle;
+                firstCommand = false;
+                nextSubcommand = true;
+            }
+            else if (token.StartsWith('<') && token.EndsWith('>'))
+            {
+                style = HelpPlaceholderStyle;
+                nextSubcommand = false;
+            }
+            else if (token.StartsWith("--", StringComparison.Ordinal) || (token.StartsWith('-') && token.Length > 1))
+            {
+                style = HelpFlagStyle;
+                nextSubcommand = false;
+            }
+            else if (token.StartsWith('[') || token.EndsWith(']'))
+            {
+                bool hasOpeningBracket = token.StartsWith('[');
+                bool hasClosingBracket = token.EndsWith(']');
+                int innerStart = hasOpeningBracket ? 1 : 0;
+                int innerLength = token.Length - innerStart - (hasClosingBracket ? 1 : 0);
+                string inner = token.Substring(innerStart, innerLength);
+                string innerStyle = inner.StartsWith("-", StringComparison.Ordinal) ? HelpFlagStyle : HelpPlaceholderStyle;
+                visibleToken = (hasOpeningBracket ? "[" : string.Empty) + innerStyle + inner + HelpReset + (hasClosingBracket ? "]" : string.Empty);
+                nextSubcommand = false;
+            }
+            else if (nextSubcommand && token is not ("|" or "OR"))
+            {
+                style = HelpSubcommandStyle;
+                nextSubcommand = false;
+            }
+            else if (token is "|" or "OR")
+            {
+                nextSubcommand = token == "|";
+            }
+
+            if (style.Length > 0)
+                formatted.Append(style).Append(visibleToken).Append(HelpReset);
+            else
+                formatted.Append(visibleToken);
+        }
+
+        return formatted.ToString();
+    }
 
     private string GetCommandHelp(string[] args)
     {
@@ -337,9 +445,23 @@ internal sealed class AppConsoleService
             "help" => GetContextHelpText(),
             _ => "No help is available for '" + command + "' in the current context.\n" + GetContextHelpText()
         };
-        return "Application console command help (not an operating-system shell command).\nContext: " +
-            (ActiveContext == ConsoleContext.Database ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : ActiveContext == ConsoleContext.Workspace ? $"workspace at {CurrentFilesystemDirectory}" : databaseAlias ? "database (not connected)" : $"application data at {_currentDirectory}") +
-            "\n" + synopsis;
+        string context = ActiveContext == ConsoleContext.Database
+            ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}"
+            : ActiveContext == ConsoleContext.Workspace
+                ? $"workspace at {CurrentFilesystemDirectory}"
+                : databaseAlias
+                    ? "database (not connected)"
+                    : $"application data at {_currentDirectory}";
+
+        int explanationStart = synopsis.IndexOf('\n');
+        if (!synopsis.StartsWith("usage: ", StringComparison.OrdinalIgnoreCase))
+            return $"{synopsis.TrimEnd()}\n\n{FormatHelpHeading("CONTEXT")}\n  {context}";
+
+        string usage = explanationStart >= 0 ? synopsis[..explanationStart][7..] : synopsis[7..];
+        string explanation = explanationStart >= 0 ? synopsis[(explanationStart + 1)..] : string.Empty;
+        return $"{HelpCommandStyle}{(databaseAlias ? $"db {command}" : command)}{HelpReset}\n\n{FormatHelpHeading("USAGE")}\n  {FormatHelpUsage(usage)}\n\n{FormatHelpHeading("EXPLANATION")}\n  {explanation}\n\n{FormatHelpHeading("CONTEXT")}\n  {context}";
+
+
     }
 
     private string ListDirectory(string[] args)
@@ -1820,7 +1942,7 @@ internal sealed class AppConsoleService
         "  disconnect                   Disconnect the database and return to app context\n\n" +
         "Workspace commands are application-provided, not operating-system commands. File creation, modification, builds, and process execution are not available here yet.";
 
-    private string GetDatabaseHelpText() =>
+    private string GetDatabaseHelpText() => FormatContextHelp(
         "Application console — not a general-purpose or operating-system shell. Commands are implemented by this application; they do not run Linux, PowerShell, or other shell commands.\n" +
         $"Context: {(_databaseConnected ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}" : "database (not connected)")}. {(_databaseConnected ? "Use workspace or app to switch contexts; the database connection remains available until disconnect." : "Run connect [database-file] from app context to enter this context.")}\n\n" +
         "  help                         Show help for the current context\n" +
@@ -1839,12 +1961,24 @@ internal sealed class AppConsoleService
         "  workspace                   Switch to the configured workspace (read-only)\n" +
         "  app                          Return to application-data context\n" +
         "  disconnect                   Disconnect and return to application-data context\n\n" +
-        "At /, ls lists sessions. Inside a session, ls lists messages (including related MediaIds). Inside a message, ls lists fields; cd media enters its related Media records, if any.\n" +
-        "Use ls --columns 1,4 to select 1-based columns in the current listing. Use columns for message-field indexes.\n" +
-        "find sessions filters: --has-media, --role, --content, --model, --reasoning-level, --tool, and --sid. Filters combine with AND; --same-message requires them to match one message. Results show matching message IDs, sorted by session ID.\n" +
-        "show at a message or media record displays all fields; --column (or --field) selects one field and pretty-prints JSON.\n" +
-        "The optional 'db' prefix remains accepted (for example, db ls), but is not required.\n" +
-        "Use ls -h or show --help for command help. grep searches literal text in piped application output (also in filesystem context); -n and -i are defaults and matches are colored. This is not a system shell grep. Long output: append | more or | less; Space/Down advances, q quits.";
+        "NAVIGATION\n" +
+        "  At /, ls lists sessions. Inside a session, ls lists messages\n" +
+        "  (including related MediaIds). Inside a message, ls lists fields;\n" +
+        "  cd media enters related Media records, if any.\n\n" +
+        "COLUMNS AND SEARCH\n" +
+        "  ls --columns 1,4 selects 1-based columns in the current listing.\n" +
+        "  columns lists message-field indexes.\n" +
+        "  find filters combine with AND; --same-message requires all message\n" +
+        "  filters to match one message. Results show matching message IDs,\n" +
+        "  sorted by session ID.\n\n" +
+        "NOTES\n" +
+        "  show at a message or media record displays all fields; --column\n" +
+        "  (or --field) selects one field and pretty-prints JSON.\n" +
+        "  The optional 'db' prefix is accepted (for example, db ls), but\n" +
+        "  is not required. Use command -h or --help for command help.\n" +
+        "  grep searches literal text in piped application output; -n and -i\n" +
+        "  are defaults and matches are colored. This is not system grep.\n" +
+        "  Long output: append | more or | less; Space/Down advances, q quits.");
 
 
 

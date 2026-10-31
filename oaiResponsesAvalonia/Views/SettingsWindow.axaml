@@ -9,34 +9,26 @@
   <Grid Margin="20"
         RowDefinitions="Auto,*,Auto"
         ColumnDefinitions="Auto,*,Auto">
-    <!-- Main content: StackPanel of path groups -->
     <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Grid.RowSpan="2" Margin="0,0,0,20">
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-            <Label Content="App Root:" Width="100" VerticalAlignment="Center"/>
-            <TextBox x:Name="AppRootTextBox" Width="300" Text="{Binding AppRoot}" VerticalAlignment="Center"/>
-            <Button x:Name="BrowseAppRootBtn" Content="Browse" Width="80" Margin="10,0,0,0" Click="BrowseAppRoot_Click" VerticalAlignment="Center"/>
-        </StackPanel>
-
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-            <Label Content="Logs Folder:" Width="100" VerticalAlignment="Center"/>
-            <TextBox x:Name="LogsTextBox" Width="300"
-                        Text="{Binding LogsFolder}"
-                        VerticalAlignment="Center"/>
-            <Button Content="Browse" Width="80" Margin="10,0,0,0" Click="BrowseLogs_Click" VerticalAlignment="Center"/>
-        </StackPanel>
-
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-            <Label Content="Images Folder:" Width="100" VerticalAlignment="Center"/>
-            <TextBox x:Name="ImagesTextBox" Width="300"
-                    Text="{Binding ImagesFolder}"
-                    VerticalAlignment="Center"/>
-            <Button Content="Browse" Width="80" Margin="10,0,0,0" Click="BrowseImages_Click" VerticalAlignment="Center"/>
-        </StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+        <Label Content="App Root:" Width="100" VerticalAlignment="Center"/>
+        <TextBox x:Name="AppRootTextBox" Width="300" Text="{Binding AppRoot}" VerticalAlignment="Center"/>
+        <Button x:Name="BrowseAppRootBtn" Content="Browse" Width="80" Margin="10,0,0,0" Click="BrowseAppRoot_Click" VerticalAlignment="Center"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+        <Label Content="Images Folder:" Width="100" VerticalAlignment="Center"/>
+        <TextBox x:Name="ImagesTextBox" Width="300" Text="{Binding ImagesFolder}" VerticalAlignment="Center"/>
+        <Button Content="Browse" Width="80" Margin="10,0,0,0" Click="BrowseImages_Click" VerticalAlignment="Center"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+        <Label Content="Files Folder:" Width="100" VerticalAlignment="Center"/>
+        <TextBox x:Name="FilesTextBox" Width="300" Text="{Binding FilesFolder}" VerticalAlignment="Center"/>
+        <Button Content="Browse" Width="80" Margin="10,0,0,0" Click="BrowseFiles_Click" VerticalAlignment="Center"/>
+      </StackPanel>
     </StackPanel>
-    <!-- Buttons row -->
-        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Save" Width="80" Margin="5" Click="Save_Click" IsDefault="True"/>
-            <Button Content="Cancel" Width="80" Margin="5,5,0,5" Click="Cancel_Click" IsCancel="True"/>
-        </StackPanel>
+    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Content="Save" Width="80" Margin="5" Click="Save_Click" IsDefault="True"/>
+      <Button Content="Cancel" Width="80" Margin="5,5,0,5" Click="Cancel_Click" IsCancel="True"/>
+    </StackPanel>
   </Grid>
 </Window>

@@ -26,8 +26,9 @@ public partial class MainWindow : Window
 {
     private readonly string OpenAPIKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? string.Empty;
     private AppSettings _settings = null!;
-    private string savepath_logs = string.Empty;
+    
     private string savepath_images = string.Empty;
+    private string savepath_files = string.Empty;
     private readonly IDialogService _dialogs = new AvaloniaDialogService();
     private AvailableModels? _availableModelsWindow;
     private int? _activeResponsesSessionId;
@@ -162,11 +163,14 @@ public partial class MainWindow : Window
     private void EnsureSavePaths()
     {
         _settings ??= AppSettings.LoadSettings();
-        savepath_logs = Path.Combine(_settings.AppRoot, _settings.LogsFolder);
+        
         savepath_images = Path.Combine(_settings.AppRoot, _settings.ImagesFolder);
-        Directory.CreateDirectory(savepath_logs);
+        savepath_files = Path.Combine(_settings.AppRoot, _settings.FilesFolder);
+        
         Directory.CreateDirectory(savepath_images);
-        _mediaStorageService.SetImagesFolder(savepath_images);
+        Directory.CreateDirectory(savepath_files);
+        _mediaStorageService.SetStorageFolders(savepath_images, savepath_files);
+        _mediaStorageService.OrganizeExistingFiles();
     }
 
     private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)

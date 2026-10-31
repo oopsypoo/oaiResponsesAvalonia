@@ -76,8 +76,9 @@ namespace oaiResponsesAvalonia.Views
             }
         }
 
-        private async void BrowseLogs_Click(object sender, RoutedEventArgs e) => await BrowseFolderAsync(LogsTextBox);
+        
         private async void BrowseImages_Click(object sender, RoutedEventArgs e) => await BrowseFolderAsync(ImagesTextBox);
+        private async void BrowseFiles_Click(object sender, RoutedEventArgs e) => await BrowseFolderAsync(FilesTextBox);
         /// <summary>
         /// Opens a folder browser dialog to select a folder for the given TextBox. It checks if the application has write permission to the selected folder before updating the TextBox.
         /// </summary>
@@ -127,8 +128,9 @@ namespace oaiResponsesAvalonia.Views
 
             // We just update the UI text boxes. 
             // Your EnsureSavePaths() will handle the actual directory creation later.
-            LogsTextBox.Text = Path.Combine(appRoot, "logs");
+            
             ImagesTextBox.Text = Path.Combine(appRoot, "images");
+            FilesTextBox.Text = Path.Combine(appRoot, "files");
         }
 
         private void Save_Click(object sender, RoutedEventArgs e)

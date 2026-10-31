@@ -8,7 +8,8 @@ namespace oaiResponsesAvalonia
     public class AppSettings
     {
         public string AppRoot { get; set; } = AppPaths.DataDirectory;
-        public string LogsFolder { get; set; } = "logs";  // Relative to AppRoot
+        
+        public string FilesFolder { get; set; } = "files";
         public string ImagesFolder { get; set; } = "images";
         public string ResponsesMarkdownTheme { get; set; } = "github.min.css";
         public string ResponsesPageTheme { get; set; } = "github-light-page.css";

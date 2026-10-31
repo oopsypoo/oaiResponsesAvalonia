@@ -9,6 +9,7 @@ namespace oaiResponsesAvalonia.Services
     public class MediaStorageService
     {
         private string _imagesFolder = string.Empty;
+        private string _filesFolder = string.Empty;
 
         public MediaStorageService()
         {
@@ -42,6 +43,26 @@ namespace oaiResponsesAvalonia.Services
             return _imagesFolder;
         }
 
+        public string EnsureFilesFolder()
+        {
+            if (string.IsNullOrWhiteSpace(_filesFolder))
+                _filesFolder = AppPaths.FilesDirectory;
+
+            Directory.CreateDirectory(_filesFolder);
+            return _filesFolder;
+        }
+
+        public void SetStorageFolders(string imagesFolder, string filesFolder)
+        {
+            SetImagesFolder(imagesFolder);
+            _filesFolder = string.IsNullOrWhiteSpace(filesFolder)
+                ? string.Empty
+                : Path.GetFullPath(filesFolder);
+
+            if (!string.IsNullOrWhiteSpace(_filesFolder))
+                Directory.CreateDirectory(_filesFolder);
+        }
+
         public List<string> SaveAssistantImages(IEnumerable<string> payloads, string outputFormat = "png")
         {
             var savedPaths = new List<string>();
@@ -49,7 +70,7 @@ namespace oaiResponsesAvalonia.Services
             if (payloads == null)
                 return savedPaths;
 
-            string folder = EnsureImagesFolder();
+            string imageFolder = EnsureImagesFolder();
             string normalizedFormat = NormalizeImageFormat(outputFormat);
             string extension = GetExtensionForImageFormat(normalizedFormat);
 
@@ -80,7 +101,7 @@ namespace oaiResponsesAvalonia.Services
 
                             byte[] bytes = Convert.FromBase64String(b64);
                             string name = $"resp_{DateTime.UtcNow:yyyyMMdd_HHmmss_fff}_{Guid.NewGuid():N}{ext}";
-                            filePath = Path.Combine(folder, name);
+                            filePath = Path.Combine(imageFolder, name);
                             File.WriteAllBytes(filePath, bytes);
                         }
                     }
@@ -93,7 +114,7 @@ namespace oaiResponsesAvalonia.Services
                     {
                         byte[] bytes = Convert.FromBase64String(payload);
                         string name = $"resp_{DateTime.UtcNow:yyyyMMdd_HHmmss_fff}_{Guid.NewGuid():N}{extension}";
-                        filePath = Path.Combine(folder, name);
+                        filePath = Path.Combine(imageFolder, name);
                         File.WriteAllBytes(filePath, bytes);
                     }
 
@@ -176,6 +197,53 @@ namespace oaiResponsesAvalonia.Services
             return fileName;
         }
 
+        public int OrganizeExistingFiles()
+        {
+            string imagesFolder = EnsureImagesFolder();
+            string filesFolder = EnsureFilesFolder();
+            StringComparison comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+
+            if (string.Equals(
+                    Path.TrimEndingDirectorySeparator(Path.GetFullPath(imagesFolder)),
+                    Path.TrimEndingDirectorySeparator(Path.GetFullPath(filesFolder)),
+                    comparison))
+                return 0;
+
+            int movedCount = 0;
+            foreach (string imageFolderFile in Directory.EnumerateFiles(imagesFolder))
+            {
+                if (IsImageFile(imageFolderFile))
+                    continue;
+
+                string destinationPath = Path.Combine(filesFolder, Path.GetFileName(imageFolderFile));
+                if (File.Exists(destinationPath))
+                    continue;
+
+                try
+                {
+                    File.Move(imageFolderFile, destinationPath);
+                    movedCount++;
+                }
+                catch
+                {
+                    // Leave files in place if they cannot be moved.
+                }
+            }
+
+            return movedCount;
+        }
+
+        private static bool IsImageFile(string path)
+        {
+            return Path.GetExtension(path).ToLowerInvariant() is
+                ".apng" or ".arw" or ".avif" or ".bmp" or ".cr2" or ".cr3" or ".dng" or
+                ".gif" or ".heic" or ".heif" or ".ico" or ".j2k" or ".jp2" or ".jpe" or
+                ".jpeg" or ".jfif" or ".jpg" or ".jxl" or ".nef" or ".nrw" or ".orf" or
+                ".png" or ".psd" or ".raw" or ".rw2" or ".svg" or ".tif" or ".tiff" or ".webp";
+        }
+
         public string? ImportUserFile(string sourceFilePath)
         {
             if (string.IsNullOrWhiteSpace(sourceFilePath) || !File.Exists(sourceFilePath))
@@ -183,7 +251,8 @@ namespace oaiResponsesAvalonia.Services
 
             try
             {
-                string folder = EnsureImagesFolder();
+                
+                string folder = IsImageFile(sourceFilePath) ? EnsureImagesFolder() : EnsureFilesFolder();
                 string originalName = MakeSafeFileName(Path.GetFileName(sourceFilePath));
                 string destinationPath = Path.Combine(
                     folder,
@@ -213,9 +282,19 @@ namespace oaiResponsesAvalonia.Services
             if (string.IsNullOrWhiteSpace(fileName))
                 return storedPath;
 
-            string managedPath = Path.Combine(EnsureImagesFolder(), fileName);
+            string primaryFolder = IsImageFile(fileName) ? EnsureImagesFolder() : EnsureFilesFolder();
+            string secondaryFolder = IsImageFile(fileName) ? EnsureFilesFolder() : EnsureImagesFolder();
+            string managedPath = Path.Combine(primaryFolder, fileName);
+            
+            
+                
+
             if (File.Exists(managedPath))
                 return managedPath;
+
+            string secondaryPath = Path.Combine(secondaryFolder, fileName);
+            if (File.Exists(secondaryPath))
+                return secondaryPath;
 
             if (Path.IsPathRooted(storedPath) || IsWindowsAbsolutePath(storedPath))
                 return storedPath;
@@ -243,7 +322,7 @@ namespace oaiResponsesAvalonia.Services
                 if (sourcePath == null || !File.Exists(sourcePath))
                     continue;
 
-                string? storedPath = IsInImagesFolder(sourcePath)
+                string? storedPath = IsInImagesFolder(sourcePath) || IsInFilesFolder(sourcePath)
                     ? ToStoredMediaPath(sourcePath)
                     : ImportUserFile(sourcePath);
 
@@ -259,6 +338,17 @@ namespace oaiResponsesAvalonia.Services
                 context.SaveChanges();
 
             return migratedCount;
+        }
+
+        private bool IsInFilesFolder(string path)
+        {
+            string root = EnsureFilesFolder().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            string fullPath = Path.GetFullPath(path);
+            StringComparison comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            return fullPath.StartsWith(root, comparison);
         }
 
         private bool IsInImagesFolder(string path)

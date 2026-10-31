@@ -4,7 +4,7 @@
         x:Class="oaiResponsesAvalonia.Views.SettingsWindow"
         x:DataType="settings:AppSettings"
         Width="530"
-        Height="230"
+        Height="320"
         Title="SettingsWindow">
   <Grid Margin="20"
         RowDefinitions="Auto,*,Auto"
@@ -19,6 +19,11 @@
         <Label Content="Images Folder:" Width="100" VerticalAlignment="Center"/>
         <TextBox x:Name="ImagesTextBox" Width="300" Text="{Binding ImagesFolder}" VerticalAlignment="Center"/>
         <Button Content="Browse" Width="80" Margin="10,0,0,0" Click="BrowseImages_Click" VerticalAlignment="Center"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+        <Label Content="User Images:" Width="100" VerticalAlignment="Center"/>
+        <TextBox x:Name="SavedImagesFolderTextBox" Width="300" Text="{Binding SavedImagesFolder}" VerticalAlignment="Center" ToolTip.Tip="Choose any folder for images saved by the app. The default 'user' folder is created under Images Folder; an absolute path selects another location."/>
+        <Button Content="Browse" Width="80" Margin="10,0,0,0" Click="BrowseSavedImages_Click" VerticalAlignment="Center"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
         <Label Content="Files Folder:" Width="100" VerticalAlignment="Center"/>

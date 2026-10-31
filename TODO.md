@@ -26,7 +26,7 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * \[ ] Define the intended behavior and access boundaries for the Developer Tools **Scope** options (**Current repository**, **Workspace**, **Custom**), then re-enable the hidden Scope control. Confirm that each option applies the expected boundaries.
 * \[x] Developer Tools activity window: cannot open and see the specific activity (sometimes) on platform Windows 11
 * \[ ] In Image generation: make functions that can resize and other operations on an AI-generated image in a conversation. Use Imagemagick? Check system for what is available?
-* \[ ] The folder 'Images' is actually not just images. It's documents; since everything that is in a conversation
+* \[x] The folder 'Images' is actually not just images. It's documents; since everything that is in a conversation
 ends up here. 'Logs' is no longer used, and maybe it should be renamed to docs or 'other docs'. Or just removed.
 
 ## Release and documentation

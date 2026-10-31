@@ -366,3 +366,8 @@ FodyWeavers.xsd
 .ai/
 # vs mcp-Server
 .mcp.json
+# Six Labors, ImageSharp-license-key
+sixlabors.lic
+# test project for ImageSharp
+/oaiResponsesAvalonia/ImageSharpPlayground/
+

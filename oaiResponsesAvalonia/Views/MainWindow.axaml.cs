@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     
     private string savepath_images = string.Empty;
     private string savepath_files = string.Empty;
+    private string savepath_saved_images = string.Empty;
     private readonly IDialogService _dialogs = new AvaloniaDialogService();
     private AvailableModels? _availableModelsWindow;
     private int? _activeResponsesSessionId;
@@ -167,7 +168,10 @@ public partial class MainWindow : Window
         savepath_images = Path.Combine(_settings.AppRoot, _settings.ImagesFolder);
         savepath_files = Path.Combine(_settings.AppRoot, _settings.FilesFolder);
         
+        savepath_saved_images = _settings.GetSavedImagesDirectory(savepath_images);
+
         Directory.CreateDirectory(savepath_images);
+        Directory.CreateDirectory(savepath_saved_images);
         Directory.CreateDirectory(savepath_files);
         _mediaStorageService.SetStorageFolders(savepath_images, savepath_files);
         _mediaStorageService.OrganizeExistingFiles();

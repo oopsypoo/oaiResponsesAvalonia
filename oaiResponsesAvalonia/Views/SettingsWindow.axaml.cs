@@ -2,8 +2,10 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using oaiResponsesAvalonia.Services;
+using System;
 using System.IO;
 using System.Threading.Tasks;
+
 namespace oaiResponsesAvalonia.Views
 {
     public partial class SettingsWindow : Window
@@ -21,6 +23,7 @@ namespace oaiResponsesAvalonia.Views
             Settings = settings;
             DataContext = settings;
         }
+
         private async void BrowseAppRoot_Click(object sender, RoutedEventArgs e)
         {
             var selectedPath = await PickFolderAsync("Select Application Root Directory", AppRootTextBox.Text);
@@ -76,13 +79,13 @@ namespace oaiResponsesAvalonia.Views
             }
         }
 
-        
         private async void BrowseImages_Click(object sender, RoutedEventArgs e) => await BrowseFolderAsync(ImagesTextBox);
         private async void BrowseFiles_Click(object sender, RoutedEventArgs e) => await BrowseFolderAsync(FilesTextBox);
+        private async void BrowseSavedImages_Click(object sender, RoutedEventArgs e) => await BrowseFolderAsync(SavedImagesFolderTextBox);
+
         /// <summary>
-        /// Opens a folder browser dialog to select a folder for the given TextBox. It checks if the application has write permission to the selected folder before updating the TextBox.
+        /// Opens a folder browser dialog to select a folder and checks write permission before updating the text box.
         /// </summary>
-        /// <param name="textBox"></param>
         private async Task BrowseFolderAsync(TextBox textBox)
         {
             var folder = await PickFolderAsync("Select the save location", textBox.Text);
@@ -122,19 +125,54 @@ namespace oaiResponsesAvalonia.Views
         {
             var appRoot = AppRootTextBox.Text;
 
-            // If the user clears the Root, we shouldn't try to build subpaths
+            // If the user clears the Root, we shouldn't try to build subpaths.
             if (string.IsNullOrWhiteSpace(appRoot))
                 return;
 
-            // We just update the UI text boxes. 
-            // Your EnsureSavePaths() will handle the actual directory creation later.
-            
+            // The path initialization code creates these directories when settings are applied.
             ImagesTextBox.Text = Path.Combine(appRoot, "images");
             FilesTextBox.Text = Path.Combine(appRoot, "files");
         }
 
-        private void Save_Click(object sender, RoutedEventArgs e)
+        private async void Save_Click(object sender, RoutedEventArgs e)
         {
+            Settings.SavedImagesFolder = SavedImagesFolderTextBox.Text?.Trim() ?? string.Empty;
+            if (!AppSettings.IsValidSavedImagesFolder(Settings.SavedImagesFolder))
+            {
+                await _dialogs.ShowMessageAsync(
+                    this,
+                    "Invalid User Images Location",
+                    "Choose a folder, or enter a single folder name such as 'user' to create it under the Images Folder.",
+                    DialogSeverity.Warning);
+                return;
+            }
+
+            try
+            {
+                string imagesDirectory = Path.Combine(Settings.AppRoot, Settings.ImagesFolder);
+                string savedImagesDirectory = Settings.GetSavedImagesDirectory(imagesDirectory);
+                Directory.CreateDirectory(savedImagesDirectory);
+
+                if (!await HasWritePermissionAsync(savedImagesDirectory))
+                {
+                    await _dialogs.ShowMessageAsync(
+                        this,
+                        "Permission Denied",
+                        "The application cannot write to the selected User Images folder. Choose another folder.",
+                        DialogSeverity.Warning);
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or InvalidOperationException)
+            {
+                await _dialogs.ShowMessageAsync(
+                    this,
+                    "Invalid User Images Location",
+                    ex.Message,
+                    DialogSeverity.Warning);
+                return;
+            }
+
             AppSettings.SaveSettings(Settings);
             Close(true);
         }

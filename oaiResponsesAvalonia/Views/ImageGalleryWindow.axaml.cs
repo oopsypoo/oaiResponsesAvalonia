@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
@@ -31,6 +32,19 @@ public partial class ImageGalleryWindow : Window
     private Bitmap? _previewBitmap;
     private Bitmap? _editorBitmap;
     private bool _initializing;
+    private Rect? _cropSelection;
+    private CropDragMode _cropDragMode;
+    private Point _cropDragStart;
+    private Point _cropDragImageStart;
+    private Rect _cropDragSelectionStart;
+    private Point _imageDisplayOrigin;
+    private double _imageDisplayScale;
+    private bool _updatingCropFields;
+    private bool _showingProcessedPreview;
+    private bool _cropApplied;
+    private int _previewUpdateVersion;
+    private Border? _cropSelectionVisual;
+    private readonly System.Collections.Generic.List<Border> _cropHandles = new();
 
     public ImageGalleryWindow() : this(GetConfiguredPaths()) { }
 
@@ -48,6 +62,7 @@ public partial class ImageGalleryWindow : Window
     {
         _initializing = true;
         InitializeComponent();
+        InitializeCropOverlay();
         _imageService = new ImageLibraryService(applicationImagesDirectory, userImagesDirectory);
         _currentDirectory = _imageService.GetRoot(_location);
         _saveDirectory = _imageService.GetRoot(ImageBrowserLocation.UserImages);
@@ -410,6 +425,324 @@ public partial class ImageGalleryWindow : Window
         catch (Exception ex) { StatusText.Text = $"Could not open editor: {ex.Message}"; }
     }
 
+    private void InitializeCropOverlay()
+    {
+        _cropSelectionVisual = new Border
+        {
+            BorderBrush = Brushes.Gold,
+            BorderThickness = new Thickness(2),
+            Background = new SolidColorBrush(Color.FromArgb(28, 255, 213, 79)),
+            IsHitTestVisible = false
+        };
+        CropOverlayCanvas.Children.Add(_cropSelectionVisual);
+
+        for (int i = 0; i < 8; i++)
+        {
+            var handle = new Border
+            {
+                Width = 10,
+                Height = 10,
+                Background = Brushes.White,
+                BorderBrush = Brushes.Gold,
+                BorderThickness = new Thickness(1),
+                IsHitTestVisible = false
+            };
+            _cropHandles.Add(handle);
+            CropOverlayCanvas.Children.Add(handle);
+        }
+    }
+
+    private void CropOverlayCanvas_SizeChanged(object? sender, SizeChangedEventArgs e) => UpdateCropOverlay();
+
+    private void UpdateCropOverlay()
+    {
+        if (_selectedPreview is null || CropOverlayCanvas.Bounds.Width <= 0 || CropOverlayCanvas.Bounds.Height <= 0)
+            return;
+
+        _imageDisplayScale = Math.Min(CropOverlayCanvas.Bounds.Width / _selectedPreview.Width,
+            CropOverlayCanvas.Bounds.Height / _selectedPreview.Height);
+        double displayedWidth = _selectedPreview.Width * _imageDisplayScale;
+        double displayedHeight = _selectedPreview.Height * _imageDisplayScale;
+        _imageDisplayOrigin = new Point((CropOverlayCanvas.Bounds.Width - displayedWidth) / 2,
+            (CropOverlayCanvas.Bounds.Height - displayedHeight) / 2);
+
+        bool hasSelection = _cropSelection is Rect selection;
+        if (_cropSelectionVisual is null)
+            return;
+        _cropSelectionVisual.IsVisible = hasSelection;
+        foreach (Border handle in _cropHandles)
+            handle.IsVisible = hasSelection;
+        if (!hasSelection)
+            return;
+
+        Rect crop = _cropSelection!.Value;
+        double left = _imageDisplayOrigin.X + crop.X * _imageDisplayScale;
+        double top = _imageDisplayOrigin.Y + crop.Y * _imageDisplayScale;
+        double width = crop.Width * _imageDisplayScale;
+        double height = crop.Height * _imageDisplayScale;
+        _cropSelectionVisual.Width = width;
+        _cropSelectionVisual.Height = height;
+        Canvas.SetLeft(_cropSelectionVisual, left);
+        Canvas.SetTop(_cropSelectionVisual, top);
+
+        Point[] handleCenters =
+        [
+            new(left, top), new(left + width / 2, top), new(left + width, top),
+            new(left, top + height / 2), new(left + width, top + height / 2),
+            new(left, top + height), new(left + width / 2, top + height), new(left + width, top + height)
+        ];
+        for (int i = 0; i < _cropHandles.Count; i++)
+        {
+            Border handle = _cropHandles[i];
+            Canvas.SetLeft(handle, handleCenters[i].X - handle.Width / 2);
+            Canvas.SetTop(handle, handleCenters[i].Y - handle.Height / 2);
+        }
+    }
+
+    private Point ToImagePoint(Point canvasPoint)
+    {
+        if (_selectedPreview is null || _imageDisplayScale <= 0)
+            return default;
+        int x = (int)Math.Round(Math.Clamp((canvasPoint.X - _imageDisplayOrigin.X) / _imageDisplayScale, 0, _selectedPreview.Width), MidpointRounding.AwayFromZero);
+        int y = (int)Math.Round(Math.Clamp((canvasPoint.Y - _imageDisplayOrigin.Y) / _imageDisplayScale, 0, _selectedPreview.Height), MidpointRounding.AwayFromZero);
+        return new Point(Math.Clamp(x, 0, _selectedPreview.Width), Math.Clamp(y, 0, _selectedPreview.Height));
+    }
+
+    private void CropOverlayCanvas_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_selectedPreview is null || !e.GetCurrentPoint(CropOverlayCanvas).Properties.IsLeftButtonPressed)
+            return;
+
+        EnsureSourcePreview();
+        _cropDragStart = e.GetPosition(CropOverlayCanvas);
+        _cropDragImageStart = ToImagePoint(_cropDragStart);
+        _cropDragSelectionStart = _cropSelection ?? default;
+        _cropDragMode = GetCropDragMode(_cropDragStart);
+        if (_cropDragMode == CropDragMode.Draw)
+            SetCropSelection(new Rect(_cropDragImageStart.X, _cropDragImageStart.Y, 1, 1));
+        e.Pointer.Capture(CropOverlayCanvas);
+        e.Handled = true;
+    }
+
+    private CropDragMode GetCropDragMode(Point point)
+    {
+        if (_cropSelection is not Rect crop)
+            return CropDragMode.Draw;
+
+        double left = _imageDisplayOrigin.X + crop.X * _imageDisplayScale;
+        double top = _imageDisplayOrigin.Y + crop.Y * _imageDisplayScale;
+        double right = left + crop.Width * _imageDisplayScale;
+        double bottom = top + crop.Height * _imageDisplayScale;
+        const double tolerance = 10;
+        bool nearLeft = Math.Abs(point.X - left) <= tolerance && point.Y >= top - tolerance && point.Y <= bottom + tolerance;
+        bool nearRight = Math.Abs(point.X - right) <= tolerance && point.Y >= top - tolerance && point.Y <= bottom + tolerance;
+        bool nearTop = Math.Abs(point.Y - top) <= tolerance && point.X >= left - tolerance && point.X <= right + tolerance;
+        bool nearBottom = Math.Abs(point.Y - bottom) <= tolerance && point.X >= left - tolerance && point.X <= right + tolerance;
+        CropDragMode edges = CropDragMode.None;
+        if (nearLeft) edges |= CropDragMode.Left;
+        if (nearRight) edges |= CropDragMode.Right;
+        if (nearTop) edges |= CropDragMode.Top;
+        if (nearBottom) edges |= CropDragMode.Bottom;
+        if (edges != CropDragMode.None)
+            return edges;
+        return new Rect(left, top, right - left, bottom - top).Contains(point) ? CropDragMode.Move : CropDragMode.Draw;
+    }
+
+    private void CropOverlayCanvas_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_cropDragMode == CropDragMode.None || _selectedPreview is null)
+            return;
+        Point current = ToImagePoint(e.GetPosition(CropOverlayCanvas));
+        int imageWidth = _selectedPreview.Width;
+        int imageHeight = _selectedPreview.Height;
+
+        if (_cropDragMode == CropDragMode.Draw)
+        {
+            int x1 = (int)_cropDragImageStart.X;
+            int y1 = (int)_cropDragImageStart.Y;
+            int x2 = (int)current.X;
+            int y2 = (int)current.Y;
+            int left = Math.Min(x1, x2);
+            int top = Math.Min(y1, y2);
+            int right = Math.Max(x1, x2);
+            int bottom = Math.Max(y1, y2);
+            SetCropSelection(new Rect(left, top, Math.Max(1, right - left), Math.Max(1, bottom - top)));
+            return;
+        }
+
+        int deltaX = (int)current.X - (int)_cropDragImageStart.X;
+        int deltaY = (int)current.Y - (int)_cropDragImageStart.Y;
+        int leftEdge = (int)_cropDragSelectionStart.X;
+        int topEdge = (int)_cropDragSelectionStart.Y;
+        int rightEdge = leftEdge + (int)_cropDragSelectionStart.Width;
+        int bottomEdge = topEdge + (int)_cropDragSelectionStart.Height;
+
+        if (_cropDragMode == CropDragMode.Move)
+        {
+            int width = rightEdge - leftEdge;
+            int height = bottomEdge - topEdge;
+            leftEdge = Math.Clamp(leftEdge + deltaX, 0, imageWidth - width);
+            topEdge = Math.Clamp(topEdge + deltaY, 0, imageHeight - height);
+            rightEdge = leftEdge + width;
+            bottomEdge = topEdge + height;
+        }
+        else
+        {
+            if (_cropDragMode.HasFlag(CropDragMode.Left)) leftEdge = Math.Clamp(leftEdge + deltaX, 0, rightEdge - 1);
+            if (_cropDragMode.HasFlag(CropDragMode.Right)) rightEdge = Math.Clamp(rightEdge + deltaX, leftEdge + 1, imageWidth);
+            if (_cropDragMode.HasFlag(CropDragMode.Top)) topEdge = Math.Clamp(topEdge + deltaY, 0, bottomEdge - 1);
+            if (_cropDragMode.HasFlag(CropDragMode.Bottom)) bottomEdge = Math.Clamp(bottomEdge + deltaY, topEdge + 1, imageHeight);
+        }
+
+        SetCropSelection(new Rect(leftEdge, topEdge, rightEdge - leftEdge, bottomEdge - topEdge));
+    }
+
+    private void CropOverlayCanvas_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        _cropDragMode = CropDragMode.None;
+        e.Pointer.Capture(null);
+        e.Handled = true;
+    }
+
+    private void CropOverlayCanvas_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) => _cropDragMode = CropDragMode.None;
+
+    private void SetCropSelection(Rect? selection)
+    {
+        _cropSelection = selection;
+        _cropApplied = false;
+        _updatingCropFields = true;
+        CropXBox.Text = selection is Rect crop ? ((int)crop.X).ToString() : string.Empty;
+        CropYBox.Text = selection is Rect cropY ? ((int)cropY.Y).ToString() : string.Empty;
+        CropWidthBox.Text = selection is Rect cropWidth ? ((int)cropWidth.Width).ToString() : string.Empty;
+        CropHeightBox.Text = selection is Rect cropHeight ? ((int)cropHeight.Height).ToString() : string.Empty;
+        _updatingCropFields = false;
+        UpdateCropOverlay();
+    }
+
+    private void CropDimensionBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingCropFields || _selectedPreview is null)
+            return;
+        try
+        {
+            EnsureSourcePreview();
+            string widthText = CropWidthBox.Text?.Trim() ?? string.Empty;
+            string heightText = CropHeightBox.Text?.Trim() ?? string.Empty;
+            if (widthText.Length == 0 && heightText.Length == 0)
+            {
+                SetCropSelection(null);
+                return;
+            }
+
+            int? requestedWidth = ParseCropDimension(widthText, "Crop width", _selectedPreview.Width);
+            int? requestedHeight = ParseCropDimension(heightText, "Crop height", _selectedPreview.Height);
+            Rect current = _cropSelection ?? new Rect(0, 0, _selectedPreview.Width, _selectedPreview.Height);
+            int width = requestedWidth ?? (int)current.Width;
+            int height = requestedHeight ?? (int)current.Height;
+            int x = Math.Clamp((int)current.X, 0, _selectedPreview.Width - width);
+            int y = Math.Clamp((int)current.Y, 0, _selectedPreview.Height - height);
+            SetCropSelection(new Rect(x, y, width, height));
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = ex.Message;
+            SetCropSelection(_cropSelection);
+        }
+    }
+
+    private static int? ParseCropDimension(string text, string label, int maximum)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+        if (!int.TryParse(text, out int value) || value < 1 || value > maximum)
+            throw new ArgumentException($"{label} must be a whole number from 1 to {maximum}.");
+        return value;
+    }
+
+    private void CropToolCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        bool enabled = CropToolCheckBox.IsChecked == true;
+        CropControlsPanel.IsVisible = enabled;
+        if (!enabled)
+        {
+            bool refreshPreview = _cropApplied;
+            _cropApplied = false;
+            if (refreshPreview && EditorPanel.IsVisible)
+                _ = UpdateEditorPreviewAsync();
+        }
+        CropOverlayCanvas.IsVisible = enabled && !_showingProcessedPreview;
+        EditCropOnSourceButton.IsVisible = enabled && _showingProcessedPreview;
+        UpdateCropOverlay();
+    }
+
+    private void ResizeToolCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        ResizeControlsPanel.IsVisible = ResizeToolCheckBox.IsChecked == true;
+        ProcessingOption_Changed(sender, e);
+    }
+
+    private void RotationToolCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        RotationPicker.IsVisible = RotationToolCheckBox.IsChecked == true;
+        ProcessingOption_Changed(sender, e);
+    }
+
+    private void FilterToolCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        FilterPicker.IsVisible = FilterToolCheckBox.IsChecked == true;
+        ProcessingOption_Changed(sender, e);
+    }
+
+    private void ProcessingPicker_SelectionChanged(object? sender, SelectionChangedEventArgs e) =>
+        ProcessingOption_Changed(sender, e);
+
+    private void ProcessingOption_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (!_initializing && EditorPanel?.IsVisible == true)
+            _ = UpdateEditorPreviewAsync();
+    }
+
+    private void ProcessingTextBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (!_initializing && EditorPanel?.IsVisible == true)
+            _ = UpdateEditorPreviewAsync();
+    }
+
+    private void CropButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (CropToolCheckBox.IsChecked != true)
+            CropToolCheckBox.IsChecked = true;
+        if (_cropSelection is null)
+        {
+            StatusText.Text = "Draw or enter a crop rectangle before applying Crop.";
+            return;
+        }
+        _cropApplied = true;
+        _ = UpdateEditorPreviewAsync();
+    }
+
+    private void ClearCropButton_Click(object? sender, RoutedEventArgs e)
+    {
+        EnsureSourcePreview();
+        SetCropSelection(null);
+        StatusText.Text = "Crop cleared. The full source image will be used.";
+        if (EditorPanel.IsVisible)
+            _ = UpdateEditorPreviewAsync();
+    }
+
+    private void EditCropOnSourceButton_Click(object? sender, RoutedEventArgs e) => EnsureSourcePreview();
+
+    private void EnsureSourcePreview()
+    {
+        if (!_showingProcessedPreview || _selectedPreview is null)
+            return;
+        _showingProcessedPreview = false;
+        EditCropOnSourceButton.IsVisible = false;
+        CropOverlayCanvas.IsVisible = CropToolCheckBox.IsChecked == true;
+        SetPreviewBitmap(_selectedPreview.PngBytes, EditorPreviewImage, ref _editorBitmap);
+        UpdateCropOverlay();
+    }
+
     private void ShowEditor(ImageGalleryItem item)
     {
         _saveDirectory = _location == ImageBrowserLocation.UserImages
@@ -417,7 +750,19 @@ public partial class ImageGalleryWindow : Window
             : _imageService.GetRoot(ImageBrowserLocation.UserImages);
         EditorImageTitle.Text = $"{item.Name} · {_selectedPreview!.Width} × {_selectedPreview.Height}";
         OutputNameBox.Text = Path.GetFileNameWithoutExtension(item.Name);
-        CropXBox.Text = CropYBox.Text = CropWidthBox.Text = CropHeightBox.Text = string.Empty;
+        CropToolCheckBox.IsChecked = false;
+        ResizeToolCheckBox.IsChecked = false;
+        RotationToolCheckBox.IsChecked = false;
+        FilterToolCheckBox.IsChecked = false;
+        CropControlsPanel.IsVisible = false;
+        ResizeControlsPanel.IsVisible = false;
+        RotationPicker.IsVisible = false;
+        FilterPicker.IsVisible = false;
+        _cropApplied = false;
+        SetCropSelection(null);
+        _showingProcessedPreview = false;
+        EditCropOnSourceButton.IsVisible = false;
+        CropOverlayCanvas.IsVisible = CropToolCheckBox.IsChecked == true;
         ResizeWidthBox.Text = ResizeHeightBox.Text = string.Empty;
         KeepAspectCheckBox.IsChecked = true;
         RotationPicker.SelectedIndex = 0;
@@ -427,6 +772,7 @@ public partial class ImageGalleryWindow : Window
         EditorPanel.IsVisible = true;
         GalleryPanel.IsVisible = false;
         SetPreviewBitmap(_selectedPreview.PngBytes, EditorPreviewImage, ref _editorBitmap);
+        UpdateCropOverlay();
     }
 
     private void BackButton_Click(object? sender, RoutedEventArgs e)
@@ -436,17 +782,28 @@ public partial class ImageGalleryWindow : Window
         RefreshEntries();
     }
 
-    private async void ApplyPreviewButton_Click(object? sender, RoutedEventArgs e)
+    private async Task UpdateEditorPreviewAsync()
     {
         if (_selectedImagePath is null)
             return;
         try
         {
-            StatusText.Text = "Applying preview operations…";
+            int updateVersion = ++_previewUpdateVersion;
+            string sourcePath = _selectedImagePath;
+            StatusText.Text = "Updating preview…";
             var options = ReadProcessingOptions();
-            byte[] png = await Task.Run(() => _imageService.CreateProcessedPreview(_selectedImagePath, options));
+            bool hasOperations = options.CropX.HasValue || options.ResizeWidth.HasValue || options.ResizeHeight.HasValue ||
+                options.RotationDegrees != 0 || !string.Equals(options.Filter, "None", StringComparison.OrdinalIgnoreCase);
+            byte[] png = hasOperations
+                ? await Task.Run(() => _imageService.CreateProcessedPreview(sourcePath, options))
+                : _selectedPreview?.PngBytes ?? Array.Empty<byte>();
+            if (updateVersion != _previewUpdateVersion || png.Length == 0)
+                return;
             SetPreviewBitmap(png, EditorPreviewImage, ref _editorBitmap);
-            StatusText.Text = "Preview updated. The source image remains unchanged.";
+            _showingProcessedPreview = hasOperations;
+            CropOverlayCanvas.IsVisible = CropToolCheckBox.IsChecked == true && !hasOperations;
+            EditCropOnSourceButton.IsVisible = hasOperations && CropToolCheckBox.IsChecked == true;
+            StatusText.Text = hasOperations ? "Preview updated. The source image remains unchanged." : "Source image shown; no operations are enabled.";
         }
         catch (Exception ex) { StatusText.Text = $"Could not update preview: {ex.Message}"; }
     }
@@ -498,21 +855,21 @@ public partial class ImageGalleryWindow : Window
 
     private ImageProcessingOptions ReadProcessingOptions()
     {
-        int? cropX = ParseOptionalNumber(CropXBox.Text, "Crop X");
-        int? cropY = ParseOptionalNumber(CropYBox.Text, "Crop Y");
-        int? cropWidth = ParseOptionalNumber(CropWidthBox.Text, "Crop width");
-        int? cropHeight = ParseOptionalNumber(CropHeightBox.Text, "Crop height");
-        int? resizeWidth = ParseOptionalNumber(ResizeWidthBox.Text, "Resize width");
-        int? resizeHeight = ParseOptionalNumber(ResizeHeightBox.Text, "Resize height");
+        int? cropX = CropToolCheckBox.IsChecked == true && _cropApplied && _cropSelection is Rect crop ? (int)crop.X : null;
+        int? cropY = CropToolCheckBox.IsChecked == true && _cropApplied && _cropSelection is Rect cropYValue ? (int)cropYValue.Y : null;
+        int? cropWidth = CropToolCheckBox.IsChecked == true && _cropApplied && _cropSelection is Rect cropWidthValue ? (int)cropWidthValue.Width : null;
+        int? cropHeight = CropToolCheckBox.IsChecked == true && _cropApplied && _cropSelection is Rect cropHeightValue ? (int)cropHeightValue.Height : null;
+        int? resizeWidth = ResizeToolCheckBox.IsChecked == true ? ParseOptionalNumber(ResizeWidthBox.Text, "Resize width") : null;
+        int? resizeHeight = ResizeToolCheckBox.IsChecked == true ? ParseOptionalNumber(ResizeHeightBox.Text, "Resize height") : null;
         if (cropWidth == 0 || cropHeight == 0 || resizeWidth == 0 || resizeHeight == 0)
             throw new ArgumentException("Crop width, crop height, and resize dimensions must be greater than zero.");
         if (new[] { cropX, cropY, cropWidth, cropHeight }.Any(value => value.HasValue) &&
             new[] { cropX, cropY, cropWidth, cropHeight }.Any(value => !value.HasValue))
             throw new ArgumentException("Enter all four crop values, or leave all four blank.");
-        if (!KeepAspectCheckBox.IsChecked.GetValueOrDefault() && (resizeWidth.HasValue != resizeHeight.HasValue))
+        if (ResizeToolCheckBox.IsChecked == true && !KeepAspectCheckBox.IsChecked.GetValueOrDefault() && (resizeWidth.HasValue != resizeHeight.HasValue))
             throw new ArgumentException("Enter both resize dimensions when Keep aspect ratio is turned off.");
-        int rotation = int.Parse(SelectedTag(RotationPicker, "0"));
-        string filter = SelectedTag(FilterPicker, "None");
+        int rotation = RotationToolCheckBox.IsChecked == true ? int.Parse(SelectedTag(RotationPicker, "0")) : 0;
+        string filter = FilterToolCheckBox.IsChecked == true ? SelectedTag(FilterPicker, "None") : "None";
         return new ImageProcessingOptions(cropX, cropY, cropWidth, cropHeight, resizeWidth, resizeHeight,
             KeepAspectCheckBox.IsChecked == true, rotation, filter);
     }
@@ -579,6 +936,18 @@ public partial class ImageGalleryWindow : Window
         _previewBitmap?.Dispose();
         _editorBitmap?.Dispose();
         base.OnClosed(e);
+    }
+
+    [Flags]
+    private enum CropDragMode
+    {
+        None = 0,
+        Draw = 1,
+        Move = 2,
+        Left = 4,
+        Right = 8,
+        Top = 16,
+        Bottom = 32
     }
 
     private sealed record LoadedImageGalleryItem(ImageAssetEntry Entry, byte[]? ThumbnailPng);

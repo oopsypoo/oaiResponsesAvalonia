@@ -73,34 +73,48 @@
                 <StackPanel Spacing="8">
                     <Button Content="← Back to gallery" HorizontalAlignment="Left" Click="BackButton_Click" />
                     <TextBlock x:Name="EditorImageTitle" FontWeight="Bold" TextWrapping="Wrap" />
-                    <TextBlock Text="Crop rectangle (pixels; leave all blank for no crop)" TextWrapping="Wrap" />
+                    <CheckBox x:Name="CropToolCheckBox" Content="Crop" IsCheckedChanged="CropToolCheckBox_Changed" />
+                    <StackPanel x:Name="CropControlsPanel" IsVisible="False" Spacing="6">
+                        <TextBlock Text="Drag on the image to draw a crop rectangle; drag inside to move it, or drag an edge or corner to resize it." TextWrapping="Wrap" />
                     <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="4">
-                        <TextBox x:Name="CropXBox" Grid.Row="0" Grid.Column="0" PlaceholderText="X" />
-                        <TextBox x:Name="CropYBox" Grid.Row="0" Grid.Column="1" PlaceholderText="Y" />
-                        <TextBox x:Name="CropWidthBox" Grid.Row="1" Grid.Column="0" PlaceholderText="Width" />
-                        <TextBox x:Name="CropHeightBox" Grid.Row="1" Grid.Column="1" PlaceholderText="Height" />
+                        <TextBox x:Name="CropXBox" Grid.Row="0" Grid.Column="0" PlaceholderText="X" IsReadOnly="True" />
+                        <TextBox x:Name="CropYBox" Grid.Row="0" Grid.Column="1" PlaceholderText="Y" IsReadOnly="True" />
+                        <TextBox x:Name="CropWidthBox" Grid.Row="1" Grid.Column="0" PlaceholderText="Width" LostFocus="CropDimensionBox_LostFocus" />
+                        <TextBox x:Name="CropHeightBox" Grid.Row="1" Grid.Column="1" PlaceholderText="Height" LostFocus="CropDimensionBox_LostFocus" />
                     </Grid>
-                    <TextBlock Text="Resize (pixels)" FontWeight="SemiBold" />
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                            <Button Grid.Column="0" Content="Crop" Click="CropButton_Click" />
+                            <Button Grid.Column="1" Content="Clear crop" Click="ClearCropButton_Click" />
+                            <Button x:Name="EditCropOnSourceButton" Grid.Column="2" Content="Adjust Crop" IsVisible="False" Click="EditCropOnSourceButton_Click" />
+                        </Grid>
+                    </StackPanel>
+                    <CheckBox x:Name="ResizeToolCheckBox" Content="Resize" IsCheckedChanged="ResizeToolCheckBox_Changed" />
+                    <StackPanel x:Name="ResizeControlsPanel" IsVisible="False" Spacing="6">
+                        <TextBlock Text="Resize (pixels)" FontWeight="SemiBold" />
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                        <TextBox x:Name="ResizeWidthBox" Grid.Column="0" PlaceholderText="Width" />
-                        <TextBox x:Name="ResizeHeightBox" Grid.Column="1" PlaceholderText="Height" />
+                        <TextBox x:Name="ResizeWidthBox" Grid.Column="0" PlaceholderText="Width" LostFocus="ProcessingTextBox_LostFocus" />
+                        <TextBox x:Name="ResizeHeightBox" Grid.Column="1" PlaceholderText="Height" LostFocus="ProcessingTextBox_LostFocus" />
                     </Grid>
-                    <CheckBox x:Name="KeepAspectCheckBox" Content="Keep aspect ratio" IsChecked="True" />
-                    <TextBlock Text="Rotation" FontWeight="SemiBold" />
-                    <ComboBox x:Name="RotationPicker" SelectedIndex="0">
+                        <CheckBox x:Name="KeepAspectCheckBox" Content="Keep aspect ratio" IsChecked="True" IsCheckedChanged="ProcessingOption_Changed" />
+                    </StackPanel>
+                    <CheckBox x:Name="RotationToolCheckBox" Content="Rotate" IsCheckedChanged="RotationToolCheckBox_Changed" />
+                    <ComboBox x:Name="RotationPicker" IsVisible="False" SelectedIndex="0" SelectionChanged="ProcessingPicker_SelectionChanged">
                         <ComboBoxItem Content="None" Tag="0" />
                         <ComboBoxItem Content="90° clockwise" Tag="90" />
                         <ComboBoxItem Content="180°" Tag="180" />
                         <ComboBoxItem Content="270° clockwise" Tag="270" />
                     </ComboBox>
-                    <TextBlock Text="Filter" FontWeight="SemiBold" />
-                    <ComboBox x:Name="FilterPicker" SelectedIndex="0">
+                    <CheckBox x:Name="FilterToolCheckBox" Content="Filter" IsCheckedChanged="FilterToolCheckBox_Changed" />
+                    <ComboBox x:Name="FilterPicker" IsVisible="False" SelectedIndex="0" SelectionChanged="ProcessingPicker_SelectionChanged">
                         <ComboBoxItem Content="None" Tag="None" />
                         <ComboBoxItem Content="Grayscale" Tag="Grayscale" />
                         <ComboBoxItem Content="Sepia" Tag="Sepia" />
                         <ComboBoxItem Content="Invert" Tag="Invert" />
                     </ComboBox>
-                    <Button Content="Update preview" Click="ApplyPreviewButton_Click" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+
+
+                    </Grid>
                     <Separator />
                     <TextBlock Text="Save edited copy to User Images" FontWeight="Bold" TextWrapping="Wrap" />
                     <TextBox x:Name="OutputNameBox" PlaceholderText="Output filename" />
@@ -114,12 +128,20 @@
                     <TextBox x:Name="IcoSizesBox" Text="256,128,64,48,32,16" PlaceholderText="ICO embedded sizes" IsVisible="False" />
                     <CheckBox x:Name="KeepTransparencyCheckBox" Content="Keep transparency" IsChecked="True" />
                     <TextBlock x:Name="TransparencyHelpText" TextWrapping="Wrap" FontSize="12" Opacity="0.8" />
-                    <Button x:Name="SaveEditedButton" Content="Save As" Click="SaveEditedButton_Click" />
+                    <Button x:Name="SaveEditedButton" Content="Save" Click="SaveEditedButton_Click" />
                 </StackPanel>
             </ScrollViewer>
             <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />
             <Border Grid.Column="2" Background="#181818" CornerRadius="4" Padding="8">
-                <Image x:Name="EditorPreviewImage" Stretch="Uniform" />
+                <Grid>
+                    <Image x:Name="EditorPreviewImage" Stretch="Uniform" />
+                    <Canvas x:Name="CropOverlayCanvas" Background="Transparent" ClipToBounds="True"
+                            PointerPressed="CropOverlayCanvas_PointerPressed"
+                            PointerMoved="CropOverlayCanvas_PointerMoved"
+                            PointerReleased="CropOverlayCanvas_PointerReleased"
+                            PointerCaptureLost="CropOverlayCanvas_PointerCaptureLost"
+                            SizeChanged="CropOverlayCanvas_SizeChanged" />
+                </Grid>
             </Border>
         </Grid>
 

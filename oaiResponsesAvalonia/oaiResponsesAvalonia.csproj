@@ -99,4 +99,8 @@
     <Content Remove="ImageSharpPlayground\**\*" />
     <None Remove="ImageSharpPlayground\**\*" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\LICENSES\Apache-2.0.md" Link="LICENSES\Apache-2.0.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

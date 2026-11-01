@@ -212,6 +212,7 @@
                 <MenuItem Header="Available Models" Name="menuAvlblMdls" IsEnabled="True" Click="menuAvailableModels_Click" />
                 <MenuItem Header="MCP servers" Name="menuMcpServers" IsEnabled="True" Click="menuMcpServers_Click" />
                 <MenuItem Header="Terminal" Name="menuTerminal" IsEnabled="True" Click="OpenTerminalWindow_Click" />
+                <MenuItem Header="Images" Name="menuImages" IsEnabled="True" Click="OpenImagesWindow_Click" />
             </MenuItem>
             <MenuItem Header="Help" Name="menuHelp" IsEnabled="True">
                 <MenuItem Header="About" Name="menuAbout" IsEnabled="True" Click="menuAbout_Click"/>

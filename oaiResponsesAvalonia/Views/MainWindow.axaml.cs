@@ -46,6 +46,7 @@ public partial class MainWindow : Window
     private readonly SessionCleanupService _sessionCleanupService;
     private DeveloperToolsActivityWindow? _developerToolsActivityWindow;
     private TerminalWindow? _terminalWindow;
+    private ImageGalleryWindow? _imageGalleryWindow;
 
     public event Action<List<string>>? ModelsApplied;
 
@@ -111,6 +112,22 @@ public partial class MainWindow : Window
             _terminalWindow.Show(this);
         else
             _terminalWindow.Activate();
+    }
+
+    private void OpenImagesWindow_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_imageGalleryWindow is null)
+        {
+            _imageGalleryWindow = new ImageGalleryWindow(savepath_images, savepath_saved_images);
+            _imageGalleryWindow.Closed += (_, _) => _imageGalleryWindow = null;
+            _imageGalleryWindow.Show(this);
+            return;
+        }
+
+        if (!_imageGalleryWindow.IsVisible)
+            _imageGalleryWindow.Show(this);
+        else
+            _imageGalleryWindow.Activate();
     }
 
     private void InitStatusAnimation()
@@ -521,7 +538,10 @@ public partial class MainWindow : Window
     {
         var window = new SettingsWindow(_settings);
         if (await _dialogs.ShowModalForResultAsync(this, window) == true)
+        {
             EnsureSavePaths();
+            _imageGalleryWindow?.UpdateRoots(savepath_images, savepath_saved_images);
+        }
     }
 
     private void AvailableModelsWindow_ModelsApplied(List<string> models)

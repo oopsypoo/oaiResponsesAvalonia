@@ -1,0 +1,114 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="oaiResponsesAvalonia.Views.ImageGalleryWindow"
+        xmlns:local="using:oaiResponsesAvalonia.Views"
+        Title="Images"
+        Width="1120"
+        Height="720"
+        MinWidth="720"
+        MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="10" RowSpacing="8">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,180,150,Auto,*,Auto,Auto,Auto" ColumnSpacing="8" VerticalAlignment="Center">
+            <TextBlock Grid.Column="0" Text="Browse:" VerticalAlignment="Center" />
+            <ComboBox x:Name="LocationPicker" Grid.Column="1" SelectedIndex="0" SelectionChanged="LocationPicker_SelectionChanged">
+                <ComboBoxItem Content="Application Images" />
+                <ComboBoxItem Content="User Images" />
+            </ComboBox>
+            <ComboBox x:Name="CategoryPicker" Grid.Column="2" SelectedIndex="0" SelectionChanged="CategoryPicker_SelectionChanged">
+                <ComboBoxItem Content="Responses (resp_)" Tag="responses" />
+                <ComboBoxItem Content="User-created (user_)" Tag="user" />
+                <ComboBoxItem Content="All images" Tag="all" />
+            </ComboBox>
+            <Button x:Name="UpButton" Grid.Column="3" Content="Up" Click="UpButton_Click" />
+            <TextBlock x:Name="CurrentPathText" Grid.Column="4" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <Button x:Name="ImportButton" Grid.Column="5" Content="Import…" Click="ImportButton_Click" />
+            <Button x:Name="NewFolderButton" Grid.Column="6" Content="New folder…" Click="NewFolderButton_Click" />
+            <Button Grid.Column="7" Content="Refresh" Click="RefreshButton_Click" />
+        </Grid>
+
+        <Grid x:Name="GalleryPanel" Grid.Row="1" ColumnDefinitions="2*,5,3*" ColumnSpacing="0">
+            <ListBox x:Name="EntriesList" Grid.Column="0" SelectionChanged="EntriesList_SelectionChanged" DoubleTapped="EntriesList_DoubleTapped">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="local:ImageGalleryItem">
+                        <Border Padding="6" Margin="2" BorderThickness="0,0,0,1" BorderBrush="#33000000">
+                            <Grid ColumnDefinitions="30,88,*" ColumnSpacing="8" MinHeight="66">
+                                <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="20" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                <Image Grid.Column="1" Source="{Binding Thumbnail}" Width="84" Height="60" Stretch="Uniform" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Details}" Opacity="0.75" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />
+            <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto" Margin="12,0,0,0" RowSpacing="8">
+                <Border Grid.Row="0" Background="#181818" CornerRadius="4" Padding="8">
+                    <Image x:Name="PreviewImage" Stretch="Uniform" />
+                </Border>
+                <TextBlock x:Name="PreviewDetailsText" Grid.Row="1" Text="Select an image to preview it." TextWrapping="Wrap" />
+                <Button x:Name="EditButton" Grid.Row="2" Content="Edit / Save As…" HorizontalAlignment="Right" IsEnabled="False" Click="EditButton_Click" />
+            </Grid>
+        </Grid>
+
+        <Grid x:Name="EditorPanel" Grid.Row="1" IsVisible="False" ColumnDefinitions="3*,5,2*">
+            <Border Grid.Column="0" Background="#181818" CornerRadius="4" Padding="8">
+                <Image x:Name="EditorPreviewImage" Stretch="Uniform" />
+            </Border>
+            <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />
+            <ScrollViewer Grid.Column="2" Margin="12,0,0,0" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="8">
+                    <Button Content="← Back to gallery" HorizontalAlignment="Left" Click="BackButton_Click" />
+                    <TextBlock x:Name="EditorImageTitle" FontWeight="Bold" TextWrapping="Wrap" />
+                    <TextBlock Text="Crop rectangle (pixels; leave all blank for no crop)" TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="4">
+                        <TextBox x:Name="CropXBox" Grid.Row="0" Grid.Column="0" PlaceholderText="X" />
+                        <TextBox x:Name="CropYBox" Grid.Row="0" Grid.Column="1" PlaceholderText="Y" />
+                        <TextBox x:Name="CropWidthBox" Grid.Row="1" Grid.Column="0" PlaceholderText="Width" />
+                        <TextBox x:Name="CropHeightBox" Grid.Row="1" Grid.Column="1" PlaceholderText="Height" />
+                    </Grid>
+                    <TextBlock Text="Resize (pixels)" FontWeight="SemiBold" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                        <TextBox x:Name="ResizeWidthBox" Grid.Column="0" PlaceholderText="Width" />
+                        <TextBox x:Name="ResizeHeightBox" Grid.Column="1" PlaceholderText="Height" />
+                    </Grid>
+                    <CheckBox x:Name="KeepAspectCheckBox" Content="Keep aspect ratio" IsChecked="True" />
+                    <TextBlock Text="Rotation" FontWeight="SemiBold" />
+                    <ComboBox x:Name="RotationPicker" SelectedIndex="0">
+                        <ComboBoxItem Content="None" Tag="0" />
+                        <ComboBoxItem Content="90° clockwise" Tag="90" />
+                        <ComboBoxItem Content="180°" Tag="180" />
+                        <ComboBoxItem Content="270° clockwise" Tag="270" />
+                    </ComboBox>
+                    <TextBlock Text="Filter" FontWeight="SemiBold" />
+                    <ComboBox x:Name="FilterPicker" SelectedIndex="0">
+                        <ComboBoxItem Content="None" Tag="None" />
+                        <ComboBoxItem Content="Grayscale" Tag="Grayscale" />
+                        <ComboBoxItem Content="Sepia" Tag="Sepia" />
+                        <ComboBoxItem Content="Invert" Tag="Invert" />
+                    </ComboBox>
+                    <Button Content="Update preview" Click="ApplyPreviewButton_Click" />
+                    <Separator />
+                    <TextBlock Text="Save edited copy to User Images" FontWeight="Bold" TextWrapping="Wrap" />
+                    <TextBox x:Name="OutputNameBox" PlaceholderText="Output filename" />
+                    <ComboBox x:Name="OutputFormatPicker" SelectedIndex="0" SelectionChanged="OutputFormatPicker_SelectionChanged">
+                        <ComboBoxItem Content="PNG (.png)" Tag=".png" />
+                        <ComboBoxItem Content="WebP (.webp)" Tag=".webp" />
+                        <ComboBoxItem Content="JPEG (.jpg)" Tag=".jpg" />
+                        <ComboBoxItem Content="BMP (.bmp)" Tag=".bmp" />
+                        <ComboBoxItem Content="ICO (.ico)" Tag=".ico" />
+                    </ComboBox>
+                    <TextBox x:Name="IcoSizesBox" Text="256,128,64,48,32,16" PlaceholderText="ICO embedded sizes" IsVisible="False" />
+                    <CheckBox x:Name="KeepTransparencyCheckBox" Content="Keep transparency" IsChecked="True" />
+                    <TextBlock x:Name="TransparencyHelpText" TextWrapping="Wrap" FontSize="12" Opacity="0.8" />
+                    <Button x:Name="SaveEditedButton" Content="Save As" Click="SaveEditedButton_Click" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <TextBlock x:Name="StatusText" Grid.Row="2" Text="Ready" TextWrapping="Wrap" />
+    </Grid>
+</Window>

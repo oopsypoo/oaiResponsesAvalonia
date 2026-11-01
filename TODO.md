@@ -25,7 +25,8 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * \[ ] Use current API and tool information from MCP servers where appropriate; make its source and freshness visible, and handle unavailable or changed information safely.
 * \[ ] Define the intended behavior and access boundaries for the Developer Tools **Scope** options (**Current repository**, **Workspace**, **Custom**), then re-enable the hidden Scope control. Confirm that each option applies the expected boundaries.
 * \[x] Developer Tools activity window: cannot open and see the specific activity (sometimes) on platform Windows 11
-* \[ ] In Image generation: make functions that can resize and other operations on an AI-generated image in a conversation. Use Imagemagick? Check system for what is available?
+* \[ ] Add the future `img` terminal context using the shared image service and the same managed image-folder boundaries as Tools → Images.
+* \[ ] Evaluate creating animated image formats (for example, GIF or animated WebP) from multiple still images, including frame timing and format behavior.
 * \[x] The folder 'Images' is actually not just images. It's documents; since everything that is in a conversation
 ends up here. 'Logs' is no longer used, and maybe it should be renamed to docs or 'other docs'. Or just removed.
 

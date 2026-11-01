@@ -16,8 +16,13 @@ sealed class Program
     /// Configures the application, platform detection, fonts, developer tools, and trace logging.
     /// </summary>
     public static AppBuilder BuildAvaloniaApp()
-    => AppBuilder.Configure<App>()
-        .UsePlatformDetect()
-        .WithInterFont()
-        .LogToTrace();
+    {
+        var builder = AppBuilder.Configure<App>()
+            .UsePlatformDetect()
+            .WithInterFont();
+#if DEBUG
+        builder = builder.WithDeveloperTools();
+#endif
+        return builder.LogToTrace();
+    }
 }

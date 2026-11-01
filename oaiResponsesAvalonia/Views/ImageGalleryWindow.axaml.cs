@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -67,15 +68,17 @@ public partial class ImageGalleryWindow : Window
         RefreshEntries();
     }
 
-    private async void RefreshEntries()
+    private void RefreshEntries() => _ = RefreshEntriesAsync();
+
+    private async Task RefreshEntriesAsync()
     {
         try
         {
             string currentPath = _imageService.GetSafeCurrentDirectory(_location, _currentDirectory);
             _currentDirectory = currentPath;
-            CurrentPathText.Text = currentPath;
+            UpdateWindowTitle(currentPath);
+            UpdateMenuAvailability();
             UpButton.IsEnabled = !PathsEqual(currentPath, _imageService.GetRoot(_location));
-            NewFolderButton.IsEnabled = _location == ImageBrowserLocation.UserImages;
             StatusText.Text = "Loading images…";
 
             string category = SelectedTag(CategoryPicker, "responses");
@@ -90,6 +93,7 @@ public partial class ImageGalleryWindow : Window
             EntriesList.SelectedItem = null;
             _selectedImagePath = null;
             _selectedPreview = null;
+            UpdateMenuAvailability();
             foreach (var item in loaded)
             {
                 Bitmap? thumbnail = item.ThumbnailPng is null ? null : BitmapFromBytes(item.ThumbnailPng);
@@ -107,6 +111,29 @@ public partial class ImageGalleryWindow : Window
         {
             StatusText.Text = $"Could not browse this folder: {ex.Message}";
         }
+    }
+
+    private void UpdateWindowTitle(string currentPath)
+    {
+        string relativePath = Path.GetRelativePath(_imageService.GetRoot(_location), currentPath);
+        string logicalRoot = _location == ImageBrowserLocation.UserImages
+            ? "$AppRoot/images/user"
+            : "$AppRoot/images";
+        string displayPath = relativePath == "."
+            ? logicalRoot
+            : $"{logicalRoot}/{relativePath.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/')}";
+        Title = $"Images — {displayPath}";
+    }
+
+    private void UpdateMenuAvailability()
+    {
+        if (NewFolderMenuItem is null)
+            return;
+
+        bool inUserImages = _location == ImageBrowserLocation.UserImages;
+        NewFolderMenuItem.IsEnabled = inUserImages;
+        DeleteFileMenuItem.IsEnabled = inUserImages && EntriesList.SelectedItem is ImageGalleryItem file && !file.IsDirectory;
+        DeleteFolderMenuItem.IsEnabled = inUserImages && EntriesList.SelectedItem is ImageGalleryItem folder && folder.IsDirectory;
     }
 
     private byte[]? TryCreateThumbnail(string path)
@@ -153,6 +180,7 @@ public partial class ImageGalleryWindow : Window
 
     private async void EntriesList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
+        UpdateMenuAvailability();
         if (EntriesList.SelectedItem is not ImageGalleryItem item || item.IsDirectory)
         {
             _selectedImagePath = null;
@@ -284,7 +312,81 @@ public partial class ImageGalleryWindow : Window
         catch (Exception ex) { StatusText.Text = $"Could not create folder: {ex.Message}"; }
     }
 
-    private void RefreshButton_Click(object? sender, RoutedEventArgs e) => RefreshEntries();
+    private async void DeleteFileMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_location != ImageBrowserLocation.UserImages || EntriesList.SelectedItem is not ImageGalleryItem item || item.IsDirectory)
+            return;
+        if (!await ConfirmActionAsync("Delete image", $"Permanently delete '{item.Name}'?", "Delete"))
+            return;
+
+        try
+        {
+            await Task.Run(() => _imageService.DeleteUserFile(item.FullPath));
+            RefreshEntries();
+            StatusText.Text = $"Deleted image: {item.Name}";
+        }
+        catch (Exception ex) { StatusText.Text = $"Could not delete image: {ex.Message}"; }
+    }
+
+    private async void DeleteFolderMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_location != ImageBrowserLocation.UserImages || EntriesList.SelectedItem is not ImageGalleryItem item || !item.IsDirectory)
+            return;
+        if (!await ConfirmActionAsync("Delete folder", $"Permanently delete '{item.Name}' and everything inside it?", "Delete folder"))
+            return;
+
+        try
+        {
+            await Task.Run(() => _imageService.DeleteUserFolder(item.FullPath));
+            RefreshEntries();
+            StatusText.Text = $"Deleted folder: {item.Name}";
+        }
+        catch (Exception ex) { StatusText.Text = $"Could not delete folder: {ex.Message}"; }
+    }
+
+    private async Task<bool> ConfirmActionAsync(string title, string message, string confirmLabel)
+    {
+        bool confirmed = false;
+        var confirmButton = new Button { Content = confirmLabel, IsDefault = true, MinWidth = 90 };
+        var cancelButton = new Button { Content = "Cancel", IsCancel = true, MinWidth = 90 };
+        var buttons = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
+        };
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 420,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(16),
+                Spacing = 14,
+                Children =
+                {
+                    new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                    buttons
+                }
+            }
+        };
+        confirmButton.Click += (_, _) => { confirmed = true; dialog.Close(); };
+        cancelButton.Click += (_, _) => dialog.Close();
+        buttons.Children.Add(confirmButton);
+        buttons.Children.Add(cancelButton);
+        await dialog.ShowDialog(this);
+        return confirmed;
+    }
+
+    private void RefreshMenuItem_Click(object? sender, RoutedEventArgs e) => RefreshEntries();
+
+    private void ExitMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        Close();
+    }
 
     private void OpenEditor(ImageGalleryItem item)
     {
@@ -331,6 +433,7 @@ public partial class ImageGalleryWindow : Window
     {
         EditorPanel.IsVisible = false;
         GalleryPanel.IsVisible = true;
+        RefreshEntries();
     }
 
     private async void ApplyPreviewButton_Click(object? sender, RoutedEventArgs e)
@@ -365,6 +468,8 @@ public partial class ImageGalleryWindow : Window
             StatusText.Text = "Processing and saving a copy…";
             byte[] output = await Task.Run(() => _imageService.ConvertToBytes(_selectedImagePath, options, extension, keepTransparency, icoSizes));
             string savedPath = _imageService.SaveToUserImages(_saveDirectory, baseName + extension, output);
+            if (_location == ImageBrowserLocation.UserImages)
+                await RefreshEntriesAsync();
             StatusText.Text = $"Saved copy: {savedPath}";
         }
         catch (Exception ex) { StatusText.Text = $"Save failed: {ex.Message}"; }

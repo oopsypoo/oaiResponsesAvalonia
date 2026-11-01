@@ -9,57 +9,67 @@
         MinHeight="480"
         WindowStartupLocation="CenterOwner">
     <Grid RowDefinitions="Auto,*,Auto" Margin="10" RowSpacing="8">
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,180,150,Auto,*,Auto,Auto,Auto" ColumnSpacing="8" VerticalAlignment="Center">
-            <TextBlock Grid.Column="0" Text="Browse:" VerticalAlignment="Center" />
-            <ComboBox x:Name="LocationPicker" Grid.Column="1" SelectedIndex="0" SelectionChanged="LocationPicker_SelectionChanged">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,180,150" ColumnSpacing="8" VerticalAlignment="Center">
+            <Menu Grid.Column="0" VerticalAlignment="Center">
+                <MenuItem Header="_File">
+                    <MenuItem Header="Import…" Click="ImportButton_Click" />
+                    <MenuItem Header="Refresh" Click="RefreshMenuItem_Click" />
+                    <Separator />
+                    <MenuItem Header="Exit" Click="ExitMenuItem_Click" />
+                </MenuItem>
+                <MenuItem Header="_Edit">
+                    <MenuItem x:Name="NewFolderMenuItem" Header="New Folder…" Click="NewFolderButton_Click" />
+                    <Separator />
+                    <MenuItem x:Name="DeleteFileMenuItem" Header="Delete File" IsEnabled="False" Click="DeleteFileMenuItem_Click" />
+                    <MenuItem x:Name="DeleteFolderMenuItem" Header="Delete Folder" IsEnabled="False" Click="DeleteFolderMenuItem_Click" />
+                </MenuItem>
+            </Menu>
+            <TextBlock Grid.Column="1" Text="Browse:" VerticalAlignment="Center" />
+            <ComboBox x:Name="LocationPicker" Grid.Column="2" SelectedIndex="0" SelectionChanged="LocationPicker_SelectionChanged">
                 <ComboBoxItem Content="Application Images" />
                 <ComboBoxItem Content="User Images" />
             </ComboBox>
-            <ComboBox x:Name="CategoryPicker" Grid.Column="2" SelectedIndex="0" SelectionChanged="CategoryPicker_SelectionChanged">
+            <ComboBox x:Name="CategoryPicker" Grid.Column="3" SelectedIndex="0" SelectionChanged="CategoryPicker_SelectionChanged">
                 <ComboBoxItem Content="Responses (resp_)" Tag="responses" />
                 <ComboBoxItem Content="User-created (user_)" Tag="user" />
                 <ComboBoxItem Content="All images" Tag="all" />
             </ComboBox>
-            <Button x:Name="UpButton" Grid.Column="3" Content="Up" Click="UpButton_Click" />
-            <TextBlock x:Name="CurrentPathText" Grid.Column="4" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <Button x:Name="ImportButton" Grid.Column="5" Content="Import…" Click="ImportButton_Click" />
-            <Button x:Name="NewFolderButton" Grid.Column="6" Content="New folder…" Click="NewFolderButton_Click" />
-            <Button Grid.Column="7" Content="Refresh" Click="RefreshButton_Click" />
         </Grid>
 
         <Grid x:Name="GalleryPanel" Grid.Row="1" ColumnDefinitions="2*,5,3*" ColumnSpacing="0">
-            <ListBox x:Name="EntriesList" Grid.Column="0" SelectionChanged="EntriesList_SelectionChanged" DoubleTapped="EntriesList_DoubleTapped">
-                <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="local:ImageGalleryItem">
-                        <Border Padding="6" Margin="2" BorderThickness="0,0,0,1" BorderBrush="#33000000">
-                            <Grid ColumnDefinitions="30,88,*" ColumnSpacing="8" MinHeight="66">
-                                <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="20" VerticalAlignment="Center" HorizontalAlignment="Center" />
-                                <Image Grid.Column="1" Source="{Binding Thumbnail}" Width="84" Height="60" Stretch="Uniform" VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="3">
-                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Details}" Opacity="0.75" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+            <Grid Grid.Column="0" RowDefinitions="Auto,*" RowSpacing="6">
+                <Button x:Name="UpButton" Grid.Row="0" Content="Up" HorizontalAlignment="Stretch" Click="UpButton_Click" />
+                <ListBox x:Name="EntriesList" Grid.Row="1" SelectionChanged="EntriesList_SelectionChanged" DoubleTapped="EntriesList_DoubleTapped">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:ImageGalleryItem">
+                            <Border Padding="6" Margin="2" BorderThickness="0,0,0,1" BorderBrush="#33000000">
+                                <Grid ColumnDefinitions="30,88,*" ColumnSpacing="8" MinHeight="66">
+                                    <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="20" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                    <Image Grid.Column="1" Source="{Binding Thumbnail}" Width="84" Height="60" Stretch="Uniform" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="3">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Details}" Opacity="0.75" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
             <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />
             <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto" Margin="12,0,0,0" RowSpacing="8">
                 <Border Grid.Row="0" Background="#181818" CornerRadius="4" Padding="8">
                     <Image x:Name="PreviewImage" Stretch="Uniform" />
                 </Border>
                 <TextBlock x:Name="PreviewDetailsText" Grid.Row="1" Text="Select an image to preview it." TextWrapping="Wrap" />
-                <Button x:Name="EditButton" Grid.Row="2" Content="Edit / Save As…" HorizontalAlignment="Right" IsEnabled="False" Click="EditButton_Click" />
+                <Grid Grid.Row="2">
+                    <Button x:Name="EditButton" HorizontalAlignment="Right" Content="Edit / Save As…" IsEnabled="False" Click="EditButton_Click" />
+                </Grid>
             </Grid>
         </Grid>
 
-        <Grid x:Name="EditorPanel" Grid.Row="1" IsVisible="False" ColumnDefinitions="3*,5,2*">
-            <Border Grid.Column="0" Background="#181818" CornerRadius="4" Padding="8">
-                <Image x:Name="EditorPreviewImage" Stretch="Uniform" />
-            </Border>
-            <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />
-            <ScrollViewer Grid.Column="2" Margin="12,0,0,0" VerticalScrollBarVisibility="Auto">
+        <Grid x:Name="EditorPanel" Grid.Row="1" IsVisible="False" ColumnDefinitions="2*,5,3*">
+            <ScrollViewer Grid.Column="0" Margin="0,0,12,0" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="8">
                     <Button Content="← Back to gallery" HorizontalAlignment="Left" Click="BackButton_Click" />
                     <TextBlock x:Name="EditorImageTitle" FontWeight="Bold" TextWrapping="Wrap" />
@@ -107,6 +117,10 @@
                     <Button x:Name="SaveEditedButton" Content="Save As" Click="SaveEditedButton_Click" />
                 </StackPanel>
             </ScrollViewer>
+            <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />
+            <Border Grid.Column="2" Background="#181818" CornerRadius="4" Padding="8">
+                <Image x:Name="EditorPreviewImage" Stretch="Uniform" />
+            </Border>
         </Grid>
 
         <TextBlock x:Name="StatusText" Grid.Row="2" Text="Ready" TextWrapping="Wrap" />

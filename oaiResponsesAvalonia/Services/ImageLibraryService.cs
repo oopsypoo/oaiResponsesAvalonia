@@ -217,6 +217,31 @@ public sealed class ImageLibraryService
         return created;
     }
 
+    public void DeleteUserFile(string filePath)
+    {
+        string fullPath = Path.GetFullPath(filePath);
+        EnsureStrictlyWithinRoot(_userImagesRoot, fullPath);
+        EnsureNoReparsePointsBetween(_userImagesRoot, fullPath);
+        if (Directory.Exists(fullPath) || !File.Exists(fullPath))
+            throw new FileNotFoundException("The selected user image was not found.", fullPath);
+        if (!SupportedExtensions.Contains(Path.GetExtension(fullPath)))
+            throw new NotSupportedException("Only supported image files can be deleted from the gallery.");
+
+        File.Delete(fullPath);
+    }
+
+    public void DeleteUserFolder(string directoryPath)
+    {
+        string fullPath = Path.GetFullPath(directoryPath);
+        EnsureStrictlyWithinRoot(_userImagesRoot, fullPath);
+        EnsureNoReparsePointsBetween(_userImagesRoot, fullPath);
+        if (!Directory.Exists(fullPath))
+            throw new DirectoryNotFoundException($"Folder not found: {fullPath}");
+
+        EnsureTreeContainsNoReparsePoints(fullPath);
+        Directory.Delete(fullPath, recursive: true);
+    }
+
     public string GetSafeCurrentDirectory(ImageBrowserLocation location, string directory) =>
         RequireDirectoryWithinRoot(GetRoot(location), directory);
 
@@ -418,6 +443,47 @@ public sealed class ImageLibraryService
         if (!string.Equals(fullRoot, fullDirectory, PathComparison) && IsReparsePoint(fullDirectory))
             throw new UnauthorizedAccessException("Linked folders are not browsable from the image gallery.");
         return fullDirectory;
+    }
+
+    private static void EnsureStrictlyWithinRoot(string root, string path)
+    {
+        EnsureWithinRoot(root, path);
+        if (string.Equals(Path.GetFullPath(root), Path.GetFullPath(path), PathComparison))
+            throw new UnauthorizedAccessException("The User Images root cannot be deleted.");
+    }
+
+    private static void EnsureNoReparsePointsBetween(string root, string path)
+    {
+        string fullRoot = Path.GetFullPath(root);
+        string current = Path.GetFullPath(path);
+        EnsureWithinRoot(fullRoot, current);
+        if (IsReparsePoint(fullRoot))
+            throw new UnauthorizedAccessException("Linked folders cannot be deleted from the gallery.");
+
+        while (!string.Equals(current, fullRoot, PathComparison))
+        {
+            if (File.Exists(current) || Directory.Exists(current))
+            {
+                if (IsReparsePoint(current))
+                    throw new UnauthorizedAccessException("Linked files and folders cannot be deleted from the gallery.");
+            }
+
+            string? parent = Path.GetDirectoryName(current);
+            if (parent is null || string.Equals(parent, current, PathComparison))
+                break;
+            current = parent;
+        }
+    }
+
+    private static void EnsureTreeContainsNoReparsePoints(string directory)
+    {
+        foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
+        {
+            if (IsReparsePoint(entry))
+                throw new UnauthorizedAccessException("Folders containing linked files or folders cannot be deleted.");
+            if (Directory.Exists(entry))
+                EnsureTreeContainsNoReparsePoints(entry);
+        }
     }
 
     private static void EnsureWithinRoot(string root, string path)

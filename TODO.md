@@ -11,6 +11,7 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 
 * \[ ] Review API requests, responses, and supported features against current official Responses API information; update the application and tests where needed.
 * \[ ] Make API compatibility easier to maintain by keeping API behavior clear, testable, and separate from presentation code.
+* \[ ] Remove OpenAIs web-tool and make a local tool/function (save some tokens I'm guessing)
 
 ## Terminal and developer tools
 
@@ -27,8 +28,7 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * \[x] Developer Tools activity window: cannot open and see the specific activity (sometimes) on platform Windows 11
 * \[ ] Add the future `img` terminal context using the shared image service and the same managed image-folder boundaries as Tools → Images.
 * \[ ] Evaluate creating animated image formats (for example, GIF or animated WebP) from multiple still images, including frame timing and format behavior.
-* \[x] The folder 'Images' is actually not just images. It's documents; since everything that is in a conversation
-ends up here. 'Logs' is no longer used, and maybe it should be renamed to docs or 'other docs'. Or just removed.
+* \[x] The folder 'Images' is actually not just images. It's documents; since everything that is in a conversation ends up here. 'Logs' is no longer used, and maybe it should be renamed to docs or 'other docs'. Or just removed.
 
 ## Release and documentation
 

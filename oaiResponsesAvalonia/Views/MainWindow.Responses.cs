@@ -1,4 +1,4 @@
-﻿using Markdig;
+using Markdig;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -2389,6 +2389,9 @@ The assistant wants to replace text in an existing file.
                 await _responsesAssetServer.DisposeAsync();
                 _responsesAssetServer = null;
             }
+
+            if (_credentialService is IDisposable disposableCredentialService)
+                disposableCredentialService.Dispose();
         }
         private void ResponsesWebView_EnvironmentRequested(object? sender, WebViewEnvironmentRequestedEventArgs e)
         {

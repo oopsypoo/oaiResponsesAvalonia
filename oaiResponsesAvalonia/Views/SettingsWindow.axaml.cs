@@ -10,18 +10,87 @@ namespace oaiResponsesAvalonia.Views
 {
     public partial class SettingsWindow : Window
     {
+        private const string GoogleSafeBrowsingCredentialId = "GoogleSafeBrowsing.ApiKey";
         private readonly IDialogService _dialogs = new AvaloniaDialogService();
+        private readonly ICredentialService _credentialService;
+        private readonly bool _ownsCredentialService;
         public AppSettings Settings { get; }
 
-        public SettingsWindow() : this(new AppSettings())
+        public SettingsWindow() : this(new AppSettings(), new KtsuCredentialService(), ownsCredentialService: true)
         {
         }
 
-        public SettingsWindow(AppSettings settings)
+        public SettingsWindow(AppSettings settings, ICredentialService credentialService)
+            : this(settings, credentialService, ownsCredentialService: false)
+        {
+        }
+
+        private SettingsWindow(AppSettings settings, ICredentialService credentialService, bool ownsCredentialService)
         {
             InitializeComponent();
             Settings = settings;
+            _credentialService = credentialService;
+            _ownsCredentialService = ownsCredentialService;
             DataContext = settings;
+            Opened += async (_, _) => await RefreshGoogleCredentialStatusAsync();
+            Closed += (_, _) =>
+            {
+                if (_ownsCredentialService && _credentialService is IDisposable disposable)
+                    disposable.Dispose();
+            };
+        }
+
+        private async Task RefreshGoogleCredentialStatusAsync()
+        {
+            try
+            {
+                bool exists = await _credentialService.ExistsAsync(GoogleSafeBrowsingCredentialId);
+                GoogleSafeBrowsingKeyStatusText.Text = exists
+                    ? "API key is stored in the operating system credential store."
+                    : "No API key is stored.";
+                RemoveGoogleSafeBrowsingKeyButton.IsEnabled = exists;
+            }
+            catch (Exception ex)
+            {
+                GoogleSafeBrowsingKeyStatusText.Text = $"Secure credential storage is unavailable: {ex.Message}";
+                RemoveGoogleSafeBrowsingKeyButton.IsEnabled = false;
+            }
+        }
+
+        private async void SaveGoogleSafeBrowsingKey_Click(object? sender, RoutedEventArgs e)
+        {
+            string secret = GoogleSafeBrowsingKeyTextBox.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(secret))
+            {
+                GoogleSafeBrowsingKeyStatusText.Text = "Enter an API key before saving.";
+                return;
+            }
+
+            try
+            {
+                await _credentialService.SaveAsync(GoogleSafeBrowsingCredentialId, secret);
+                GoogleSafeBrowsingKeyTextBox.Clear();
+                GoogleSafeBrowsingKeyStatusText.Text = "API key saved in the operating system credential store.";
+                RemoveGoogleSafeBrowsingKeyButton.IsEnabled = true;
+            }
+            catch (Exception ex)
+            {
+                GoogleSafeBrowsingKeyStatusText.Text = $"Unable to save the API key: {ex.Message}";
+            }
+        }
+
+        private async void RemoveGoogleSafeBrowsingKey_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _credentialService.DeleteAsync(GoogleSafeBrowsingCredentialId);
+                GoogleSafeBrowsingKeyTextBox.Clear();
+                await RefreshGoogleCredentialStatusAsync();
+            }
+            catch (Exception ex)
+            {
+                GoogleSafeBrowsingKeyStatusText.Text = $"Unable to remove the API key: {ex.Message}";
+            }
         }
 
         private async void BrowseAppRoot_Click(object sender, RoutedEventArgs e)

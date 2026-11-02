@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private string savepath_files = string.Empty;
     private string savepath_saved_images = string.Empty;
     private readonly IDialogService _dialogs = new AvaloniaDialogService();
+    private readonly ICredentialService _credentialService = new KtsuCredentialService();
     private AvailableModels? _availableModelsWindow;
     private int? _activeResponsesSessionId;
     private DispatcherTimer? _statusEllipsisTimer;
@@ -536,7 +537,7 @@ public partial class MainWindow : Window
 
     private async void menuSettings_Click(object? sender, RoutedEventArgs e)
     {
-        var window = new SettingsWindow(_settings);
+        var window = new SettingsWindow(_settings, _credentialService);
         if (await _dialogs.ShowModalForResultAsync(this, window) == true)
         {
             EnsureSavePaths();

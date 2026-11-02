@@ -2,4 +2,5 @@
   <Project Path="oaiResponsesAvalonia/oaiResponsesAvalonia.csproj">
     <Deploy Solution="Release|*" />
   </Project>
+  <Project Path="CredentialCachePlayground/CredentialCachePlayground.csproj" />
 </Solution>

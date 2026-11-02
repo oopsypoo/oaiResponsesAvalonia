@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CredentialCachePlayground.ViewModels"
+        x:Class="CredentialCachePlayground.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="CredentialCache Playground"
+        Width="620"
+        Height="560"
+        MinWidth="520"
+        MinHeight="500">
+  <ScrollViewer>
+    <StackPanel Margin="24" Spacing="14">
+      <TextBlock FontSize="24" FontWeight="Bold" Text="CredentialCache test" />
+      <TextBlock TextWrapping="Wrap"
+                 Text="This test app stores values using ktsu.CredentialCache and the operating system's credential store. Use a disposable test value. It is not sent anywhere." />
+
+      <Border Padding="12" CornerRadius="6" Background="#1A808080">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Credential ID" />
+          <TextBox Text="{Binding CredentialId}"
+                   PlaceholderText="A stable ID for this test credential" />
+          <TextBlock FontSize="12" TextWrapping="Wrap"
+                     Text="The ID maps consistently to the same keyring entry. Use the same ID after restarting to test persistence." />
+        </StackPanel>
+      </Border>
+
+      <StackPanel Spacing="6">
+        <TextBlock FontWeight="SemiBold" Text="Test credential value" />
+        <TextBox PasswordChar="●"
+                 Text="{Binding Secret}"
+                 PlaceholderText="Enter a disposable test value" />
+        <TextBlock FontSize="12" TextWrapping="Wrap"
+                   Text="The value is masked. Retrieved values are also placed in this masked field; the status never displays the secret." />
+      </StackPanel>
+
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <Button Content="Save / replace" Command="{Binding SaveCommand}" />
+        <Button Content="Retrieve" Command="{Binding RetrieveCommand}" />
+        <Button Content="Retrieve via fresh cache" Command="{Binding RetrieveFromFreshCacheCommand}" />
+        <Button Content="Check exists" Command="{Binding CheckExistsCommand}" />
+        <Button Content="Delete" Command="{Binding DeleteCommand}" />
+      </WrapPanel>
+
+      <Border Padding="12" CornerRadius="6" BorderThickness="1" BorderBrush="#66808080">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Status" />
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+          <TextBlock FontSize="12" TextWrapping="Wrap"
+                     Text="Fresh-cache retrieval discards the in-process cache and loads through a new CredentialCache instance, helping verify persistence in the OS keyring." />
+        </StackPanel>
+      </Border>
+
+      <TextBlock FontSize="12" TextWrapping="Wrap"
+                 Text="Linux requires libsecret and an active, unlocked Secret Service (for example GNOME Keyring or KWallet). This app deliberately has no plaintext-file fallback." />
+    </StackPanel>
+  </ScrollViewer>
+</Window>

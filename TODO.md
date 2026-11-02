@@ -29,6 +29,7 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * \[ ] Add the future `img` terminal context using the shared image service and the same managed image-folder boundaries as Tools → Images.
 * \[ ] Evaluate creating animated image formats (for example, GIF or animated WebP) from multiple still images, including frame timing and format behavior.
 * \[x] The folder 'Images' is actually not just images. It's documents; since everything that is in a conversation ends up here. 'Logs' is no longer used, and maybe it should be renamed to docs or 'other docs'. Or just removed.
+* \[ ] Open activity window should not be hidden behind the "Developers Tools". It should show all activity for all/everything.
 
 ## Release and documentation
 

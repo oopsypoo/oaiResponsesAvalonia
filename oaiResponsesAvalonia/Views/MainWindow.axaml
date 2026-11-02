@@ -647,6 +647,7 @@
                                     <ComboBoxItem Content="medium" Tag="medium"/>
                                     <ComboBoxItem Content="high" Tag="high"/>
                                     <ComboBoxItem Content="xhigh" Tag="xhigh"/>
+                                    <ComboBoxItem Content="max" Tag="max"/>
                                 </ComboBox>
 
                                 <!-- Tools -->

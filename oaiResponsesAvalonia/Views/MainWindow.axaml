@@ -213,6 +213,7 @@
                 <MenuItem Header="MCP servers" Name="menuMcpServers" IsEnabled="True" Click="menuMcpServers_Click" />
                 <MenuItem Header="Terminal" Name="menuTerminal" IsEnabled="True" Click="OpenTerminalWindow_Click" />
                 <MenuItem Header="Images" Name="menuImages" IsEnabled="True" Click="OpenImagesWindow_Click" />
+                <MenuItem Header="Custom Web Search - experimental" Name="menuCustomWebSearchExperimental" IsEnabled="True" Click="OpenCustomWebSearchExperimentalWindow_Click" />
             </MenuItem>
             <MenuItem Header="Help" Name="menuHelp" IsEnabled="True">
                 <MenuItem Header="About" Name="menuAbout" IsEnabled="True" Click="menuAbout_Click"/>
@@ -490,6 +491,13 @@
                                             Margin="8,0,0,0"
                                             Padding="8,4"
                                             VerticalAlignment="Center"
+                                            Content="Search Research Trail"
+                                            IsVisible="{Binding #RootWindow.ResponsesState.UseCustomWebSearch}"
+                                            Click="OpenCustomSearchResearchWindow_Click" />
+                                    <Button DockPanel.Dock="Right"
+                                            Margin="8,0,0,0"
+                                            Padding="8,4"
+                                            VerticalAlignment="Center"
                                             Content="Open Activity Window"
                                             IsVisible="{Binding #RootWindow.ResponsesState.UseDeveloperTools}"
                                             Click="OpenDeveloperActivityWindow_Click" />
@@ -662,6 +670,7 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
                                     <CheckBox Grid.Row="0"
@@ -709,8 +718,48 @@
                                         </Grid>
                                     </Border>
 
-                                    <!-- Image generation -->
+                                    <!-- Custom web search -->
                                     <Border Grid.Row="2"
+                                            IsVisible="{Binding #RootWindow.ResponsesState.IsCustomWebSearchCardVisible}"
+                                            Margin="0,0,0,8"
+                                            Padding="6"
+                                            BorderBrush="#DDDDDD"
+                                            BorderThickness="1"
+                                            Background="#FFF8F8F8">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+                                            <CheckBox Grid.Row="0"
+                                                      Content="Custom Web Search"
+                                                      IsChecked="{Binding #RootWindow.ResponsesState.UseCustomWebSearch, Mode=TwoWay}"/>
+                                            <Grid Grid.Row="1"
+                                                  Margin="16,6,0,0"
+                                                  IsVisible="{Binding #RootWindow.ResponsesState.IsCustomWebSearchOptionsEnabled}">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Grid.Row="0" Text="Search Context Size"/>
+                                                <ComboBox Grid.Row="1"
+                                                          SelectedValueBinding="{Binding Tag}"
+                                                          SelectedValue="{Binding #RootWindow.ResponsesState.CustomSearchContextSize, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="low" Tag="low"/>
+                                                    <ComboBoxItem Content="medium" Tag="medium"/>
+                                                    <ComboBoxItem Content="high" Tag="high"/>
+                                                </ComboBox>
+                                                <TextBlock Grid.Row="2"
+                                                           Margin="0,4,0,0"
+                                                           FontSize="11"
+                                                           Text="Uses the selected custom search and reputation providers in Settings."/>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Image generation -->
+                                    <Border Grid.Row="3"
                                             Margin="0,0,0,8"
                                             Padding="6"
                                             BorderBrush="#DDDDDD"
@@ -854,7 +903,7 @@
                                             </Grid>
                                         </Grid>
                                     </Border>
-                                    <Border Grid.Row="3"
+                                    <Border Grid.Row="4"
                                             Margin="0,0,0,8"
                                             Padding="6"
                                             BorderBrush="#DDDDDD"
@@ -870,7 +919,7 @@
                                                        Text="{Binding #RootWindow.ResponsesState.McpSummary}" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Grid.Row="4"
+                                    <Border Grid.Row="5"
                                             Margin="0,0,0,8"
                                             Padding="6"
                                             BorderBrush="#DDDDDD"

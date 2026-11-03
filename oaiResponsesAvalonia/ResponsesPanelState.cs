@@ -1,4 +1,4 @@
-﻿using oaiResponsesAvalonia.Data;
+using oaiResponsesAvalonia.Data;
 using System;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -8,6 +8,22 @@ namespace oaiResponsesAvalonia
     public class ResponsesPanelState : ObservableObject
     {
         public bool IsWebSearchOptionsEnabled => UseWebSearch;
+        public bool IsCustomWebSearchOptionsEnabled => UseCustomWebSearch;
+        private bool _isCustomWebSearchFeatureEnabled;
+        public bool IsCustomWebSearchFeatureEnabled
+        {
+            get => _isCustomWebSearchFeatureEnabled;
+            set
+            {
+                if (SetProperty(ref _isCustomWebSearchFeatureEnabled, value))
+                {
+                    OnPropertyChanged(nameof(IsCustomWebSearchCardVisible));
+                    if (!value)
+                        UseCustomWebSearch = false;
+                }
+            }
+        }
+        public bool IsCustomWebSearchCardVisible => IsCustomWebSearchFeatureEnabled;
         public bool IsImageGenerationOptionsEnabled => UseImageGeneration;
         public bool IsImageGenerationOptionsVisible => UseImageGeneration;
 
@@ -54,6 +70,24 @@ namespace oaiResponsesAvalonia
                 if (SetProperty(ref _useWebSearch, value))
                     OnPropertyChanged(nameof(IsWebSearchOptionsEnabled));
             }
+        }
+
+        private bool _useCustomWebSearch;
+        public bool UseCustomWebSearch
+        {
+            get => _useCustomWebSearch;
+            set
+            {
+                if (SetProperty(ref _useCustomWebSearch, value))
+                    OnPropertyChanged(nameof(IsCustomWebSearchOptionsEnabled));
+            }
+        }
+
+        private string _customSearchContextSize = "medium";
+        public string CustomSearchContextSize
+        {
+            get => _customSearchContextSize;
+            set => SetProperty(ref _customSearchContextSize, string.IsNullOrWhiteSpace(value) ? "medium" : value);
         }
 
         private bool _useImageGeneration;

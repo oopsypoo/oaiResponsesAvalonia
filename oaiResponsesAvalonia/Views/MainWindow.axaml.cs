@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private string savepath_files = string.Empty;
     private string savepath_saved_images = string.Empty;
     private readonly IDialogService _dialogs = new AvaloniaDialogService();
+    private readonly ICredentialService _credentialService = new KtsuCredentialService();
     private AvailableModels? _availableModelsWindow;
     private int? _activeResponsesSessionId;
     private DispatcherTimer? _statusEllipsisTimer;
@@ -45,6 +46,7 @@ public partial class MainWindow : Window
     private readonly MediaStorageService _mediaStorageService;
     private readonly SessionCleanupService _sessionCleanupService;
     private DeveloperToolsActivityWindow? _developerToolsActivityWindow;
+    private CustomSearchResearchWindow? _customSearchResearchWindow;
     private TerminalWindow? _terminalWindow;
     private ImageGalleryWindow? _imageGalleryWindow;
 
@@ -59,6 +61,7 @@ public partial class MainWindow : Window
     public ObservableCollection<MediaFile> ResponsePreviewImages { get; } = new();
     public ObservableCollection<DeveloperToolCallLogItem> DeveloperToolCallLogs { get; } = new();
     public ObservableCollection<DeveloperToolActivityItem> DeveloperToolActivities { get; } = new();
+    public ObservableCollection<CustomSearchResearchTrail> CustomSearchResearchTrailEntries { get; } = new();
     public LogsPanelState LogsState { get; } = new();
     public ResponsesPanelState ResponsesState { get; } = new();
 
@@ -74,6 +77,10 @@ public partial class MainWindow : Window
         _historyService = new HistoryService(_mediaStorageService);
         _sessionCleanupService = new SessionCleanupService(_historyService, _mediaStorageService);
         _settings = AppSettings.LoadSettings();
+        ResponsesState.CustomSearchContextSize = string.IsNullOrWhiteSpace(_settings.CustomSearchContextSize)
+            ? "medium"
+            : _settings.CustomSearchContextSize;
+        ResponsesState.IsCustomWebSearchFeatureEnabled = _settings.CustomWebSearchExperimentalEnabled;
 
         LogsState.PropertyChanged += LogsState_PropertyChanged;
         ResponsesState.PropertyChanged += ResponsesState_PropertyChanged;
@@ -96,6 +103,34 @@ public partial class MainWindow : Window
             _developerToolsActivityWindow.Show(this);
         else
             _developerToolsActivityWindow.Activate();
+    }
+
+    private void OpenCustomSearchResearchWindow_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_customSearchResearchWindow is null)
+        {
+            _customSearchResearchWindow = new CustomSearchResearchWindow(CustomSearchResearchTrailEntries);
+            _customSearchResearchWindow.Closed += (_, _) => _customSearchResearchWindow = null;
+            _customSearchResearchWindow.Show(this);
+            return;
+        }
+
+        if (!_customSearchResearchWindow.IsVisible)
+            _customSearchResearchWindow.Show(this);
+        else
+            _customSearchResearchWindow.Activate();
+    }
+
+    private async void OpenCustomWebSearchExperimentalWindow_Click(object? sender, RoutedEventArgs e)
+    {
+        var window = new CustomWebSearchExperimentalWindow(_settings, _credentialService);
+        if (await _dialogs.ShowModalForResultAsync(this, window) == true)
+        {
+            _settings = window.Settings;
+            ResponsesState.IsCustomWebSearchFeatureEnabled = _settings.CustomWebSearchExperimentalEnabled;
+            ApplyWebSearchSettingsToClient();
+            ApplyResponsesStateToClient();
+        }
     }
 
     private void OpenTerminalWindow_Click(object? sender, RoutedEventArgs e)
@@ -261,11 +296,25 @@ public partial class MainWindow : Window
         if (_responsesClient is null || _isApplyingResponsesSettings)
             return;
 
+        if (e.PropertyName == nameof(ResponsesPanelState.CustomSearchContextSize))
+        {
+            _settings.CustomSearchContextSize = ResponsesState.CustomSearchContextSize;
+            try
+            {
+                AppSettings.SaveSettings(_settings);
+            }
+            catch (Exception ex)
+            {
+                _appStatus.Set($"Could not save custom search settings: {ex.Message}");
+            }
+        }
+
         switch (e.PropertyName)
         {
             case nameof(ResponsesPanelState.SelectedModel):
             case nameof(ResponsesPanelState.SelectedReasoning):
             case nameof(ResponsesPanelState.SearchContextSize):
+            case nameof(ResponsesPanelState.CustomSearchContextSize):
             case nameof(ResponsesPanelState.ImageGenModel):
             case nameof(ResponsesPanelState.ImageGenQuality):
             case nameof(ResponsesPanelState.ImageGenSize):
@@ -275,6 +324,8 @@ public partial class MainWindow : Window
             case nameof(ResponsesPanelState.ImageGenBackground):
             case nameof(ResponsesPanelState.UseTextTool):
             case nameof(ResponsesPanelState.UseWebSearch):
+            case nameof(ResponsesPanelState.UseCustomWebSearch):
+            case nameof(ResponsesPanelState.IsCustomWebSearchFeatureEnabled):
             case nameof(ResponsesPanelState.UseImageGeneration):
                 ValidateResponsesState();
                 NormalizeResponsesToolsState();
@@ -539,6 +590,7 @@ public partial class MainWindow : Window
         var window = new SettingsWindow(_settings);
         if (await _dialogs.ShowModalForResultAsync(this, window) == true)
         {
+            ApplyWebSearchSettingsToClient();
             EnsureSavePaths();
             _imageGalleryWindow?.UpdateRoots(savepath_images, savepath_saved_images);
         }

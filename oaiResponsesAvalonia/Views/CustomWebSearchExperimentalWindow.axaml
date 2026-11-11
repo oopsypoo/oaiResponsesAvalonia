@@ -1,0 +1,89 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="oaiResponsesAvalonia.Views.CustomWebSearchExperimentalWindow"
+        Width="700"
+        Height="760"
+        MinWidth="560"
+        MinHeight="560"
+        Title="Custom Web-search - experimental">
+  <Grid Margin="18" RowDefinitions="*,Auto">
+    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="12">
+        <TextBlock Text="Experimental feature" FontSize="20" FontWeight="Bold"/>
+        <TextBlock Text="Custom Web Search is separate from OpenAI Web Search. Enable it here before its controls appear in Responses Options."
+                   TextWrapping="Wrap"/>
+        <CheckBox x:Name="EnableCustomWebSearchCheckBox"
+                  Content="Enable Custom Web Search in Responses (experimental)"/>
+
+        <Border Padding="12" BorderThickness="1" CornerRadius="6">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Providers" FontWeight="Bold"/>
+            <TextBlock Text="The search provider finds candidate pages. The reputation provider checks their URLs before the custom tool fetches pages."
+                       TextWrapping="Wrap"/>
+            <TextBlock Text="Custom search provider"/>
+            <ComboBox x:Name="CustomSearchProviderComboBox">
+              <ComboBoxItem Content="Brave Search API" Tag="brave"/>
+            </ComboBox>
+            <TextBox x:Name="BraveSearchKeyTextBox" PasswordChar="●"
+                     PlaceholderText="Brave Search API key (stored securely)"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Save Brave key" Click="SaveBraveSearchKey_Click"/>
+              <Button x:Name="RemoveBraveSearchKeyButton" Content="Remove Brave key"
+                      Click="RemoveBraveSearchKey_Click" IsEnabled="False"/>
+            </StackPanel>
+            <TextBlock x:Name="BraveSearchKeyStatusText" Text="Checking credential store…"
+                       TextWrapping="Wrap"/>
+            <TextBlock Text="Reputation provider"/>
+            <ComboBox x:Name="ReputationProviderComboBox">
+              <ComboBoxItem Content="Google Safe Browsing v5" Tag="google-safe-browsing"/>
+              <ComboBoxItem Content="Disabled" Tag="disabled"/>
+            </ComboBox>
+            <TextBlock Text="Google Safe Browsing API key" FontWeight="SemiBold"/>
+            <TextBlock Text="The key is stored in the operating system credential store, not in the settings file. URLs checked with Google are sent to Google Safe Browsing."
+                       TextWrapping="Wrap"/>
+            <TextBox x:Name="GoogleSafeBrowsingKeyTextBox" PasswordChar="●"
+                     PlaceholderText="Paste API key to save or replace"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Save Google key" Click="SaveGoogleSafeBrowsingKey_Click"/>
+              <Button x:Name="RemoveGoogleSafeBrowsingKeyButton" Content="Remove Google key"
+                      Click="RemoveGoogleSafeBrowsingKey_Click" IsEnabled="False"/>
+            </StackPanel>
+            <TextBlock x:Name="GoogleSafeBrowsingKeyStatusText" Text="Checking credential store…"
+                       TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+
+        <Border Padding="12" BorderThickness="1" CornerRadius="6">
+          <StackPanel Spacing="8">
+            <TextBlock Text="AI search context" FontWeight="Bold"/>
+            <TextBlock Text="The current local date, time, and time zone are added automatically at request time. Set a country/region and language to give the AI explicit search context. These settings do not change the search provider's query parameters."
+                       TextWrapping="Wrap"/>
+            <TextBlock Text="Country / region (optional, e.g. NO)"/>
+            <TextBox x:Name="SearchCountryTextBox" PlaceholderText="NO"/>
+            <TextBlock Text="Language (optional, e.g. nb)"/>
+            <TextBox x:Name="SearchLanguageTextBox" PlaceholderText="nb"/>
+            <TextBlock Text="Additional instructions (optional)"/>
+            <TextBox x:Name="SearchInstructionsTextBox" AcceptsReturn="True"
+                     TextWrapping="Wrap" MinHeight="100"
+                     PlaceholderText="Add guidance for summarizing and citing custom-search results"/>
+          </StackPanel>
+        </Border>
+
+        <Border Padding="12" BorderThickness="1" CornerRadius="6">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Provider test" FontWeight="Bold"/>
+            <TextBox x:Name="TestSearchQueryTextBox" Text="Norwegian news today"
+                     PlaceholderText="Test query"/>
+            <Button Content="Test Search + Reputation" Click="TestSearchPipeline_Click"
+                    HorizontalAlignment="Left"/>
+            <TextBlock x:Name="SearchPipelineTestStatusText" TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+      <Button Content="Save" Click="Save_Click" IsDefault="True" MinWidth="90"/>
+      <Button Content="Cancel" Click="Cancel_Click" IsCancel="True" MinWidth="90"/>
+    </StackPanel>
+  </Grid>
+</Window>

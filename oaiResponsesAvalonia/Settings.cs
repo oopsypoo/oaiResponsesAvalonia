@@ -15,6 +15,13 @@ namespace oaiResponsesAvalonia
         public string SavedImagesFolder { get; set; } = "user";
         public string ResponsesMarkdownTheme { get; set; } = "github.min.css";
         public string ResponsesPageTheme { get; set; } = "github-light-page.css";
+        public string CustomSearchProvider { get; set; } = "brave";
+        public string ReputationProvider { get; set; } = "google-safe-browsing";
+        public string CustomSearchContextSize { get; set; } = "medium";
+        public bool CustomWebSearchExperimentalEnabled { get; set; }
+        public string CustomSearchCountry { get; set; } = string.Empty;
+        public string CustomSearchLanguage { get; set; } = string.Empty;
+        public string CustomSearchAdditionalInstructions { get; set; } = string.Empty;
 
         public string GetSavedImagesDirectory(string imagesDirectory)
         {

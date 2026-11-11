@@ -83,9 +83,6 @@ namespace oaiResponsesAvalonia.Views
         private async void BrowseFiles_Click(object sender, RoutedEventArgs e) => await BrowseFolderAsync(FilesTextBox);
         private async void BrowseSavedImages_Click(object sender, RoutedEventArgs e) => await BrowseFolderAsync(SavedImagesFolderTextBox);
 
-        /// <summary>
-        /// Opens a folder browser dialog to select a folder and checks write permission before updating the text box.
-        /// </summary>
         private async Task BrowseFolderAsync(TextBox textBox)
         {
             var folder = await PickFolderAsync("Select the save location", textBox.Text);
@@ -124,12 +121,9 @@ namespace oaiResponsesAvalonia.Views
         private void UpdateSubPathsFromAppRoot()
         {
             var appRoot = AppRootTextBox.Text;
-
-            // If the user clears the Root, we shouldn't try to build subpaths.
             if (string.IsNullOrWhiteSpace(appRoot))
                 return;
 
-            // The path initialization code creates these directories when settings are applied.
             ImagesTextBox.Text = Path.Combine(appRoot, "images");
             FilesTextBox.Text = Path.Combine(appRoot, "files");
         }
@@ -177,9 +171,6 @@ namespace oaiResponsesAvalonia.Views
             Close(true);
         }
 
-        private void Cancel_Click(object sender, RoutedEventArgs e)
-        {
-            Close(false);
-        }
+        private void Cancel_Click(object sender, RoutedEventArgs e) => Close(false);
     }
 }

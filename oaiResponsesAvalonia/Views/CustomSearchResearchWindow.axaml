@@ -1,0 +1,44 @@
+<Window x:Class="oaiResponsesAvalonia.Views.CustomSearchResearchWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:services="using:oaiResponsesAvalonia.Services"
+        x:DataType="x:Object"
+        x:CompileBindings="True"
+        Title="Custom Web Search Research Trail"
+        Width="820"
+        Height="620"
+        MinWidth="520"
+        MinHeight="360"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="12">
+        <TextBlock DockPanel.Dock="Top"
+                   Margin="0,0,0,8"
+                   TextWrapping="Wrap"
+                   Text="Diagnostic trail for custom web searches. API keys are never included. Retrieved page text is not stored here; only provider activity, reputation outcomes, fetched-page URLs, and sources sent to the model are shown." />
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="services:CustomSearchResearchTrail">
+                        <Expander Margin="0,3"
+                                  HorizontalContentAlignment="Stretch">
+                            <Expander.Header>
+                                <StackPanel Spacing="3">
+                                    <TextBlock FontWeight="SemiBold"
+                                               Text="{Binding Header}" />
+                                    <TextBlock Opacity="0.8"
+                                               Text="{Binding Target}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Expander.Header>
+                            <TextBlock Margin="0,8,0,4"
+                                       FontFamily="Monospace"
+                                       Text="{Binding Details}"
+                                       TextWrapping="Wrap" />
+                        </Expander>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

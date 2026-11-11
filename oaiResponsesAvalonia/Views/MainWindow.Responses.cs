@@ -1,4 +1,4 @@
-﻿using Markdig;
+using Markdig;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -190,7 +190,18 @@ namespace oaiResponsesAvalonia.Views
         }
         private async Task InitResponsesControlsAsync()
         {
-            _responsesClient = new Responses(OpenAPIKey);
+            var customSearchService = new CustomWebSearchService(_credentialService);
+            customSearchService.ResearchCompleted += trail => Dispatcher.UIThread.Post(() =>
+            {
+                CustomSearchResearchTrailEntries.Insert(0, trail);
+                while (CustomSearchResearchTrailEntries.Count > 50)
+                    CustomSearchResearchTrailEntries.RemoveAt(CustomSearchResearchTrailEntries.Count - 1);
+            });
+            _responsesClient = new Responses(OpenAPIKey)
+            {
+                CustomWebSearchService = customSearchService
+            };
+            ApplyWebSearchSettingsToClient();
 
             List<string> modelsToUse = AvailableModelsStorage.Load();
 
@@ -225,6 +236,7 @@ namespace oaiResponsesAvalonia.Views
             ResponsesState.SelectedReasoning = "none";
             ResponsesState.UseTextTool = true;
             ResponsesState.UseWebSearch = false;
+            ResponsesState.UseCustomWebSearch = false;
             ResponsesState.UseImageGeneration = false;
             ResponsesState.SearchContextSize = "medium";
             ResponsesState.ImageGenModel = string.Empty;
@@ -1247,6 +1259,7 @@ namespace oaiResponsesAvalonia.Views
             {
                 bool anyNonText =
                     ResponsesState.UseWebSearch ||
+                    (ResponsesState.IsCustomWebSearchFeatureEnabled && ResponsesState.UseCustomWebSearch) ||
                     ResponsesState.UseImageGeneration;
 
                 if (ResponsesState.UseTextTool && anyNonText)
@@ -1262,6 +1275,7 @@ namespace oaiResponsesAvalonia.Views
                 if (ResponsesState.UseTextTool)
                 {
                     ResponsesState.UseWebSearch = false;
+                    ResponsesState.UseCustomWebSearch = false;
                     ResponsesState.UseImageGeneration = false;
                 }
             }
@@ -1270,6 +1284,25 @@ namespace oaiResponsesAvalonia.Views
                 _isApplyingResponsesSettings = false;
             }
         }
+        private void ApplyWebSearchSettingsToClient()
+        {
+            if (_settings is null || _responsesClient is null)
+                return;
+
+            _responsesClient.CustomSearchProvider = string.IsNullOrWhiteSpace(_settings.CustomSearchProvider)
+                ? "brave"
+                : _settings.CustomSearchProvider;
+            _responsesClient.ReputationProvider = string.IsNullOrWhiteSpace(_settings.ReputationProvider)
+                ? "google-safe-browsing"
+                : _settings.ReputationProvider;
+            _responsesClient.CustomWebSearchContextSize = string.IsNullOrWhiteSpace(_settings.CustomSearchContextSize)
+                ? "medium"
+                : _settings.CustomSearchContextSize;
+            _responsesClient.CustomSearchCountry = _settings.CustomSearchCountry ?? string.Empty;
+            _responsesClient.CustomSearchLanguage = _settings.CustomSearchLanguage ?? string.Empty;
+            _responsesClient.CustomSearchAdditionalInstructions = _settings.CustomSearchAdditionalInstructions ?? string.Empty;
+        }
+
         private void ApplyResponsesStateToClient()
         {
             if (_responsesClient == null)
@@ -1278,6 +1311,8 @@ namespace oaiResponsesAvalonia.Views
             _responsesClient.CurrentModel = ResponsesState.SelectedModel;
             _responsesClient.CurrentReasoning = ResponsesState.SelectedReasoning;
             _responsesClient.WebSearchContextSize = ResponsesState.SearchContextSize;
+            _responsesClient.CustomWebSearchContextSize = ResponsesState.CustomSearchContextSize;
+            ApplyWebSearchSettingsToClient();
             _responsesClient.ImageGenModel = ResponsesState.ImageGenModel;
             _responsesClient.ImageGenQuality = ResponsesState.ImageGenQuality;
             _responsesClient.ImageGenSize = ResponsesState.ImageGenSizeForRequest;
@@ -1292,6 +1327,9 @@ namespace oaiResponsesAvalonia.Views
 
             if (ResponsesState.UseWebSearch)
                 _responsesClient.ActiveTools.Add(ResponseToolKeys.WebSearch);
+
+            if (ResponsesState.IsCustomWebSearchFeatureEnabled && ResponsesState.UseCustomWebSearch)
+                _responsesClient.ActiveTools.Add(ResponseToolKeys.CustomWebSearch);
 
             if (ResponsesState.UseImageGeneration)
                 _responsesClient.ActiveTools.Add(ResponseToolKeys.ImageGeneration);
@@ -1541,6 +1579,7 @@ namespace oaiResponsesAvalonia.Views
 
             ResponsesState.UseTextTool = tools.Contains(ResponseToolKeys.Text);
             ResponsesState.UseWebSearch = tools.Contains(ResponseToolKeys.WebSearch);
+            ResponsesState.UseCustomWebSearch = ResponsesState.IsCustomWebSearchFeatureEnabled && tools.Contains(ResponseToolKeys.CustomWebSearch);
             ResponsesState.UseImageGeneration = tools.Contains(ResponseToolKeys.ImageGeneration);
         }
         private void ValidateImageGenerationSettings()
@@ -2389,6 +2428,9 @@ The assistant wants to replace text in an existing file.
                 await _responsesAssetServer.DisposeAsync();
                 _responsesAssetServer = null;
             }
+
+            if (_credentialService is IDisposable disposableCredentialService)
+                disposableCredentialService.Dispose();
         }
         private void ResponsesWebView_EnvironmentRequested(object? sender, WebViewEnvironmentRequestedEventArgs e)
         {

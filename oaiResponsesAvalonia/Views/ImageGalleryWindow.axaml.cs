@@ -38,7 +38,8 @@ public partial class ImageGalleryWindow : Window
     private Point _cropDragImageStart;
     private Rect _cropDragSelectionStart;
     private Point _imageDisplayOrigin;
-    private double _imageDisplayScale;
+    private double _imageDisplayScaleX;
+    private double _imageDisplayScaleY;
     private bool _updatingCropFields;
     private bool _showingProcessedPreview;
     private bool _cropApplied;
@@ -106,8 +107,11 @@ public partial class ImageGalleryWindow : Window
             DisposeThumbnails();
             _entries.Clear();
             EntriesList.SelectedItem = null;
-            _selectedImagePath = null;
-            _selectedPreview = null;
+            if (!EditorPanel.IsVisible)
+            {
+                _selectedImagePath = null;
+                _selectedPreview = null;
+            }
             UpdateMenuAvailability();
             foreach (var item in loaded)
             {
@@ -146,6 +150,7 @@ public partial class ImageGalleryWindow : Window
             return;
 
         bool inUserImages = _location == ImageBrowserLocation.UserImages;
+        SaveAsMenuItem.IsEnabled = EditorPanel.IsVisible && _selectedImagePath is not null;
         NewFolderMenuItem.IsEnabled = inUserImages;
         DeleteFileMenuItem.IsEnabled = inUserImages && EntriesList.SelectedItem is ImageGalleryItem file && !file.IsDirectory;
         DeleteFolderMenuItem.IsEnabled = inUserImages && EntriesList.SelectedItem is ImageGalleryItem folder && folder.IsDirectory;
@@ -196,6 +201,9 @@ public partial class ImageGalleryWindow : Window
     private async void EntriesList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         UpdateMenuAvailability();
+        if (EditorPanel.IsVisible)
+            return;
+
         if (EntriesList.SelectedItem is not ImageGalleryItem item || item.IsDirectory)
         {
             _selectedImagePath = null;
@@ -403,6 +411,31 @@ public partial class ImageGalleryWindow : Window
         Close();
     }
 
+    private async void SaveAsMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!EditorPanel.IsVisible || _selectedImagePath is null || _selectedPreview is null)
+            return;
+
+        try
+        {
+            var dialog = new SaveAsWindow(
+                _imageService,
+                _selectedImagePath,
+                _saveDirectory,
+                Path.GetFileNameWithoutExtension(_selectedImagePath),
+                ReadProcessingOptions(),
+                _selectedPreview.HasTransparency);
+            string? savedPath = await dialog.ShowDialog<string?>(this);
+            if (savedPath is null)
+                return;
+
+            if (_location == ImageBrowserLocation.UserImages)
+                await RefreshEntriesAsync();
+            StatusText.Text = $"Saved copy: {savedPath}";
+        }
+        catch (Exception ex) { StatusText.Text = $"Save failed: {ex.Message}"; }
+    }
+
     private void OpenEditor(ImageGalleryItem item)
     {
         if (_selectedPreview is null || !string.Equals(item.FullPath, _selectedImagePath, StringComparison.Ordinal))
@@ -459,12 +492,15 @@ public partial class ImageGalleryWindow : Window
         if (_selectedPreview is null || CropOverlayCanvas.Bounds.Width <= 0 || CropOverlayCanvas.Bounds.Height <= 0)
             return;
 
-        _imageDisplayScale = Math.Min(CropOverlayCanvas.Bounds.Width / _selectedPreview.Width,
-            CropOverlayCanvas.Bounds.Height / _selectedPreview.Height);
-        double displayedWidth = _selectedPreview.Width * _imageDisplayScale;
-        double displayedHeight = _selectedPreview.Height * _imageDisplayScale;
+        Size bitmapSize = _editorBitmap?.Size ?? new Size(_selectedPreview.Width, _selectedPreview.Height);
+        double bitmapScale = Math.Min(CropOverlayCanvas.Bounds.Width / bitmapSize.Width,
+            CropOverlayCanvas.Bounds.Height / bitmapSize.Height);
+        double displayedWidth = bitmapSize.Width * bitmapScale;
+        double displayedHeight = bitmapSize.Height * bitmapScale;
         _imageDisplayOrigin = new Point((CropOverlayCanvas.Bounds.Width - displayedWidth) / 2,
             (CropOverlayCanvas.Bounds.Height - displayedHeight) / 2);
+        _imageDisplayScaleX = displayedWidth / _selectedPreview.Width;
+        _imageDisplayScaleY = displayedHeight / _selectedPreview.Height;
 
         bool hasSelection = _cropSelection is Rect selection;
         if (_cropSelectionVisual is null)
@@ -476,10 +512,10 @@ public partial class ImageGalleryWindow : Window
             return;
 
         Rect crop = _cropSelection!.Value;
-        double left = _imageDisplayOrigin.X + crop.X * _imageDisplayScale;
-        double top = _imageDisplayOrigin.Y + crop.Y * _imageDisplayScale;
-        double width = crop.Width * _imageDisplayScale;
-        double height = crop.Height * _imageDisplayScale;
+        double left = _imageDisplayOrigin.X + crop.X * _imageDisplayScaleX;
+        double top = _imageDisplayOrigin.Y + crop.Y * _imageDisplayScaleY;
+        double width = crop.Width * _imageDisplayScaleX;
+        double height = crop.Height * _imageDisplayScaleY;
         _cropSelectionVisual.Width = width;
         _cropSelectionVisual.Height = height;
         Canvas.SetLeft(_cropSelectionVisual, left);
@@ -501,10 +537,10 @@ public partial class ImageGalleryWindow : Window
 
     private Point ToImagePoint(Point canvasPoint)
     {
-        if (_selectedPreview is null || _imageDisplayScale <= 0)
+        if (_selectedPreview is null || _imageDisplayScaleX <= 0 || _imageDisplayScaleY <= 0)
             return default;
-        int x = (int)Math.Round(Math.Clamp((canvasPoint.X - _imageDisplayOrigin.X) / _imageDisplayScale, 0, _selectedPreview.Width), MidpointRounding.AwayFromZero);
-        int y = (int)Math.Round(Math.Clamp((canvasPoint.Y - _imageDisplayOrigin.Y) / _imageDisplayScale, 0, _selectedPreview.Height), MidpointRounding.AwayFromZero);
+        int x = (int)Math.Round(Math.Clamp((canvasPoint.X - _imageDisplayOrigin.X) / _imageDisplayScaleX, 0, _selectedPreview.Width), MidpointRounding.AwayFromZero);
+        int y = (int)Math.Round(Math.Clamp((canvasPoint.Y - _imageDisplayOrigin.Y) / _imageDisplayScaleY, 0, _selectedPreview.Height), MidpointRounding.AwayFromZero);
         return new Point(Math.Clamp(x, 0, _selectedPreview.Width), Math.Clamp(y, 0, _selectedPreview.Height));
     }
 
@@ -529,10 +565,10 @@ public partial class ImageGalleryWindow : Window
         if (_cropSelection is not Rect crop)
             return CropDragMode.Draw;
 
-        double left = _imageDisplayOrigin.X + crop.X * _imageDisplayScale;
-        double top = _imageDisplayOrigin.Y + crop.Y * _imageDisplayScale;
-        double right = left + crop.Width * _imageDisplayScale;
-        double bottom = top + crop.Height * _imageDisplayScale;
+        double left = _imageDisplayOrigin.X + crop.X * _imageDisplayScaleX;
+        double top = _imageDisplayOrigin.Y + crop.Y * _imageDisplayScaleY;
+        double right = left + crop.Width * _imageDisplayScaleX;
+        double bottom = top + crop.Height * _imageDisplayScaleY;
         const double tolerance = 10;
         bool nearLeft = Math.Abs(point.X - left) <= tolerance && point.Y >= top - tolerance && point.Y <= bottom + tolerance;
         bool nearRight = Math.Abs(point.X - right) <= tolerance && point.Y >= top - tolerance && point.Y <= bottom + tolerance;
@@ -749,7 +785,6 @@ public partial class ImageGalleryWindow : Window
             ? _imageService.GetSafeCurrentDirectory(_location, _currentDirectory)
             : _imageService.GetRoot(ImageBrowserLocation.UserImages);
         EditorImageTitle.Text = $"{item.Name} · {_selectedPreview!.Width} × {_selectedPreview.Height}";
-        OutputNameBox.Text = Path.GetFileNameWithoutExtension(item.Name);
         CropToolCheckBox.IsChecked = false;
         ResizeToolCheckBox.IsChecked = false;
         RotationToolCheckBox.IsChecked = false;
@@ -767,10 +802,9 @@ public partial class ImageGalleryWindow : Window
         KeepAspectCheckBox.IsChecked = true;
         RotationPicker.SelectedIndex = 0;
         FilterPicker.SelectedIndex = 0;
-        KeepTransparencyCheckBox.IsChecked = _selectedPreview.HasTransparency;
-        UpdateFormatHelp();
         EditorPanel.IsVisible = true;
         GalleryPanel.IsVisible = false;
+        UpdateMenuAvailability();
         SetPreviewBitmap(_selectedPreview.PngBytes, EditorPreviewImage, ref _editorBitmap);
         UpdateCropOverlay();
     }
@@ -808,51 +842,6 @@ public partial class ImageGalleryWindow : Window
         catch (Exception ex) { StatusText.Text = $"Could not update preview: {ex.Message}"; }
     }
 
-    private async void SaveEditedButton_Click(object? sender, RoutedEventArgs e)
-    {
-        if (_selectedImagePath is null)
-            return;
-        SaveEditedButton.IsEnabled = false;
-        try
-        {
-            var options = ReadProcessingOptions();
-            string extension = SelectedTag(OutputFormatPicker, ".png").ToLowerInvariant();
-            var icoSizes = extension == ".ico" ? ParseIcoSizes(IcoSizesBox.Text ?? string.Empty) : null;
-            string baseName = Path.GetFileNameWithoutExtension((OutputNameBox.Text ?? string.Empty).Trim());
-            if (string.IsNullOrWhiteSpace(baseName))
-                throw new ArgumentException("Enter a filename for the saved image.");
-            bool keepTransparency = KeepTransparencyCheckBox.IsChecked == true;
-            StatusText.Text = "Processing and saving a copy…";
-            byte[] output = await Task.Run(() => _imageService.ConvertToBytes(_selectedImagePath, options, extension, keepTransparency, icoSizes));
-            string savedPath = _imageService.SaveToUserImages(_saveDirectory, baseName + extension, output);
-            if (_location == ImageBrowserLocation.UserImages)
-                await RefreshEntriesAsync();
-            StatusText.Text = $"Saved copy: {savedPath}";
-        }
-        catch (Exception ex) { StatusText.Text = $"Save failed: {ex.Message}"; }
-        finally { SaveEditedButton.IsEnabled = true; }
-    }
-
-    private void OutputFormatPicker_SelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (IcoSizesBox is null)
-            return;
-        string extension = SelectedTag(OutputFormatPicker, ".png");
-        IcoSizesBox.IsVisible = extension == ".ico";
-        KeepTransparencyCheckBox.IsVisible = extension is ".png" or ".webp" or ".bmp" or ".ico";
-        UpdateFormatHelp();
-    }
-
-    private void UpdateFormatHelp()
-    {
-        if (TransparencyHelpText is null)
-            return;
-        string extension = SelectedTag(OutputFormatPicker, ".png");
-        TransparencyHelpText.Text = extension is ".jpg" or ".jpeg"
-            ? "JPEG cannot store transparency; transparent pixels will be composited onto white."
-            : "When unchecked, transparent pixels are composited onto white before saving.";
-    }
-
     private ImageProcessingOptions ReadProcessingOptions()
     {
         int? cropX = CropToolCheckBox.IsChecked == true && _cropApplied && _cropSelection is Rect crop ? (int)crop.X : null;
@@ -881,16 +870,6 @@ public partial class ImageGalleryWindow : Window
         if (!int.TryParse(text.Trim(), out int value) || value < 0 || value > 16384)
             throw new ArgumentException($"{label} must be a whole number from 0 to 16384.");
         return value;
-    }
-
-    private static int[] ParseIcoSizes(string text)
-    {
-        int[] sizes = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(value => int.TryParse(value, out int size) ? size : throw new FormatException($"'{value}' is not an ICO size."))
-            .Distinct().OrderByDescending(size => size).ToArray();
-        if (sizes.Length == 0 || sizes.Any(size => size < 1 || size > 256))
-            throw new ArgumentException("Enter ICO sizes from 1 to 256, separated by commas.");
-        return sizes;
     }
 
     private static string SelectedTag(ComboBox combo, string fallback) =>

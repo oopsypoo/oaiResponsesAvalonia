@@ -12,6 +12,7 @@
         <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,180,150" ColumnSpacing="8" VerticalAlignment="Center">
             <Menu Grid.Column="0" VerticalAlignment="Center">
                 <MenuItem Header="_File">
+                    <MenuItem x:Name="SaveAsMenuItem" Header="Save As…" IsEnabled="False" Click="SaveAsMenuItem_Click" />
                     <MenuItem Header="Import…" Click="ImportButton_Click" />
                     <MenuItem Header="Refresh" Click="RefreshMenuItem_Click" />
                     <Separator />
@@ -63,7 +64,7 @@
                 </Border>
                 <TextBlock x:Name="PreviewDetailsText" Grid.Row="1" Text="Select an image to preview it." TextWrapping="Wrap" />
                 <Grid Grid.Row="2">
-                    <Button x:Name="EditButton" HorizontalAlignment="Right" Content="Edit / Save As…" IsEnabled="False" Click="EditButton_Click" />
+                    <Button x:Name="EditButton" HorizontalAlignment="Right" Content="Edit…" IsEnabled="False" Click="EditButton_Click" />
                 </Grid>
             </Grid>
         </Grid>
@@ -115,20 +116,6 @@
 
 
                     </Grid>
-                    <Separator />
-                    <TextBlock Text="Save edited copy to User Images" FontWeight="Bold" TextWrapping="Wrap" />
-                    <TextBox x:Name="OutputNameBox" PlaceholderText="Output filename" />
-                    <ComboBox x:Name="OutputFormatPicker" SelectedIndex="0" SelectionChanged="OutputFormatPicker_SelectionChanged">
-                        <ComboBoxItem Content="PNG (.png)" Tag=".png" />
-                        <ComboBoxItem Content="WebP (.webp)" Tag=".webp" />
-                        <ComboBoxItem Content="JPEG (.jpg)" Tag=".jpg" />
-                        <ComboBoxItem Content="BMP (.bmp)" Tag=".bmp" />
-                        <ComboBoxItem Content="ICO (.ico)" Tag=".ico" />
-                    </ComboBox>
-                    <TextBox x:Name="IcoSizesBox" Text="256,128,64,48,32,16" PlaceholderText="ICO embedded sizes" IsVisible="False" />
-                    <CheckBox x:Name="KeepTransparencyCheckBox" Content="Keep transparency" IsChecked="True" />
-                    <TextBlock x:Name="TransparencyHelpText" TextWrapping="Wrap" FontSize="12" Opacity="0.8" />
-                    <Button x:Name="SaveEditedButton" Content="Save" Click="SaveEditedButton_Click" />
                 </StackPanel>
             </ScrollViewer>
             <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />

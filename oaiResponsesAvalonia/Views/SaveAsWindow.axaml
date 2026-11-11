@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:oaiResponsesAvalonia.Views"
+        x:Class="oaiResponsesAvalonia.Views.SaveAsWindow"
+        x:DataType="local:SaveAsWindow"
+        Title="Save As"
+        Width="420"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+        <TextBlock Grid.Row="0" Text="Save edited copy to User Images" FontWeight="Bold" />
+        <TextBox x:Name="OutputNameBox" Grid.Row="1" PlaceholderText="Output filename" />
+        <ComboBox x:Name="OutputFormatPicker" Grid.Row="2" SelectedIndex="0" SelectionChanged="OutputFormatPicker_SelectionChanged">
+            <ComboBoxItem Content="PNG (.png)" Tag=".png" />
+            <ComboBoxItem Content="WebP (.webp)" Tag=".webp" />
+            <ComboBoxItem Content="JPEG (.jpg)" Tag=".jpg" />
+            <ComboBoxItem Content="BMP (.bmp)" Tag=".bmp" />
+            <ComboBoxItem Content="ICO (.ico)" Tag=".ico" />
+        </ComboBox>
+        <TextBox x:Name="IcoSizesBox" Grid.Row="3" Text="256,128,64,48,32,16" PlaceholderText="ICO embedded sizes" IsVisible="False" />
+        <StackPanel Grid.Row="4" Spacing="4">
+            <CheckBox x:Name="KeepTransparencyCheckBox" Content="Keep transparency" IsChecked="True" />
+            <TextBlock x:Name="TransparencyHelpText" TextWrapping="Wrap" FontSize="12" Opacity="0.8" />
+        </StackPanel>
+        <TextBlock x:Name="DialogStatusText" Grid.Row="5" TextWrapping="Wrap" IsVisible="False" />
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button x:Name="SaveButton" Content="Save" IsDefault="True" Click="SaveButton_Click" />
+            <Button Content="Cancel" IsCancel="True" Click="CancelButton_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

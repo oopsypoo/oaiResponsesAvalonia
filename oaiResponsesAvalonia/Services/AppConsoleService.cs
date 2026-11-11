@@ -364,6 +364,9 @@ internal sealed class AppConsoleService
                 throw new DirectoryNotFoundException($"no image location named '{rootName}'. Use 'ls' to see the available roots.");
         }
 
+        if (paths.Length == 1 && HasWildcard(paths[0]) && directoryAtRoot is null)
+            return ListWildcardEntries(paths[0], showHidden, detailed, images: true);
+
         string directory = directoryAtRoot ?? (paths.Length == 0 ? _imageCurrentDirectory! : ResolveImageDirectory(paths[0]));
         if (!Directory.Exists(directory))
             throw new DirectoryNotFoundException($"not a directory: {paths.FirstOrDefault() ?? directory}");
@@ -511,21 +514,22 @@ internal sealed class AppConsoleService
 
     private string GetImageInfo(string[] args)
     {
-        if (args.Length != 1)
-            throw new InvalidOperationException("usage: info <image>");
+        if (args.Length == 0)
+            throw new InvalidOperationException("usage: info <image-pattern ...>");
         if (_imageLocation is not ImageBrowserLocation location || _imageCurrentDirectory is null)
             throw new InvalidOperationException("select an image root with 'cd images' or 'cd user' before using info.");
-        if (Path.IsPathRooted(args[0]))
+        if (args.Any(Path.IsPathRooted))
             throw new InvalidOperationException("image paths must be relative to the selected image folder.");
 
-        string imagePath = Path.GetFullPath(Path.Combine(_imageCurrentDirectory, args[0].Replace('/', Path.DirectorySeparatorChar)));
-        string parent = Path.GetDirectoryName(imagePath) ?? _imageCurrentDirectory;
-        _imageLibrary!.GetSafeCurrentDirectory(location, parent);
-        if (!File.Exists(imagePath))
-            throw new FileNotFoundException($"no such image: {args[0]}");
+        string[] imagePaths = args.SelectMany(pattern => ExpandFileMatches(pattern, workspace: false, images: true)).Distinct(PathComparer).ToArray();
+        var imageInfo = imagePaths.Select(imagePath =>
+        {
+            ImageAssetPreview preview = _imageLibrary!.CreatePreview(imagePath);
+            return $"Name: {Path.GetFileName(imagePath)}{Environment.NewLine}Path: {imagePath}{Environment.NewLine}Dimensions: {preview.Width} × {preview.Height}{Environment.NewLine}Format: {preview.Format}{Environment.NewLine}Frames: {preview.FrameCount}{Environment.NewLine}Transparency: {(preview.HasTransparency ? "yes" : "no")}";
+        });
+        return string.Join(Environment.NewLine + Environment.NewLine, imageInfo);
 
-        ImageAssetPreview preview = _imageLibrary.CreatePreview(imagePath);
-        return $"Name: {Path.GetFileName(imagePath)}{Environment.NewLine}Path: {imagePath}{Environment.NewLine}Dimensions: {preview.Width} × {preview.Height}{Environment.NewLine}Format: {preview.Format}{Environment.NewLine}Frames: {preview.FrameCount}{Environment.NewLine}Transparency: {(preview.HasTransparency ? "yes" : "no")}";
+
     }
 
     private static StringComparison GetPathComparison() => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -688,9 +692,9 @@ internal sealed class AppConsoleService
         string synopsis = command switch
         {
             "ls" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: ls [--columns N[,N...]]\nLists sessions at /, messages inside a session, or fields inside a message.",
-            "ls" when ActiveContext == ConsoleContext.Images => "usage: ls [-a] [-l] [path]\nUses the same filesystem listing behavior as other filesystem contexts. Lists all files and folders; -a includes hidden entries and -l shows type, byte size, and modified time.",
-            "ls" => "usage: ls [-a] [-l] [path]\nLists entries in the current filesystem context (application data or workspace). -a includes hidden entries; -l shows type, size, and last-modified time. Short options can be combined, for example -la.",
-            "grep" => "usage: grep <search-term> <file> OR <command> | grep <search-term>\nSearches literal text, case-insensitively, with line numbers and colored matches by default. File search is available in filesystem contexts; piped output can be searched in database context too. This is an application command, not an operating-system grep.",
+            "ls" when ActiveContext == ConsoleContext.Images => "usage: ls [-a] [-l] [path-or-pattern]\nUses the same filesystem listing behavior as other filesystem contexts. Lists all files and folders; -a includes hidden entries and -l shows type, byte size, and modified time. File-name patterns may use * and ? (for example, *.png).",
+            "ls" => "usage: ls [-a] [-l] [path-or-pattern]\nLists entries in the current filesystem context (application data or workspace). -a includes hidden entries; -l shows type, size, and last-modified time. File-name patterns may use * and ? (for example, *.txt). Short options can be combined, for example -la.",
+            "grep" => "usage: grep <search-term> <file-pattern ...> OR <command> | grep <search-term>\nSearches literal text, case-insensitively, with line numbers and colored matches by default. File-name patterns may use * and ?; file search is available in filesystem contexts, while piped output can be searched in database context too.",
             "cd" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: cd <session-id|message-id|media|..|/>\nNavigates sessions, messages, and a message's media records; does not change filesystem directories.",
             "cd" when ActiveContext == ConsoleContext.Images => "usage: cd [path]\nSelects images or the configured User Images folder, then navigates within it. Use cd / to return to the image roots.",
             "cd" => "usage: cd [path]\nChanges directory within the current filesystem context.",
@@ -701,10 +705,10 @@ internal sealed class AppConsoleService
             "columns" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: columns\nRequires a message or media-record location. Lists field names and their 1-based indexes.",
             "connect" => "usage: connect [database-file]\nConnects read-only to a database file under app data and switches this terminal to database context.",
             "disconnect" => "usage: disconnect\nDisconnects and returns this terminal to application-data context.",
-            "cat" => "usage: cat <file>\nDisplays a small text file in the current filesystem context.",
+            "cat" => "usage: cat <file-pattern ...>\nDisplays small text files in filesystem contexts. File-name patterns may use * and ?; multiple matches are shown with file-name headings.",
             "workspace" => "usage: workspace\nEnters the configured workspace context in read-only mode. Requires Developer Tools to be enabled and an existing workspace root.",
             "img" => "usage: img\nEnters the read-only image-browsing context. Use ls to see image roots, then cd images or cd user.",
-            "info" => "usage: info <image>\nShows image dimensions, format, frame count, and transparency for an image in the selected image folder.",
+            "info" => "usage: info <image-pattern ...>\nShows dimensions, format, frame count, and transparency for images in the selected image folder. File-name patterns may use * and ? (for example, *.png).",
             "app" or "application" => "usage: app\nReturns to the application-data context.",
             "database" => "usage: database\nSwitches to the currently connected database context.",
             "find" => "usage: find sessions [--sid ID] [--has-media] [--role VALUE] [--content TEXT] [--model VALUE] [--reasoning-level VALUE] [--tool VALUE] [--same-message]\nFilters combine with AND. By default filters may match different messages; --same-message requires one message to satisfy all message filters. Results show session IDs and matching message IDs in one column per message filter; content is not printed.",
@@ -750,6 +754,9 @@ internal sealed class AppConsoleService
             throw new InvalidOperationException("usage: ls [-a] [-l] [path]");
 
         bool workspace = ActiveContext == ConsoleContext.Workspace;
+        if (paths.Length == 1 && HasWildcard(paths[0]))
+            return ListWildcardEntries(paths[0], showHidden, detailed, images: false, workspace);
+
         string directory = paths.Length == 0 ? CurrentFilesystemDirectory : ResolvePath(paths[0], workspace);
         if (!Directory.Exists(directory))
             throw new DirectoryNotFoundException($"not a directory: {paths.FirstOrDefault() ?? directory}");
@@ -813,14 +820,17 @@ internal sealed class AppConsoleService
 
     private string ReadFile(string[] args)
     {
-        if (args.Length != 1)
-            throw new InvalidOperationException("usage: cat <file>");
+        if (args.Length == 0)
+            throw new InvalidOperationException("usage: cat <file-pattern ...>");
 
         bool workspace = ActiveContext == ConsoleContext.Workspace;
         bool images = ActiveContext == ConsoleContext.Images;
-        string filePath = images ? ResolveImageFilePath(args[0]) : ResolvePath(args[0], workspace);
-        if (!File.Exists(filePath))
-            throw new FileNotFoundException($"no such file: {args[0]}");
+        string[] files = args.SelectMany(pattern => ExpandFileMatches(pattern, workspace, images)).Distinct(PathComparer).ToArray();
+        if (files.Length == 0)
+            throw new FileNotFoundException("no files matched the supplied path pattern.");
+        if (files.Length > 1)
+            return string.Join(Environment.NewLine + Environment.NewLine, files.Select(path => $"==> {Path.GetFileName(path)} <=={Environment.NewLine}{ReadTextFile(path, workspace, images)}"));
+        string filePath = files[0];
 
         if (!images)
             EnsureNoReparsePoints(filePath, workspace);
@@ -835,8 +845,25 @@ internal sealed class AppConsoleService
         return Encoding.UTF8.GetString(bytes).TrimEnd('\r', '\n');
     }
 
+    private string ReadTextFile(string filePath, bool workspace, bool images)
+    {
+        if (!File.Exists(filePath))
+            throw new FileNotFoundException($"no such file: {filePath}");
+        if (images)
+            EnsureImageNoReparsePoints(_imageLocation!.Value, filePath);
+        else
+            EnsureNoReparsePoints(filePath, workspace);
+        var info = new FileInfo(filePath);
+        if (info.Length > MaximumFileBytes)
+            throw new InvalidOperationException($"file is larger than the {MaximumFileBytes / 1024} KiB console limit.");
+        byte[] bytes = File.ReadAllBytes(filePath);
+        if (bytes.Contains((byte)0))
+            throw new InvalidOperationException("binary files are not displayed by cat.");
+        return Encoding.UTF8.GetString(bytes).TrimEnd('\r', '\n');
+    }
+
     /// <summary>
-    /// Searches application-console output or a confined text file. This is a deliberately small, literal-search command, not a system grep process.
+    /// Searches confined text files or piped output with a literal, case-insensitive term.
     /// </summary>
     private string Grep(string[] args, string? input)
     {
@@ -850,7 +877,7 @@ internal sealed class AppConsoleService
             operands.Add(argument);
         }
 
-        if (operands.Count is < 1 or > 2)
+        if (operands.Count < 1 || (input is not null ? operands.Count != 1 : operands.Count < 2))
             throw new InvalidOperationException("usage: grep <search-term> [file], or <command> | grep <search-term>");
         if (input is not null && operands.Count != 1)
             throw new InvalidOperationException("when filtering piped output, provide only the search term: <command> | grep <search-term>");
@@ -861,11 +888,11 @@ internal sealed class AppConsoleService
 
         if (input is null)
         {
-            if (operands.Count != 2)
+            if (operands.Count < 2)
                 throw new InvalidOperationException("grep needs a file in filesystem context or input from a pipe; example: ls | grep notes");
             if (ActiveContext == ConsoleContext.Database)
                 throw new InvalidOperationException("grep file search is available only in application or workspace context; in database context, pipe a command such as ls to grep.");
-            input = ReadFile([operands[1]]);
+            return GrepFiles(operands.Skip(1).ToArray(), searchTerm);
         }
 
         string[] lines = input.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n');
@@ -878,6 +905,121 @@ internal sealed class AppConsoleService
             matches.Add($"{lineIndex + 1}:" + ColorizeMatches(line, searchTerm));
         }
         return matches.Count == 0 ? "(no matches)" : string.Join("\n", matches);
+    }
+
+    private static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    private static bool HasWildcard(string value) => value.Contains('*') || value.Contains('?');
+
+    private string[] ExpandFileMatches(string pattern, bool workspace, bool images)
+    {
+        if (!HasWildcard(pattern))
+            return [images ? ResolveImageFilePath(pattern) : ResolvePath(pattern, workspace)];
+
+        string normalized = pattern.Replace('/', Path.DirectorySeparatorChar);
+        string fileNamePattern = Path.GetFileName(normalized);
+        string directoryPart = Path.GetDirectoryName(normalized) ?? string.Empty;
+        if (directoryPart.Length == 0)
+            directoryPart = ".";
+        if (HasWildcard(directoryPart))
+            throw new InvalidOperationException("wildcards are supported in file names, not directory names.");
+
+        string directory = images ? ResolveImageDirectory(directoryPart) : ResolvePath(directoryPart, workspace);
+        if (!Directory.Exists(directory))
+            throw new DirectoryNotFoundException($"no such directory: {directoryPart}");
+
+        var matches = Directory.EnumerateFiles(directory)
+            .Where(path => !IsReparsePoint(path)
+                && System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(fileNamePattern, Path.GetFileName(path), OperatingSystem.IsWindows()))
+            .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        foreach (string match in matches)
+        {
+            if (images)
+                EnsureImageNoReparsePoints(_imageLocation!.Value, match);
+            else
+                EnsureNoReparsePoints(match, workspace);
+        }
+        if (matches.Length == 0)
+            throw new FileNotFoundException($"no files match pattern: {pattern}");
+        return matches;
+    }
+
+    private string ListWildcardEntries(string pattern, bool showHidden, bool detailed, bool images, bool workspace = false)
+    {
+        string normalized = pattern.Replace('/', Path.DirectorySeparatorChar);
+        string namePattern = Path.GetFileName(normalized);
+        string directoryPart = Path.GetDirectoryName(normalized) ?? string.Empty;
+        if (directoryPart.Length == 0)
+            directoryPart = ".";
+        if (HasWildcard(directoryPart))
+            throw new InvalidOperationException("wildcards are supported in file names, not directory names.");
+
+        string directory = images ? ResolveImageDirectory(directoryPart) : ResolvePath(directoryPart, workspace);
+        if (!Directory.Exists(directory))
+            throw new DirectoryNotFoundException($"no such directory: {directoryPart}");
+
+        var entries = new List<string>();
+        foreach (string path in Directory.EnumerateFileSystemEntries(directory)
+                     .Where(path => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(namePattern, Path.GetFileName(path), OperatingSystem.IsWindows()))
+                     .OrderBy(path => !Directory.Exists(path))
+                     .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+        {
+            if (IsReparsePoint(path))
+                continue;
+            string name = Path.GetFileName(path);
+            if (!showHidden && (name.StartsWith(".", StringComparison.Ordinal) || IsHidden(path)))
+                continue;
+            bool isDirectory = Directory.Exists(path);
+            if (detailed)
+            {
+                long size = isDirectory ? 0 : new FileInfo(path).Length;
+                DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
+                entries.Add($"{(isDirectory ? "dir" : "file"),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
+            }
+            else
+            {
+                entries.Add(isDirectory ? name + "/" : name);
+            }
+            if (entries.Count >= MaximumListItems)
+            {
+                entries.Add($"... listing limited to {MaximumListItems} entries");
+                break;
+            }
+        }
+
+        if (entries.Count == 0)
+            throw new FileNotFoundException($"no entries match pattern: {pattern}");
+        return detailed
+            ? "Type  Size (bytes)  Last modified     Name\n" + string.Join("\n", entries)
+            : string.Join("\n", entries);
+    }
+
+    private string GrepFiles(string[] patterns, string searchTerm)
+    {
+        if (ActiveContext == ConsoleContext.Database)
+            throw new InvalidOperationException("grep file search is available only in filesystem contexts.");
+        bool workspace = ActiveContext == ConsoleContext.Workspace;
+        bool images = ActiveContext == ConsoleContext.Images;
+        string[] files = patterns.SelectMany(pattern => ExpandFileMatches(pattern, workspace, images)).Distinct(PathComparer).ToArray();
+        var output = new List<string>();
+        foreach (string file in files)
+        {
+            string text = ReadTextFile(file, workspace, images);
+            string[] lines = text.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n');
+            var matches = new List<string>();
+            for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+            {
+                if (lines[lineIndex].IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase) >= 0)
+                    matches.Add($"{lineIndex + 1}:" + ColorizeMatches(lines[lineIndex], searchTerm));
+            }
+            if (matches.Count == 0)
+                continue;
+            if (files.Length > 1)
+                output.Add($"==> {Path.GetFileName(file)} <==");
+            output.AddRange(matches);
+        }
+        return output.Count == 0 ? "(no matches)" : string.Join("\n", output);
     }
 
     private static string ColorizeMatches(string line, string searchTerm)

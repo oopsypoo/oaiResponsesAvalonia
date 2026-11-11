@@ -32,6 +32,10 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * \[x] The folder 'Images' is actually not just images. It's documents; since everything that is in a conversation ends up here. 'Logs' is no longer used, and maybe it should be renamed to docs or 'other docs'. Or just removed.
 * \[ ] Open activity window should not be hidden behind the "Developers Tools". It should show all activity for all/everything.
 
+## Images and gallery
+
+* [ ] Low priority: Design and implement image export/file-management actions for one or more files from the image-path gallery. Decide whether this should be a dedicated export workflow or copy/move actions; clarify whether edited images saved in the user's filepath are treated differently from other gallery files. Allow moving a file only when it is bound by the user-context; otherwise offer copy without moving the source.
+
 ## Release and documentation
 
 * \[ ] Decide whether and when to adopt release version numbers. Until then, keep the changelog useful without inventing versions.

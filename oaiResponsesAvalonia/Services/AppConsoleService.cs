@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
+using oaiResponsesAvalonia;
 using oaiResponsesAvalonia.Data;
 using System;
 using System.Collections.Generic;
@@ -19,14 +20,16 @@ internal enum ConsoleOperationCapability
     Read = 2,
     Search = 4,
     ContextSwitch = 8,
-    DatabaseRead = 16
+    DatabaseRead = 16,
+    ImageRead = 32
 }
 
 internal enum ConsoleContext
 {
     Application,
     Database,
-    Workspace
+    Workspace,
+    Images
 }
 
 /// <summary>
@@ -43,6 +46,12 @@ internal sealed class AppConsoleService
     private string? _workspaceRootDirectory;
     private string? _workspaceCurrentDirectory;
     private string? _connectedDatabasePath;
+    private ImageLibraryService? _imageLibrary;
+    private string? _applicationImagesRoot;
+    private string? _userImagesRoot;
+    private string _userImagesDisplayName = "user";
+    private ImageBrowserLocation? _imageLocation;
+    private string? _imageCurrentDirectory;
 
 
     public ConsoleContext ActiveContext { get; private set; } = ConsoleContext.Application;
@@ -116,6 +125,7 @@ internal sealed class AppConsoleService
     {
         ConsoleContext.Database => $"db[{Path.GetFileName(_connectedDatabasePath)}]:{GetDatabaseLocation()} $ ",
         ConsoleContext.Workspace => $"workspace:{GetRelativeCurrentDirectory(workspace: true)} $ ",
+        ConsoleContext.Images => $"img:{GetImagePromptLocation()} $ ",
         _ => $"app:~{GetRelativeCurrentDirectory()} $ "
     };
 
@@ -130,6 +140,7 @@ internal sealed class AppConsoleService
     private ConsoleOperationCapability AllowedCapabilities => ActiveContext switch
     {
         ConsoleContext.Workspace => ConsoleOperationCapability.List | ConsoleOperationCapability.Read | ConsoleOperationCapability.Search | ConsoleOperationCapability.ContextSwitch,
+        ConsoleContext.Images => ConsoleOperationCapability.List | ConsoleOperationCapability.Read | ConsoleOperationCapability.Search | ConsoleOperationCapability.ImageRead | ConsoleOperationCapability.ContextSwitch,
         ConsoleContext.Database => ConsoleOperationCapability.List | ConsoleOperationCapability.Search | ConsoleOperationCapability.ContextSwitch | ConsoleOperationCapability.DatabaseRead,
         _ => ConsoleOperationCapability.List | ConsoleOperationCapability.Read | ConsoleOperationCapability.Search | ConsoleOperationCapability.ContextSwitch | ConsoleOperationCapability.DatabaseRead
     };
@@ -192,13 +203,15 @@ internal sealed class AppConsoleService
             string output = command switch
             {
                 "help" => GetContextHelpText(),
-                "pwd" => ActiveContext == ConsoleContext.Database ? GetDatabaseLocation() : CurrentFilesystemDirectory,
+                "pwd" => ActiveContext == ConsoleContext.Database ? GetDatabaseLocation() : ActiveContext == ConsoleContext.Images ? GetImageWorkingDirectory() : CurrentFilesystemDirectory,
                 "ls" => ActiveContext == ConsoleContext.Database ? ListDatabaseLocation(args.Skip(1).ToArray()) : ListDirectory(args.Skip(1).ToArray()),
-                "cd" => ActiveContext == ConsoleContext.Database ? ChangeDatabaseLocation(args.Skip(1).ToArray()) : ChangeDirectory(args.Skip(1).ToArray()),
+                "cd" => ActiveContext == ConsoleContext.Database ? ChangeDatabaseLocation(args.Skip(1).ToArray()) : ActiveContext == ConsoleContext.Images ? ChangeImageDirectory(args.Skip(1).ToArray()) : ChangeDirectory(args.Skip(1).ToArray()),
                 "cat" when ActiveContext != ConsoleContext.Database => ReadFile(args.Skip(1).ToArray()),
                 "cat" => throw new InvalidOperationException("cat is a filesystem-context command. Switch to application or workspace context to use it."),
                 "grep" => Grep(args.Skip(1).ToArray(), null),
                 "workspace" => EnterWorkspace(args.Skip(1).ToArray()),
+                "img" => EnterImages(args.Skip(1).ToArray()),
+                "info" => GetImageInfo(args.Skip(1).ToArray()),
                 "app" or "application" => SwitchToApplication(args.Skip(1).ToArray()),
                 "database" => SwitchToDatabase(args.Skip(1).ToArray()),
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
@@ -224,8 +237,8 @@ internal sealed class AppConsoleService
 
             bool closeWindow = command is "quit" or "exit";
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or "grep" or
-                "connect" or "disconnect" or "workspace" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
-            string kind = !knownCommand ? "error" : command is "connect" or "disconnect" or "workspace" or "app" or "application" or "database" ? "success" : "normal";
+                "connect" or "disconnect" or "workspace" or "img" or "info" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
+            string kind = !knownCommand ? "error" : command is "connect" or "disconnect" or "workspace" or "img" or "app" or "application" or "database" ? "success" : "normal";
             return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode);
         }
         catch (Exception ex)
@@ -238,15 +251,18 @@ internal sealed class AppConsoleService
     {
         if (command == "connect" && ActiveContext != ConsoleContext.Application)
             throw new InvalidOperationException("switch to application context before connecting to a database.");
+        if (command == "info" && ActiveContext != ConsoleContext.Images)
+            throw new InvalidOperationException("'info' requires the img context. Use 'img' to enter it.");
         if (command is "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" && ActiveContext != ConsoleContext.Database)
             throw new InvalidOperationException($"'{command}' requires the database context. Use 'database' to switch contexts.");
 
         ConsoleOperationCapability required = command switch
         {
             "ls" => ConsoleOperationCapability.List,
+            "info" => ConsoleOperationCapability.ImageRead,
             "cat" => ConsoleOperationCapability.Read,
             "grep" => ConsoleOperationCapability.Search | (grepReadsFile ? ConsoleOperationCapability.Read : ConsoleOperationCapability.None),
-            "connect" or "disconnect" or "workspace" or "app" or "application" or "database" => ConsoleOperationCapability.ContextSwitch,
+            "connect" or "disconnect" or "workspace" or "img" or "app" or "application" or "database" => ConsoleOperationCapability.ContextSwitch,
             "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" => ConsoleOperationCapability.DatabaseRead,
             "db" => ConsoleOperationCapability.DatabaseRead,
             _ => ConsoleOperationCapability.None
@@ -271,6 +287,248 @@ internal sealed class AppConsoleService
         ActiveContext = ConsoleContext.Workspace;
         return $"workspace context active at {_workspaceRootDirectory} (read-only).";
     }
+
+    private string EnterImages(string[] args)
+    {
+        if (args.Length != 0)
+            throw new InvalidOperationException("usage: img");
+
+        EnsureImageLibrary();
+        _imageLocation = null;
+        _imageCurrentDirectory = null;
+        ActiveContext = ConsoleContext.Images;
+        return $"img context active (read-only). User Images folder '{_userImagesDisplayName}' is at {_userImagesRoot}.";
+    }
+
+    private void EnsureImageLibrary()
+    {
+        if (_imageLibrary is not null)
+            return;
+
+        AppSettings settings = AppSettings.LoadSettings();
+        string applicationImages = Path.GetFullPath(Path.Combine(settings.AppRoot, settings.ImagesFolder));
+        string userImages = settings.GetSavedImagesDirectory(applicationImages);
+        string configuredUserName = settings.SavedImagesFolder?.Trim() ?? string.Empty;
+        string displayName = Path.IsPathFullyQualified(configuredUserName)
+            ? Path.GetFileName(Path.TrimEndingDirectorySeparator(configuredUserName))
+            : configuredUserName;
+        if (string.IsNullOrWhiteSpace(displayName))
+            displayName = "user-images";
+
+        _imageLibrary = new ImageLibraryService(applicationImages, userImages);
+        _applicationImagesRoot = _imageLibrary.GetRoot(ImageBrowserLocation.ApplicationImages);
+        _userImagesRoot = _imageLibrary.GetRoot(ImageBrowserLocation.UserImages);
+        _userImagesDisplayName = displayName;
+    }
+
+    private string GetImagePromptLocation()
+    {
+        if (_imageLocation is not ImageBrowserLocation location || _imageCurrentDirectory is null)
+            return "/";
+
+        string rootName = location == ImageBrowserLocation.ApplicationImages ? "images" : _userImagesDisplayName;
+        string relative = Path.GetRelativePath(_imageLibrary!.GetRoot(location), _imageCurrentDirectory);
+        return "/" + rootName + (relative == "." ? string.Empty : "/" + relative.Replace(Path.DirectorySeparatorChar, '/'));
+    }
+
+    private string GetImageWorkingDirectory()
+    {
+        EnsureImageLibrary();
+        if (_imageLocation is not ImageBrowserLocation location || _imageCurrentDirectory is null)
+            return $"images: {_applicationImagesRoot}{Environment.NewLine}{_userImagesDisplayName}: {_userImagesRoot}";
+
+        return _imageCurrentDirectory;
+    }
+
+    private string ListImageDirectory(string[] args)
+    {
+        EnsureImageLibrary();
+        bool showHidden = args.Contains("-a", StringComparer.Ordinal);
+        bool detailed = args.Contains("-l", StringComparer.Ordinal);
+        string[] paths = args.Where(arg => arg is not ("-a" or "-l")).ToArray();
+        if (args.Any(arg => arg.StartsWith("-", StringComparison.Ordinal) && arg is not ("-a" or "-l")) || paths.Length > 1)
+            throw new InvalidOperationException("usage: ls [-a] [-l] [path]");
+
+        string? directoryAtRoot = null;
+        if (_imageLocation is null || _imageCurrentDirectory is null)
+        {
+            if (paths.Length == 0)
+                return $"images/  (Application Images){Environment.NewLine}{_userImagesDisplayName}/  (User Images)";
+
+            string rootName = paths[0];
+            if (rootName.Equals("images", StringComparison.OrdinalIgnoreCase) || rootName.Equals("application", StringComparison.OrdinalIgnoreCase))
+                directoryAtRoot = _applicationImagesRoot;
+            else if (rootName.Equals("user", StringComparison.OrdinalIgnoreCase) || rootName.Equals(_userImagesDisplayName, StringComparison.OrdinalIgnoreCase))
+                directoryAtRoot = _userImagesRoot;
+            else
+                throw new DirectoryNotFoundException($"no image location named '{rootName}'. Use 'ls' to see the available roots.");
+        }
+
+        string directory = directoryAtRoot ?? (paths.Length == 0 ? _imageCurrentDirectory! : ResolveImageDirectory(paths[0]));
+        if (!Directory.Exists(directory))
+            throw new DirectoryNotFoundException($"not a directory: {paths.FirstOrDefault() ?? directory}");
+
+        IReadOnlyList<string> pathsInDirectory = Directory.EnumerateFileSystemEntries(directory)
+            .Where(path => !IsReparsePoint(path))
+            .OrderBy(path => !Directory.Exists(path))
+            .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var entries = new List<string>();
+        foreach (string path in pathsInDirectory)
+        {
+            string name = Path.GetFileName(path);
+            if (!showHidden && (name.StartsWith(".", StringComparison.Ordinal) || IsHidden(path)))
+                continue;
+
+            bool isDirectory = Directory.Exists(path);
+            if (detailed)
+            {
+                long size = isDirectory ? 0 : new FileInfo(path).Length;
+                DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
+                entries.Add($"{(isDirectory ? "dir" : "file"),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
+            }
+            else
+            {
+                entries.Add(isDirectory ? name + "/" : name);
+            }
+
+            if (entries.Count >= MaximumListItems)
+            {
+                entries.Add($"... listing limited to {MaximumListItems} entries");
+                break;
+            }
+        }
+
+        if (entries.Count == 0)
+            return "(empty)";
+        return detailed
+            ? "Type  Size (bytes)  Last modified     Name\n" + string.Join("\n", entries)
+            : string.Join("\n", entries);
+    }
+
+    private string ChangeImageDirectory(string[] args)
+    {
+        if (args.Length > 1)
+            throw new InvalidOperationException("usage: cd [path]");
+        EnsureImageLibrary();
+
+        string target = args.FirstOrDefault() ?? "/";
+        if (target is "/" or "~")
+        {
+            _imageLocation = null;
+            _imageCurrentDirectory = null;
+            return string.Empty;
+        }
+
+        if (_imageLocation is null || _imageCurrentDirectory is null)
+        {
+            if (target.Equals("images", StringComparison.OrdinalIgnoreCase) || target.Equals("application", StringComparison.OrdinalIgnoreCase))
+            {
+                _imageLocation = ImageBrowserLocation.ApplicationImages;
+                _imageCurrentDirectory = _imageLibrary!.GetRoot(_imageLocation.Value);
+                return string.Empty;
+            }
+            if (target.Equals("user", StringComparison.OrdinalIgnoreCase) || target.Equals(_userImagesDisplayName, StringComparison.OrdinalIgnoreCase))
+            {
+                _imageLocation = ImageBrowserLocation.UserImages;
+                _imageCurrentDirectory = _imageLibrary!.GetRoot(_imageLocation.Value);
+                return string.Empty;
+            }
+            throw new DirectoryNotFoundException($"no image location named '{target}'. Use 'ls' to see the available roots.");
+        }
+
+        string currentRoot = _imageLibrary!.GetRoot(_imageLocation.Value);
+        if (target == ".." && string.Equals(_imageCurrentDirectory, currentRoot, GetPathComparison()))
+        {
+            _imageLocation = null;
+            _imageCurrentDirectory = null;
+            return string.Empty;
+        }
+
+        string destination = ResolveImageDirectory(target);
+        if (!Directory.Exists(destination))
+            throw new DirectoryNotFoundException($"no such image folder: {target}");
+        _imageCurrentDirectory = _imageLibrary.GetSafeCurrentDirectory(_imageLocation.Value, destination);
+        return string.Empty;
+    }
+
+    private string ResolveImageDirectory(string path)
+    {
+        if (_imageLocation is not ImageBrowserLocation location || _imageCurrentDirectory is null)
+            throw new InvalidOperationException("choose an image root first with 'cd images' or 'cd user'.");
+        if (string.IsNullOrWhiteSpace(path))
+            throw new InvalidOperationException("path cannot be empty.");
+
+        string root = _imageLibrary!.GetRoot(location);
+        string normalized = path.Replace('/', Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(normalized) && !path.StartsWith("/", StringComparison.Ordinal))
+            throw new InvalidOperationException("absolute host paths are not available; use a path relative to the selected image root.");
+        string candidate = path.StartsWith("/", StringComparison.Ordinal)
+            ? Path.Combine(root, normalized.TrimStart(Path.DirectorySeparatorChar))
+            : Path.Combine(_imageCurrentDirectory, normalized);
+        candidate = Path.GetFullPath(candidate);
+        string safeDirectory = _imageLibrary.GetSafeCurrentDirectory(location, candidate);
+        EnsureImageNoReparsePoints(location, safeDirectory);
+        return safeDirectory;
+    }
+
+    private string ResolveImageFilePath(string path)
+    {
+        if (_imageLocation is not ImageBrowserLocation location || _imageCurrentDirectory is null)
+            throw new InvalidOperationException("select an image root with 'cd images' or 'cd user' before reading a file.");
+        if (string.IsNullOrWhiteSpace(path))
+            throw new InvalidOperationException("path cannot be empty.");
+
+        string root = _imageLibrary!.GetRoot(location);
+        string normalized = path.Replace('/', Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(normalized) && !path.StartsWith("/", StringComparison.Ordinal))
+            throw new InvalidOperationException("absolute host paths are not available; use a path relative to the selected image root.");
+        string filePath = Path.GetFullPath(path.StartsWith("/", StringComparison.Ordinal)
+            ? Path.Combine(root, normalized.TrimStart(Path.DirectorySeparatorChar))
+            : Path.Combine(_imageCurrentDirectory, normalized));
+        string parent = Path.GetDirectoryName(filePath) ?? root;
+        _imageLibrary.GetSafeCurrentDirectory(location, parent);
+        EnsureImageNoReparsePoints(location, filePath);
+        return filePath;
+    }
+
+    private void EnsureImageNoReparsePoints(ImageBrowserLocation location, string path)
+    {
+        string root = _imageLibrary!.GetRoot(location);
+        string fullPath = Path.GetFullPath(path);
+        string relative = Path.GetRelativePath(root, fullPath);
+        if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, GetPathComparison()))
+            throw new InvalidOperationException("path is outside the selected image root.");
+
+        string current = root;
+        foreach (string part in relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, part);
+            if ((File.Exists(current) || Directory.Exists(current)) && IsReparsePoint(current))
+                throw new InvalidOperationException("symbolic links and reparse points are not followed by the app console.");
+        }
+    }
+
+    private string GetImageInfo(string[] args)
+    {
+        if (args.Length != 1)
+            throw new InvalidOperationException("usage: info <image>");
+        if (_imageLocation is not ImageBrowserLocation location || _imageCurrentDirectory is null)
+            throw new InvalidOperationException("select an image root with 'cd images' or 'cd user' before using info.");
+        if (Path.IsPathRooted(args[0]))
+            throw new InvalidOperationException("image paths must be relative to the selected image folder.");
+
+        string imagePath = Path.GetFullPath(Path.Combine(_imageCurrentDirectory, args[0].Replace('/', Path.DirectorySeparatorChar)));
+        string parent = Path.GetDirectoryName(imagePath) ?? _imageCurrentDirectory;
+        _imageLibrary!.GetSafeCurrentDirectory(location, parent);
+        if (!File.Exists(imagePath))
+            throw new FileNotFoundException($"no such image: {args[0]}");
+
+        ImageAssetPreview preview = _imageLibrary.CreatePreview(imagePath);
+        return $"Name: {Path.GetFileName(imagePath)}{Environment.NewLine}Path: {imagePath}{Environment.NewLine}Dimensions: {preview.Width} × {preview.Height}{Environment.NewLine}Format: {preview.Format}{Environment.NewLine}Frames: {preview.FrameCount}{Environment.NewLine}Transparency: {(preview.HasTransparency ? "yes" : "no")}";
+    }
+
+    private static StringComparison GetPathComparison() => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     private string SwitchToApplication(string[] args)
     {
@@ -300,6 +558,7 @@ internal sealed class AppConsoleService
     {
         ConsoleContext.Database => GetDatabaseHelpText(),
         ConsoleContext.Workspace => FormatContextHelp(WorkspaceHelpText),
+        ConsoleContext.Images => FormatContextHelp(ImagesHelpText),
         _ => FormatContextHelp(FilesystemHelpText)
     };
 
@@ -429,11 +688,14 @@ internal sealed class AppConsoleService
         string synopsis = command switch
         {
             "ls" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: ls [--columns N[,N...]]\nLists sessions at /, messages inside a session, or fields inside a message.",
+            "ls" when ActiveContext == ConsoleContext.Images => "usage: ls [-a] [-l] [path]\nUses the same filesystem listing behavior as other filesystem contexts. Lists all files and folders; -a includes hidden entries and -l shows type, byte size, and modified time.",
             "ls" => "usage: ls [-a] [-l] [path]\nLists entries in the current filesystem context (application data or workspace). -a includes hidden entries; -l shows type, size, and last-modified time. Short options can be combined, for example -la.",
-            "grep" => "usage: grep <search-term> <file> OR <command> | grep <search-term>\nSearches literal text, case-insensitively, with line numbers and colored matches by default. File search is available in application and workspace contexts; piped output can be searched in database context too. This is an application command, not an operating-system grep.",
+            "grep" => "usage: grep <search-term> <file> OR <command> | grep <search-term>\nSearches literal text, case-insensitively, with line numbers and colored matches by default. File search is available in filesystem contexts; piped output can be searched in database context too. This is an application command, not an operating-system grep.",
             "cd" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: cd <session-id|message-id|media|..|/>\nNavigates sessions, messages, and a message's media records; does not change filesystem directories.",
+            "cd" when ActiveContext == ConsoleContext.Images => "usage: cd [path]\nSelects images or the configured User Images folder, then navigates within it. Use cd / to return to the image roots.",
             "cd" => "usage: cd [path]\nChanges directory within the current filesystem context.",
             "pwd" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: pwd\nShows the current database location.",
+            "pwd" when ActiveContext == ConsoleContext.Images => "usage: pwd\nShows the full path of the selected image folder, or both configured roots at the img root.",
             "pwd" => "usage: pwd\nShows the current app-data directory.",
             "show" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: show [--column <name>|--field <name>]\nRequires a message location. Without an option, displays all message fields; with a column, displays one value and pretty-prints JSON.",
             "columns" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: columns\nRequires a message or media-record location. Lists field names and their 1-based indexes.",
@@ -441,6 +703,8 @@ internal sealed class AppConsoleService
             "disconnect" => "usage: disconnect\nDisconnects and returns this terminal to application-data context.",
             "cat" => "usage: cat <file>\nDisplays a small text file in the current filesystem context.",
             "workspace" => "usage: workspace\nEnters the configured workspace context in read-only mode. Requires Developer Tools to be enabled and an existing workspace root.",
+            "img" => "usage: img\nEnters the read-only image-browsing context. Use ls to see image roots, then cd images or cd user.",
+            "info" => "usage: info <image>\nShows image dimensions, format, frame count, and transparency for an image in the selected image folder.",
             "app" or "application" => "usage: app\nReturns to the application-data context.",
             "database" => "usage: database\nSwitches to the currently connected database context.",
             "find" => "usage: find sessions [--sid ID] [--has-media] [--role VALUE] [--content TEXT] [--model VALUE] [--reasoning-level VALUE] [--tool VALUE] [--same-message]\nFilters combine with AND. By default filters may match different messages; --same-message requires one message to satisfy all message filters. Results show session IDs and matching message IDs in one column per message filter; content is not printed.",
@@ -455,7 +719,9 @@ internal sealed class AppConsoleService
             ? $"database '{Path.GetFileName(_connectedDatabasePath)}' at {GetDatabaseLocation()}"
             : ActiveContext == ConsoleContext.Workspace
                 ? $"workspace at {CurrentFilesystemDirectory}"
-                : databaseAlias
+                : ActiveContext == ConsoleContext.Images
+                    ? $"img at {GetImagePromptLocation()}"
+                    : databaseAlias
                     ? "database (not connected)"
                     : $"application data at {_currentDirectory}";
 
@@ -472,6 +738,9 @@ internal sealed class AppConsoleService
 
     private string ListDirectory(string[] args)
     {
+        if (ActiveContext == ConsoleContext.Images)
+            return ListImageDirectory(args);
+
         bool showHidden = args.Contains("-a", StringComparer.Ordinal);
         bool detailed = args.Contains("-l", StringComparer.Ordinal);
         string[] paths = args.Where(arg => arg is not ("-a" or "-l")).ToArray();
@@ -548,11 +817,13 @@ internal sealed class AppConsoleService
             throw new InvalidOperationException("usage: cat <file>");
 
         bool workspace = ActiveContext == ConsoleContext.Workspace;
-        string filePath = ResolvePath(args[0], workspace);
+        bool images = ActiveContext == ConsoleContext.Images;
+        string filePath = images ? ResolveImageFilePath(args[0]) : ResolvePath(args[0], workspace);
         if (!File.Exists(filePath))
             throw new FileNotFoundException($"no such file: {args[0]}");
 
-        EnsureNoReparsePoints(filePath, workspace);
+        if (!images)
+            EnsureNoReparsePoints(filePath, workspace);
         var info = new FileInfo(filePath);
         if (info.Length > MaximumFileBytes)
             throw new InvalidOperationException($"file is larger than the {MaximumFileBytes / 1024} KiB console limit.");
@@ -1539,9 +1810,10 @@ internal sealed class AppConsoleService
             string typedCommand = DecodeCompletionToken(rawToken);
             string[] commands = ActiveContext switch
             {
-                ConsoleContext.Database => ["help", "pwd", "ls", "cd", "grep", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "workspace", "app", "clear", "quit", "exit"],
-                ConsoleContext.Workspace => ["help", "pwd", "ls", "cd", "cat", "grep", "workspace", "app", "database", "disconnect", "clear", "quit", "exit"],
-                _ => ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "disconnect", "workspace", "database", "clear", "quit", "exit"]
+                ConsoleContext.Database => ["help", "pwd", "ls", "cd", "grep", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "workspace", "img", "app", "clear", "quit", "exit"],
+                ConsoleContext.Workspace => ["help", "pwd", "ls", "cd", "cat", "grep", "workspace", "img", "app", "database", "disconnect", "clear", "quit", "exit"],
+                ConsoleContext.Images => ["help", "pwd", "ls", "cd", "cat", "grep", "info", "img", "app", "database", "workspace", "clear", "quit", "exit"],
+                _ => ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "disconnect", "workspace", "database", "img", "clear", "quit", "exit"]
             };
             return new AppConsoleCompletionResult(tokenStart, commands.Where(item => item.StartsWith(typedCommand, StringComparison.OrdinalIgnoreCase)).ToArray());
         }
@@ -1642,6 +1914,9 @@ internal sealed class AppConsoleService
             }
             return new AppConsoleCompletionResult(tokenStart, []);
         }
+        if (ActiveContext == ConsoleContext.Images &&
+            (command is "cd" or "ls" or "info" or "cat" || (command == "grep" && precedingArgs.Count >= 2)))
+            return GetImagePathCompletions(command, rawToken, tokenStart);
         if (ActiveContext == ConsoleContext.Database && command != "cd")
             return new AppConsoleCompletionResult(tokenStart, []);
         if (command is not ("cd" or "cat" or "ls" or "connect"))
@@ -1696,6 +1971,59 @@ internal sealed class AppConsoleService
         }
 
         return new AppConsoleCompletionResult(tokenStart, candidates);
+    }
+
+    private AppConsoleCompletionResult GetImagePathCompletions(string command, string rawToken, int tokenStart)
+    {
+        string typedPath = DecodeCompletionToken(rawToken);
+        try
+        {
+            EnsureImageLibrary();
+            int separatorIndex = Math.Max(typedPath.LastIndexOf('/'), typedPath.LastIndexOf((char)92));
+            string directoryPart = separatorIndex < 0 ? string.Empty : typedPath[..(separatorIndex + 1)];
+            string namePrefix = separatorIndex < 0 ? typedPath : typedPath[(separatorIndex + 1)..];
+
+            if (_imageLocation is null || _imageCurrentDirectory is null)
+            {
+                if (separatorIndex >= 0 || command is not ("cd" or "ls"))
+                    return new AppConsoleCompletionResult(tokenStart, []);
+                string[] roots = ["images", "application", "user", _userImagesDisplayName];
+                return new AppConsoleCompletionResult(tokenStart, roots
+                    .Where(item => item.StartsWith(namePrefix, StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).Select(EscapeCompletionPath).ToArray());
+            }
+
+            string directory = string.IsNullOrEmpty(directoryPart)
+                ? _imageCurrentDirectory
+                : ResolveImageDirectory(directoryPart.TrimEnd('/', (char)92));
+            var entries = Directory.EnumerateFileSystemEntries(directory)
+                .Where(path => !IsReparsePoint(path))
+                .OrderBy(path => !Directory.Exists(path))
+                .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase);
+            var candidates = new List<string>();
+            if (command == "cd" && directoryPart.Length == 0 && "..".StartsWith(namePrefix, StringComparison.Ordinal))
+                candidates.Add("..");
+
+            foreach (string entry in entries)
+            {
+                string name = Path.GetFileName(entry);
+                bool isDirectory = Directory.Exists(entry);
+                if (command == "cd" && !isDirectory)
+                    continue;
+                if (command is "info" or "cat" or "grep" && isDirectory)
+                    continue;
+                if (!name.StartsWith(namePrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                string separator = typedPath.Contains((char)92) && !typedPath.Contains('/') ? "\\" : "/";
+                string completed = directoryPart + name + (isDirectory ? separator : string.Empty);
+                candidates.Add(EscapeCompletionPath(completed));
+            }
+            return new AppConsoleCompletionResult(tokenStart, candidates.Take(MaximumListItems).ToArray());
+        }
+        catch
+        {
+            return new AppConsoleCompletionResult(tokenStart, []);
+        }
     }
 
     private static int FindCurrentTokenStart(string line)
@@ -1954,9 +2282,26 @@ internal sealed class AppConsoleService
         "  <command> | grep <term>      Filter command output\n" +
         "  connect [database-file]     Connect read-only; switches to database context\n" +
         "  workspace                   Enter the configured workspace (read-only)\n" +
+        "  img                         Enter read-only image browsing\n" +
         "  quit                         Close this terminal window\n\n" +
         "Use app to return here from another context. Workspace access requires Developer Tools and a configured existing root.\n" +
         "grep searches literal text; -n and -i are enabled by default, and matches are colored. It is an application command, not system grep.\n" +
+        "Long output: append | more or | less (Space/Down to advance, q to quit).";
+
+    private const string ImagesHelpText =
+        "Application console — img context (read-only). This is not a general-purpose or operating-system shell.\n" +
+        "Image browsing is confined to the configured Application Images and User Images folders. The user folder is displayed by its configured folder name even when stored elsewhere.\n\n" +
+        "  help                         Show image-context help\n" +
+        "  pwd                          Show full configured image-folder path(s)\n" +
+        "  ls [-a] [-l] [path]          List all files and folders; -l shows type, byte size, and modified time\n" +
+        "  cd [images|user|folder]      Select an image root or navigate folders; cd / returns to the roots\n" +
+        "  cat <file>                   Display a small text file\n" +
+        "  grep <term> <file>           Search text; command output can also be piped to grep\n" +
+        "  info <image>                 Show dimensions, format, frames, and transparency\n" +
+        "  app                          Return to application-data context\n" +
+        "  database                     Switch to the connected database context\n" +
+        "  workspace                    Switch to the configured workspace (read-only)\n\n" +
+        "No image files are modified by this context. At the img root, ls shows the application image root and the configured User Images folder name; pwd reports their actual full paths.\n" +
         "Long output: append | more or | less (Space/Down to advance, q to quit).";
 
     private const string WorkspaceHelpText =
@@ -1971,6 +2316,7 @@ internal sealed class AppConsoleService
         "  <command> | grep <term>      Filter command output\n" +
         "  app                          Return to application-data context\n" +
         "  database                     Switch to the connected database context\n" +
+        "  img                          Enter read-only image browsing\n" +
         "  disconnect                   Disconnect the database and return to app context\n\n" +
         "Workspace commands are application-provided, not operating-system commands. File creation, modification, builds, and process execution are not available here yet.";
 
@@ -1991,6 +2337,7 @@ internal sealed class AppConsoleService
         "  describe <table>             Show database column details\n" +
         "  messages show <id> [--field <column>]  Show message data\n" +
         "  workspace                   Switch to the configured workspace (read-only)\n" +
+        "  img                          Enter read-only image browsing\n" +
         "  app                          Return to application-data context\n" +
         "  disconnect                   Disconnect and return to application-data context\n\n" +
         "NAVIGATION\n" +

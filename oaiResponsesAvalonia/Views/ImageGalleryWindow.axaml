@@ -14,6 +14,7 @@
                 <MenuItem Header="_File">
                     <MenuItem x:Name="SaveAsMenuItem" Header="Save As…" IsEnabled="False" Click="SaveAsMenuItem_Click" />
                     <MenuItem Header="Import…" Click="ImportButton_Click" />
+                    <MenuItem Header="Images Folder" ToolTip.Tip="Open in File manager" Click="OpenUserImagesFolderMenuItem_Click" />
                     <MenuItem Header="Refresh" Click="RefreshMenuItem_Click" />
                     <Separator />
                     <MenuItem Header="Exit" Click="ExitMenuItem_Click" />

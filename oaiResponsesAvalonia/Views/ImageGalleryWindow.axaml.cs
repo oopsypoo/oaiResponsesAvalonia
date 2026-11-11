@@ -187,6 +187,28 @@ public partial class ImageGalleryWindow : Window
         _ => true
     };
 
+    private async void OpenUserImagesFolderMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            TopLevel? topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel is null)
+            {
+                StatusText.Text = "Could not open the user images folder.";
+                return;
+            }
+
+            var folder = new DirectoryInfo(_imageService.GetRoot(ImageBrowserLocation.UserImages));
+            bool opened = await topLevel.Launcher.LaunchDirectoryInfoAsync(folder);
+            if (!opened)
+                StatusText.Text = "The system could not open the user images folder.";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Could not open the user images folder: {ex.Message}";
+        }
+    }
+
     private void UpButton_Click(object? sender, RoutedEventArgs e)
     {
         string root = _imageService.GetRoot(_location);

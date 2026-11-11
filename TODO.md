@@ -11,6 +11,7 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 
 * \[ ] Review API requests, responses, and supported features against current official Responses API information; update the application and tests where needed.
 * \[ ] Make API compatibility easier to maintain by keeping API behavior clear, testable, and separate from presentation code.
+* \[ ] Low priority: Refactor the Responses model selector to use a typed `ItemsSource` instead of adding `ComboBoxItem` instances in code, improving IntelliSense type inference and addressing the `MC3101` warning.
 * \[ ] Remove OpenAIs web-tool and make a local tool/function (save some tokens I'm guessing)
 
 ## Terminal and developer tools

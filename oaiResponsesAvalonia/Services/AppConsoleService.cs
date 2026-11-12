@@ -55,6 +55,7 @@ internal sealed class AppConsoleService
 
 
     public ConsoleContext ActiveContext { get; private set; } = ConsoleContext.Application;
+    internal ImageLibraryService? ImageLibrary => _imageLibrary;
     private int? _databaseSessionId;
     private int? _databaseMessageId;
     private bool _databaseMediaDirectory;
@@ -198,6 +199,9 @@ internal sealed class AppConsoleService
             string command = args[0].ToLowerInvariant();
             bool grepReadsFile = command == "grep" && args.Skip(1).Count(argument => !argument.StartsWith("-", StringComparison.Ordinal)) > 1;
             List<TerminalImagePreview>? imagePreviews = null;
+            string[]? openImagePaths = null;
+            int previewWidth = 8;
+            int previewHeight = 4;
             EnsureCommandCapability(command, grepReadsFile);
             if (pipedGrepArguments is not null)
                 EnsureCapability(ConsoleOperationCapability.Search, "grep");
@@ -213,7 +217,7 @@ internal sealed class AppConsoleService
                 "workspace" => EnterWorkspace(args.Skip(1).ToArray()),
                 "img" => EnterImages(args.Skip(1).ToArray()),
                 "info" => GetImageInfo(args.Skip(1).ToArray()),
-                "preview" => CreateTerminalImagePreview(args.Skip(1).ToArray(), out imagePreviews),
+                "preview" => CreateTerminalImagePreview(args.Skip(1).ToArray(), out imagePreviews, out openImagePaths, out previewWidth, out previewHeight),
                 "app" or "application" => SwitchToApplication(args.Skip(1).ToArray()),
                 "database" => SwitchToDatabase(args.Skip(1).ToArray()),
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
@@ -241,7 +245,7 @@ internal sealed class AppConsoleService
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or "grep" or
                 "connect" or "disconnect" or "workspace" or "img" or "info" or "preview" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
             string kind = !knownCommand ? "error" : command is "connect" or "disconnect" or "workspace" or "img" or "app" or "application" or "database" ? "success" : "normal";
-            return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode, imagePreviews);
+            return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode, imagePreviews, openImagePaths, previewWidth, previewHeight);
         }
         catch (Exception ex)
         {
@@ -514,9 +518,39 @@ internal sealed class AppConsoleService
         }
     }
 
-    private string CreateTerminalImagePreview(string[] args, out List<TerminalImagePreview>? imagePreviews)
+    private string CreateTerminalImagePreview(string[] args, out List<TerminalImagePreview>? imagePreviews, out string[]? openImagePaths, out int previewWidth, out int previewHeight)
     {
         imagePreviews = null;
+        openImagePaths = null;
+        previewWidth = 8;
+        previewHeight = 4;
+        bool openInWindow = false;
+        var patterns = new List<string>();
+        for (int index = 0; index < args.Length; index++)
+        {
+            string argument = args[index];
+            if (argument is "-o" or "--open")
+            {
+                openInWindow = true;
+                continue;
+            }
+            string? sizeValue = argument == "-s"
+                ? index + 1 < args.Length ? args[++index] : throw new InvalidOperationException("-s requires a size such as 8x4.")
+                : argument.StartsWith("--size=", StringComparison.Ordinal) ? argument[7..] : null;
+            if (sizeValue is not null)
+            {
+                string[] dimensions = sizeValue.Split('x', 'X');
+                if (dimensions.Length != 2 || !int.TryParse(dimensions[0], out previewWidth) || !int.TryParse(dimensions[1], out previewHeight) || previewWidth < 1 || previewWidth > 40 || previewHeight < 1 || previewHeight > 20)
+                    throw new InvalidOperationException("preview size must be width x height (for example, 8x4); width must be 1-40 and height 1-20.");
+                continue;
+            }
+            if (argument.StartsWith("-", StringComparison.Ordinal))
+                throw new InvalidOperationException($"unknown preview option: {argument}");
+            patterns.Add(argument);
+        }
+        if (patterns.Count == 0)
+            throw new InvalidOperationException("usage: preview [-o|--open] [-s <width>x<height>|--size=<width>x<height>] <image-or-pattern ...>");
+        args = patterns.ToArray();
         if (args.Length == 0)
             throw new InvalidOperationException("usage: preview <image-or-pattern ...>");
         if (_imageLocation is not ImageBrowserLocation location || _imageCurrentDirectory is null)
@@ -530,6 +564,14 @@ internal sealed class AppConsoleService
             .ToArray();
         const int maximumPreviewCount = 24;
         string[] displayedPaths = imagePaths.Take(maximumPreviewCount).ToArray();
+        if (openInWindow)
+        {
+            openImagePaths = displayedPaths;
+            string openOmittedMessage = imagePaths.Length > displayedPaths.Length
+                ? $" Showing the first {displayedPaths.Length} of {imagePaths.Length} matches."
+                : string.Empty;
+            return $"Opening {displayedPaths.Length} image(s) in the inspector.{openOmittedMessage}";
+        }
         imagePreviews = displayedPaths.Select(imagePath =>
         {
             EnsureImageNoReparsePoints(location, imagePath);
@@ -740,7 +782,7 @@ internal sealed class AppConsoleService
             "workspace" => "usage: workspace\nEnters the configured workspace context in read-only mode. Requires Developer Tools to be enabled and an existing workspace root.",
             "img" => "usage: img\nEnters the read-only image-browsing context. Use ls to see image roots, then cd images or cd user.",
             "info" => "usage: info <image-pattern ...>\nShows dimensions, format, frame count, and transparency for images in the selected image folder. File-name patterns may use * and ? (for example, *.png).",
-            "preview" => "usage: preview <image-or-pattern ...>\nDisplays up to 12 small inline thumbnails in a side-by-side grid. File-name patterns may use * and ?.",
+            "preview" => "usage: preview [-o|--open] [-s <width>x<height>|--size=<width>x<height>] <image-or-pattern ...>\nDisplays up to 24 inline thumbnails (default 8x4 cells); use -s/--size to resize them or -o/--open to inspect matches in a resizable window. The inspector supports zoom, mouse-wheel zoom, previous/next, and Save As of an unchanged copy. File-name patterns may use * and ?.",
             "app" or "application" => "usage: app\nReturns to the application-data context.",
             "database" => "usage: database\nSwitches to the currently connected database context.",
             "find" => "usage: find sessions [--sid ID] [--has-media] [--role VALUE] [--content TEXT] [--model VALUE] [--reasoning-level VALUE] [--tool VALUE] [--same-message]\nFilters combine with AND. By default filters may match different messages; --same-message requires one message to satisfy all message filters. Results show session IDs and matching message IDs in one column per message filter; content is not printed.",
@@ -2088,8 +2130,20 @@ internal sealed class AppConsoleService
             }
             return new AppConsoleCompletionResult(tokenStart, []);
         }
+        if (ActiveContext == ConsoleContext.Images && command == "preview")
+        {
+            string typedPreviewArgument = DecodeCompletionToken(rawToken);
+            if (precedingArgs.LastOrDefault()?.Equals("-s", StringComparison.OrdinalIgnoreCase) == true)
+                return new AppConsoleCompletionResult(tokenStart, []);
+            if (typedPreviewArgument.StartsWith("-", StringComparison.Ordinal))
+            {
+                string[] previewOptions = ["-o", "--open", "-s", "--size="];
+                return new AppConsoleCompletionResult(tokenStart, previewOptions.Where(option => option.StartsWith(typedPreviewArgument, StringComparison.OrdinalIgnoreCase)).ToArray());
+            }
+            return GetImagePathCompletions(command, rawToken, tokenStart);
+        }
         if (ActiveContext == ConsoleContext.Images &&
-            (command is "cd" or "ls" or "info" or "cat" or "preview" || (command == "grep" && precedingArgs.Count >= 2)))
+            (command is "cd" or "ls" or "info" or "cat" || (command == "grep" && precedingArgs.Count >= 2)))
             return GetImagePathCompletions(command, rawToken, tokenStart);
         if (ActiveContext == ConsoleContext.Database && command != "cd")
             return new AppConsoleCompletionResult(tokenStart, []);
@@ -2472,7 +2526,7 @@ internal sealed class AppConsoleService
         "  cat <file>                   Display a small text file\n" +
         "  grep <term> <file>           Search text; command output can also be piped to grep\n" +
         "  info <image>                 Show dimensions, format, frames, and transparency\n" +
-         "  preview <image-or-pattern>  Display up to 12 inline thumbnails in a grid\n" +
+         "  preview [-o] [-s 8x4|--size=8x4] <image-or-pattern>  Inline grid or zoomable inspector; Save As copies originals\n" +
         "  app                          Return to application-data context\n" +
         "  database                     Switch to the connected database context\n" +
         "  workspace                    Switch to the configured workspace (read-only)\n\n" +
@@ -2567,7 +2621,7 @@ internal sealed class AppConsoleService
 
 internal sealed record TerminalImagePreview(string FileName, string Base64);
 
-internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false, string Kind = "normal", string PagerMode = "", List<TerminalImagePreview>? ImagePreviews = null);
+internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false, string Kind = "normal", string PagerMode = "", List<TerminalImagePreview>? ImagePreviews = null, string[]? OpenImagePaths = null, int PreviewWidth = 8, int PreviewHeight = 4);
 internal sealed record AppConsoleWorkspaceConfigurationChange(string Message, bool CancelActiveWorkspacePager);
 
 internal sealed record AppConsoleCompletionResult(int ReplaceFrom, IReadOnlyList<string> Candidates);

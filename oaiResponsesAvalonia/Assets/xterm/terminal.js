@@ -447,9 +447,9 @@
     return { ...preview, base64: canvas.toDataURL('image/png').split(',')[1] };
   };
 
-  const renderImagePreviewGrid = async previews => {
-    const maxImageWidth = 8;
-    const maxImageHeight = 4;
+  const renderImagePreviewGrid = async (previews, requestedWidth = 8, requestedHeight = 4) => {
+    const maxImageWidth = Math.max(1, requestedWidth);
+    const maxImageHeight = Math.max(1, requestedHeight);
     const gap = 2;
     const imageWidth = Math.min(maxImageWidth, Math.max(1, terminal.cols - 1));
     const imageHeight = Math.max(1, Math.round(maxImageHeight * imageWidth / maxImageWidth));
@@ -514,7 +514,7 @@
       if (!imageContextActive || !imageAddon) {
         terminal.write('\r\nInline image preview is unavailable because the image addon did not load.\r\n');
       } else {
-        await renderImagePreviewGrid(result.imagePreviews);
+        await renderImagePreviewGrid(result.imagePreviews, result.previewWidth || 8, result.previewHeight || 4);
       }
     }
     busy = false;

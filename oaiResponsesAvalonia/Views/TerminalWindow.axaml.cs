@@ -18,6 +18,7 @@ public sealed partial class TerminalWindow : Window
     private readonly MarkdownViewerAssetServer _assetServer;
     private readonly AppConsoleService _console;
     private readonly Queue<AppConsoleWorkspaceConfigurationChange> _pendingWorkspaceNotifications = new();
+    private readonly List<ImageInspectorWindow> _imageInspectorWindows = new();
     private bool _terminalPageReady;
     private bool _flushingWorkspaceNotifications;
 
@@ -135,7 +136,14 @@ public sealed partial class TerminalWindow : Window
                 return;
 
             AppConsoleResult result = _console.Execute(line);
-            string resultJson = JsonSerializer.Serialize(result, JsonOptions);
+            if (result.OpenImagePaths is { Length: > 0 } imagePaths && _console.ImageLibrary is { } imageLibrary)
+            {
+                var inspector = new ImageInspectorWindow(imagePaths, imageLibrary);
+                _imageInspectorWindows.Add(inspector);
+                inspector.Closed += (_, _) => _imageInspectorWindows.Remove(inspector);
+                inspector.Show(this);
+            }
+            string resultJson = JsonSerializer.Serialize(result with { OpenImagePaths = null }, JsonOptions);
             await TerminalWebView.InvokeScript($"(window.receiveResult({resultJson}), 'ok');");
         }
         catch (Exception ex)

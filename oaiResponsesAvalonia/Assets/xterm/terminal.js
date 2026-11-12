@@ -40,9 +40,10 @@
   let imageAddon = null;
   let imageAddonLoadPromise = null;
   const ensureImageAddon = () => {
-    if (imageAddon || imageAddonLoadPromise) return;
+    if (imageAddon) return Promise.resolve();
+    if (imageAddonLoadPromise) return imageAddonLoadPromise;
 
-    imageAddonLoadPromise = (async () => {
+    return imageAddonLoadPromise = (async () => {
       if (typeof window.XtermImageAddon !== 'function') {
         await new Promise((resolve, reject) => {
           const script = document.createElement('script');
@@ -116,7 +117,7 @@
   let prompt = '~/ $ ';
   const filesystemCommandCompletions = ['help', 'pwd', 'ls', 'cd', 'cat', 'grep', 'connect', 'img', 'clear', 'quit', 'exit'];
   const databaseCommandCompletions = ['help', 'pwd', 'ls', 'cd', 'grep', 'find', 'disconnect', 'sessions', 'tables', 'describe', 'messages', 'show', 'columns', 'db', 'img', 'clear', 'quit', 'exit'];
-  const imageCommandCompletions = ['help', 'pwd', 'ls', 'cd', 'info', 'app', 'database', 'workspace', 'clear', 'quit', 'exit'];
+  const imageCommandCompletions = ['help', 'pwd', 'ls', 'cd', 'info', 'preview', 'app', 'database', 'workspace', 'clear', 'quit', 'exit'];
   const ansi = { reset: '\u001b[0m', cyan: '\u001b[36m', green: '\u001b[32m', yellow: '\u001b[33m', red: '\u001b[31m' };
   const coloredPrompt = () => ansi.cyan + prompt + ansi.reset;
   const redrawLine = () => {
@@ -425,7 +426,7 @@
     applyWorkspaceNotification(change);
   };
 
-  window.receiveResult = result => {
+  window.receiveResult = async result => {
     if (typeof result.prompt === 'string' && result.prompt.length > 0) {
       prompt = result.prompt;
       syncImageAddonContext();
@@ -443,6 +444,18 @@
       const outputColor = result.kind === 'error' ? ansi.red : result.kind === 'success' ? ansi.green : '';
       terminal.write(outputColor + result.output.replace(/\r?\n/g, '\r\n') + (outputColor ? ansi.reset : ''));
       if (!result.output.endsWith('\n')) terminal.write('\r\n');
+    }
+    if (typeof result.imagePreviewBase64 === 'string' && result.imagePreviewBase64.length > 0) {
+      await ensureImageAddon();
+      if (!imageContextActive || !imageAddon) {
+        terminal.write('\r\nInline image preview is unavailable because the image addon did not load.\r\n');
+      } else {
+        const base64 = result.imagePreviewBase64;
+        const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+        const imageSize = Math.floor(base64.length * 3 / 4) - padding;
+        terminal.write(`\x1b]1337;File=inline=1;size=${imageSize};width=32;height=16;preserveAspectRatio=1:${base64}\x07`);
+        terminal.write('\r\n');
+      }
     }
     busy = false;
     if (result.closeWindow) {

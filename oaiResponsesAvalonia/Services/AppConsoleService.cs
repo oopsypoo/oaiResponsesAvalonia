@@ -197,6 +197,7 @@ internal sealed class AppConsoleService
 
             string command = args[0].ToLowerInvariant();
             bool grepReadsFile = command == "grep" && args.Skip(1).Count(argument => !argument.StartsWith("-", StringComparison.Ordinal)) > 1;
+            string? imagePreviewBase64 = null;
             EnsureCommandCapability(command, grepReadsFile);
             if (pipedGrepArguments is not null)
                 EnsureCapability(ConsoleOperationCapability.Search, "grep");
@@ -212,6 +213,7 @@ internal sealed class AppConsoleService
                 "workspace" => EnterWorkspace(args.Skip(1).ToArray()),
                 "img" => EnterImages(args.Skip(1).ToArray()),
                 "info" => GetImageInfo(args.Skip(1).ToArray()),
+                "preview" => CreateTerminalImagePreview(args.Skip(1).ToArray(), out imagePreviewBase64),
                 "app" or "application" => SwitchToApplication(args.Skip(1).ToArray()),
                 "database" => SwitchToDatabase(args.Skip(1).ToArray()),
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
@@ -237,9 +239,9 @@ internal sealed class AppConsoleService
 
             bool closeWindow = command is "quit" or "exit";
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or "grep" or
-                "connect" or "disconnect" or "workspace" or "img" or "info" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
+                "connect" or "disconnect" or "workspace" or "img" or "info" or "preview" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
             string kind = !knownCommand ? "error" : command is "connect" or "disconnect" or "workspace" or "img" or "app" or "application" or "database" ? "success" : "normal";
-            return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode);
+            return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode, imagePreviewBase64);
         }
         catch (Exception ex)
         {
@@ -251,15 +253,15 @@ internal sealed class AppConsoleService
     {
         if (command == "connect" && ActiveContext != ConsoleContext.Application)
             throw new InvalidOperationException("switch to application context before connecting to a database.");
-        if (command == "info" && ActiveContext != ConsoleContext.Images)
-            throw new InvalidOperationException("'info' requires the img context. Use 'img' to enter it.");
+        if (command is "info" or "preview" && ActiveContext != ConsoleContext.Images)
+            throw new InvalidOperationException($"'{command}' requires the img context. Use 'img' to enter it.");
         if (command is "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" && ActiveContext != ConsoleContext.Database)
             throw new InvalidOperationException($"'{command}' requires the database context. Use 'database' to switch contexts.");
 
         ConsoleOperationCapability required = command switch
         {
             "ls" => ConsoleOperationCapability.List,
-            "info" => ConsoleOperationCapability.ImageRead,
+            "info" or "preview" => ConsoleOperationCapability.ImageRead,
             "cat" => ConsoleOperationCapability.Read,
             "grep" => ConsoleOperationCapability.Search | (grepReadsFile ? ConsoleOperationCapability.Read : ConsoleOperationCapability.None),
             "connect" or "disconnect" or "workspace" or "img" or "app" or "application" or "database" => ConsoleOperationCapability.ContextSwitch,
@@ -512,6 +514,26 @@ internal sealed class AppConsoleService
         }
     }
 
+    private string CreateTerminalImagePreview(string[] args, out string? imagePreviewBase64)
+    {
+        imagePreviewBase64 = null;
+        if (args.Length != 1)
+            throw new InvalidOperationException("usage: preview <image>");
+        if (_imageLocation is not ImageBrowserLocation location || _imageCurrentDirectory is null)
+            throw new InvalidOperationException("select an image root with 'cd images' or 'cd user' before using preview.");
+        if (Path.IsPathRooted(args[0]))
+            throw new InvalidOperationException("image paths must be relative to the selected image folder.");
+
+        string imagePath = ResolveImageFilePath(args[0]);
+        if (!File.Exists(imagePath))
+            throw new FileNotFoundException($"no such image: {args[0]}");
+        EnsureImageNoReparsePoints(location, imagePath);
+
+        byte[] thumbnail = _imageLibrary!.CreateThumbnail(imagePath, maxSize: 320);
+        imagePreviewBase64 = Convert.ToBase64String(thumbnail);
+        return "Rendering a read-only image preview.";
+    }
+
     private string GetImageInfo(string[] args)
     {
         if (args.Length == 0)
@@ -709,6 +731,7 @@ internal sealed class AppConsoleService
             "workspace" => "usage: workspace\nEnters the configured workspace context in read-only mode. Requires Developer Tools to be enabled and an existing workspace root.",
             "img" => "usage: img\nEnters the read-only image-browsing context. Use ls to see image roots, then cd images or cd user.",
             "info" => "usage: info <image-pattern ...>\nShows dimensions, format, frame count, and transparency for images in the selected image folder. File-name patterns may use * and ? (for example, *.png).",
+            "preview" => "usage: preview <image>\nDisplays one small inline thumbnail for an image in the selected image folder. Wildcards are not supported yet.",
             "app" or "application" => "usage: app\nReturns to the application-data context.",
             "database" => "usage: database\nSwitches to the currently connected database context.",
             "find" => "usage: find sessions [--sid ID] [--has-media] [--role VALUE] [--content TEXT] [--model VALUE] [--reasoning-level VALUE] [--tool VALUE] [--same-message]\nFilters combine with AND. By default filters may match different messages; --same-message requires one message to satisfy all message filters. Results show session IDs and matching message IDs in one column per message filter; content is not printed.",
@@ -2440,6 +2463,7 @@ internal sealed class AppConsoleService
         "  cat <file>                   Display a small text file\n" +
         "  grep <term> <file>           Search text; command output can also be piped to grep\n" +
         "  info <image>                 Show dimensions, format, frames, and transparency\n" +
+         "  preview <image>              Display a small inline thumbnail (read-only)\n" +
         "  app                          Return to application-data context\n" +
         "  database                     Switch to the connected database context\n" +
         "  workspace                    Switch to the configured workspace (read-only)\n\n" +
@@ -2532,7 +2556,7 @@ internal sealed class AppConsoleService
     */
 }
 
-internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false, string Kind = "normal", string PagerMode = "");
+internal sealed record AppConsoleResult(string Output, string Prompt, bool CloseWindow = false, string Kind = "normal", string PagerMode = "", string? ImagePreviewBase64 = null);
 internal sealed record AppConsoleWorkspaceConfigurationChange(string Message, bool CancelActiveWorkspacePager);
 
 internal sealed record AppConsoleCompletionResult(int ReplaceFrom, IReadOnlyList<string> Candidates);

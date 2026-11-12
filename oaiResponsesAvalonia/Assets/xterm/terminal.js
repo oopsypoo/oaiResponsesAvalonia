@@ -34,6 +34,51 @@
 
   // xterm.js defaults to 80 columns by 24 rows. Keep its grid fitted to
   // the WebView viewport as the Avalonia window is resized.
+  // Load image rendering only while the image context is active. The script stays
+  // cached in the WebView after first load; disposing the addon releases its terminal hooks.
+  let imageContextActive = false;
+  let imageAddon = null;
+  let imageAddonLoadPromise = null;
+  const ensureImageAddon = () => {
+    if (imageAddon || imageAddonLoadPromise) return;
+
+    imageAddonLoadPromise = (async () => {
+      if (typeof window.XtermImageAddon !== 'function') {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = './image-addon.bundle.js';
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('Could not load image addon bundle.'));
+          document.head.appendChild(script);
+        });
+      }
+
+      if (!imageContextActive || imageAddon) return;
+      if (typeof window.XtermImageAddon !== 'function')
+        throw new Error('Image addon bundle did not expose XtermImageAddon.');
+
+      const addon = new window.XtermImageAddon();
+      terminal.loadAddon(addon);
+      imageAddon = addon;
+    })().catch(error => {
+      terminal.write(`\r\nImage preview support could not be loaded: ${error.message}\r\n`);
+    }).finally(() => {
+      imageAddonLoadPromise = null;
+    });
+  };
+  const syncImageAddonContext = () => {
+    const isImageContext = prompt.startsWith('img:');
+    if (isImageContext === imageContextActive) return;
+
+    imageContextActive = isImageContext;
+    if (imageContextActive) {
+      ensureImageAddon();
+    } else if (imageAddon) {
+      imageAddon.dispose();
+      imageAddon = null;
+    }
+  };
+
   const fitTerminal = () => {
     const screen = terminalContainer.querySelector('.xterm-screen');
     if (!screen || terminal.cols < 1 || terminal.rows < 1) return;
@@ -157,7 +202,10 @@
   };
 
   const applyWorkspaceNotification = change => {
-    if (typeof change.prompt === 'string' && change.prompt.length > 0) prompt = change.prompt;
+    if (typeof change.prompt === 'string' && change.prompt.length > 0) {
+      prompt = change.prompt;
+      syncImageAddonContext();
+    }
     const pagerWasOpen = !!pager;
     if (change.cancelActiveWorkspacePager && pager) {
       pager = null;
@@ -378,7 +426,10 @@
   };
 
   window.receiveResult = result => {
-    if (typeof result.prompt === 'string' && result.prompt.length > 0) prompt = result.prompt;
+    if (typeof result.prompt === 'string' && result.prompt.length > 0) {
+      prompt = result.prompt;
+      syncImageAddonContext();
+    }
     if (!result.closeWindow && pendingWorkspaceNotifications.some(change => change.cancelActiveWorkspacePager)) {
       busy = false;
       flushWorkspaceNotifications();

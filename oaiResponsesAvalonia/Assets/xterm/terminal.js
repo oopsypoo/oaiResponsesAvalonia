@@ -34,8 +34,8 @@
 
   // xterm.js defaults to 80 columns by 24 rows. Keep its grid fitted to
   // the WebView viewport as the Avalonia window is resized.
-  // Load image rendering only while the image context is active. The script stays
-  // cached in the WebView after first load; disposing the addon releases its terminal hooks.
+  // Load image rendering lazily on first entry to the image context. Keep the addon
+  // alive until this terminal is closed so inline images remain available in scrollback.
   let imageContextActive = false;
   let imageAddon = null;
   let imageAddonLoadPromise = null;
@@ -74,9 +74,6 @@
     imageContextActive = isImageContext;
     if (imageContextActive) {
       ensureImageAddon();
-    } else if (imageAddon) {
-      imageAddon.dispose();
-      imageAddon = null;
     }
   };
 
@@ -453,7 +450,7 @@
         const base64 = result.imagePreviewBase64;
         const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
         const imageSize = Math.floor(base64.length * 3 / 4) - padding;
-        terminal.write(`\x1b]1337;File=inline=1;size=${imageSize};width=32;height=16;preserveAspectRatio=1:${base64}\x07`);
+        terminal.write(`\x1b]1337;File=inline=1;size=${imageSize};width=8;height=4;preserveAspectRatio=1:${base64}\x07`);
         terminal.write('\r\n');
       }
     }

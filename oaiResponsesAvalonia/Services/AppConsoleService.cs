@@ -1977,7 +1977,7 @@ internal sealed class AppConsoleService
             {
                 ConsoleContext.Database => ["help", "pwd", "ls", "cd", "grep", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "workspace", "img", "app", "clear", "quit", "exit"],
                 ConsoleContext.Workspace => ["help", "pwd", "ls", "cd", "cat", "grep", "workspace", "img", "app", "database", "disconnect", "clear", "quit", "exit"],
-                ConsoleContext.Images => ["help", "pwd", "ls", "cd", "cat", "grep", "info", "img", "app", "database", "workspace", "clear", "quit", "exit"],
+                ConsoleContext.Images => ["help", "pwd", "ls", "cd", "cat", "grep", "info", "preview", "img", "app", "database", "workspace", "clear", "quit", "exit"],
                 _ => ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "disconnect", "workspace", "database", "img", "clear", "quit", "exit"]
             };
             return new AppConsoleCompletionResult(tokenStart, commands.Where(item => item.StartsWith(typedCommand, StringComparison.OrdinalIgnoreCase)).ToArray());
@@ -2080,7 +2080,7 @@ internal sealed class AppConsoleService
             return new AppConsoleCompletionResult(tokenStart, []);
         }
         if (ActiveContext == ConsoleContext.Images &&
-            (command is "cd" or "ls" or "info" or "cat" || (command == "grep" && precedingArgs.Count >= 2)))
+            (command is "cd" or "ls" or "info" or "cat" or "preview" || (command == "grep" && precedingArgs.Count >= 2)))
             return GetImagePathCompletions(command, rawToken, tokenStart);
         if (ActiveContext == ConsoleContext.Database && command != "cd")
             return new AppConsoleCompletionResult(tokenStart, []);
@@ -2175,7 +2175,7 @@ internal sealed class AppConsoleService
                 bool isDirectory = Directory.Exists(entry);
                 if (command == "cd" && !isDirectory)
                     continue;
-                if (command is "info" or "cat" or "grep" && isDirectory)
+                if (command is "info" or "cat" or "grep" or "preview" && isDirectory)
                     continue;
                 if (!name.StartsWith(namePrefix, StringComparison.OrdinalIgnoreCase))
                     continue;

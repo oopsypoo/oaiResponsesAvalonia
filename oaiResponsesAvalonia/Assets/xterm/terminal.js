@@ -423,6 +423,73 @@
     applyWorkspaceNotification(change);
   };
 
+  const normalizePreviewImage = async (preview, widthCells, heightCells) => {
+    const screen = terminalContainer.querySelector('.xterm-screen');
+    const bounds = screen?.getBoundingClientRect();
+    const cellWidth = bounds && terminal.cols > 0 ? bounds.width / terminal.cols : 8;
+    const cellHeight = bounds && terminal.rows > 0 ? bounds.height / terminal.rows : 16;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(widthCells * cellWidth));
+    canvas.height = Math.max(1, Math.round(heightCells * cellHeight));
+
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error(`Could not decode preview image: ${preview.fileName}`));
+      image.src = `data:image/png;base64,${preview.base64}`;
+    });
+
+    const context = canvas.getContext('2d');
+    const scale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    context.drawImage(image, (canvas.width - drawWidth) / 2, (canvas.height - drawHeight) / 2, drawWidth, drawHeight);
+    return { ...preview, base64: canvas.toDataURL('image/png').split(',')[1] };
+  };
+
+  const renderImagePreviewGrid = async previews => {
+    const maxImageWidth = 8;
+    const maxImageHeight = 4;
+    const gap = 2;
+    const imageWidth = Math.min(maxImageWidth, Math.max(1, terminal.cols - 1));
+    const imageHeight = Math.max(1, Math.round(maxImageHeight * imageWidth / maxImageWidth));
+    const tileColumns = Math.max(1, Math.floor((terminal.cols - 1 + gap) / (imageWidth + gap)));
+    const fitCaption = value => value.length > imageWidth ? value.slice(0, imageWidth) : value;
+    const captionsFor = fileName => {
+      const dot = fileName.lastIndexOf('.');
+      const hasExtension = dot > 0;
+      const stem = hasExtension ? fileName.slice(0, dot) : fileName;
+      const extension = hasExtension ? fileName.slice(dot) : '';
+      const shortStem = stem.length > imageWidth
+        ? imageWidth >= 8
+          ? `${stem.slice(0, 3)}~${stem.slice(-4)}`
+          : `${stem.slice(0, Math.max(1, imageWidth - 1))}~`
+        : stem;
+      return [fitCaption(shortStem), fitCaption(extension)];
+    };
+    const writeCaptionLine = (row, lineIndex) => row.map((preview, index) => {
+      const caption = captionsFor(preview.fileName)[lineIndex].padEnd(imageWidth, ' ');
+      return caption + (index < row.length - 1 ? ' '.repeat(gap) : '');
+    }).join('');
+
+    const normalizedPreviews = await Promise.all(previews.map(preview => normalizePreviewImage(preview, imageWidth, imageHeight)));
+    for (let offset = 0; offset < normalizedPreviews.length; offset += tileColumns) {
+      const row = normalizedPreviews.slice(offset, offset + tileColumns);
+      terminal.write(writeCaptionLine(row, 0) + '\r\n' + writeCaptionLine(row, 1) + '\r\n');
+      row.forEach((preview, index) => {
+        if (index > 0) {
+          const column = index * (imageWidth + gap) + 1;
+          terminal.write(`\x1b[${imageHeight - 1}A\x1b[${column}G`);
+        }
+        const base64 = preview.base64;
+        const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+        const imageSize = Math.floor(base64.length * 3 / 4) - padding;
+        terminal.write(`\x1b]1337;File=inline=1;size=${imageSize};width=${imageWidth};height=${imageHeight};preserveAspectRatio=0:${base64}\x07`);
+      });
+      terminal.write('\r\n');
+    }
+  };
+
   window.receiveResult = async result => {
     if (typeof result.prompt === 'string' && result.prompt.length > 0) {
       prompt = result.prompt;
@@ -442,16 +509,12 @@
       terminal.write(outputColor + result.output.replace(/\r?\n/g, '\r\n') + (outputColor ? ansi.reset : ''));
       if (!result.output.endsWith('\n')) terminal.write('\r\n');
     }
-    if (typeof result.imagePreviewBase64 === 'string' && result.imagePreviewBase64.length > 0) {
+    if (Array.isArray(result.imagePreviews) && result.imagePreviews.length > 0) {
       await ensureImageAddon();
       if (!imageContextActive || !imageAddon) {
         terminal.write('\r\nInline image preview is unavailable because the image addon did not load.\r\n');
       } else {
-        const base64 = result.imagePreviewBase64;
-        const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
-        const imageSize = Math.floor(base64.length * 3 / 4) - padding;
-        terminal.write(`\x1b]1337;File=inline=1;size=${imageSize};width=8;height=4;preserveAspectRatio=1:${base64}\x07`);
-        terminal.write('\r\n');
+        await renderImagePreviewGrid(result.imagePreviews);
       }
     }
     busy = false;

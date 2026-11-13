@@ -13,6 +13,10 @@ Notable changes to the project are recorded here. Release version numbers have n
 
 ### 
 
+### 2026-11-13
+
+* Improved the terminal `preview -o` image inspector with faster viewport-sized rendering, responsive loading, and detailed zoom.
+
 ### 2026-11-01
 
 * Added Image-gallery, and some regular, usefull functions like cropping and resizing using ImageSharp. Supports PNG,JPEG,WEBP,BMP and ICO.

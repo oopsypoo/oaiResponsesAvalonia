@@ -1,13 +1,19 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using oaiResponsesAvalonia.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
+using SixLabors.ImageSharp.Processing;
+using SharpImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
 
 namespace oaiResponsesAvalonia.Views;
 
@@ -15,11 +21,19 @@ public sealed partial class ImageInspectorWindow : Window
 {
     private readonly IReadOnlyList<string> _imagePaths;
     private readonly ImageLibraryService _imageLibrary;
+    private readonly SemaphoreSlim _workGate = new(1, 1);
+    private readonly DispatcherTimer _renderTimer;
+    private SharpImage? _image;
     private int _currentIndex;
     private Bitmap? _bitmap;
     private bool _fitToWindow = true;
     private bool _fitPending;
+    private bool _closed;
     private double _zoom = 1;
+    private double _layoutRenderScale;
+    private int _imageRevision;
+    private int _renderRevision;
+    private InspectorRenderRegion? _requestedRegion;
 
     public ImageInspectorWindow(IReadOnlyList<string> imagePaths, ImageLibraryService imageLibrary)
     {
@@ -29,9 +43,11 @@ public sealed partial class ImageInspectorWindow : Window
         _imagePaths = imagePaths;
         _imageLibrary = imageLibrary;
         InitializeComponent();
+        _renderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(75) };
+        _renderTimer.Tick += RenderTimer_Tick;
         PreviewScrollViewer.LayoutUpdated += PreviewScrollViewer_LayoutUpdated;
         Opened += ImageInspectorWindow_Opened;
-        Closed += (_, _) => _bitmap?.Dispose();
+        Closed += ImageInspectorWindow_Closed;
     }
 
     private void ImageInspectorWindow_Opened(object? sender, EventArgs e)
@@ -58,73 +74,106 @@ public sealed partial class ImageInspectorWindow : Window
         Height = Math.Min(Height, maxHeight);
     }
 
-    private void LoadCurrentImage()
+    private async void LoadCurrentImage()
     {
+        int imageRevision = Interlocked.Increment(ref _imageRevision);
+        Interlocked.Increment(ref _renderRevision);
+        _renderTimer.Stop();
+        _requestedRegion = null;
+        var oldImage = _image;
+        _image = null;
+        DisposeImageLater(oldImage);
+        PreviewImage.Source = null;
+        _bitmap?.Dispose();
+        _bitmap = null;
+        _fitToWindow = true;
+        _zoom = 1;
+        _fitPending = true;
+        PreviewScrollViewer.Offset = default;
+        string path = _imagePaths[_currentIndex];
+        ImageNameText.Text = Path.GetFileName(path);
+        StatusText.Text = "Loading image…";
+        PreviousButton.IsEnabled = _currentIndex > 0;
+        NextButton.IsEnabled = _currentIndex < _imagePaths.Count - 1;
+        Title = $"Image Inspector — {Path.GetFileName(path)}";
+
         try
         {
-            _bitmap?.Dispose();
-            ImageAssetPreview preview = _imageLibrary.CreatePreview(_imagePaths[_currentIndex], maxSize: 4096);
-            _bitmap = new Bitmap(new MemoryStream(preview.PngBytes));
-            PreviewImage.Source = _bitmap;
-            _fitToWindow = true;
-            _zoom = 1;
-            ImageNameText.Text = $"{Path.GetFileName(_imagePaths[_currentIndex])}  ({_currentIndex + 1}/{_imagePaths.Count})  ·  {preview.Width} × {preview.Height}";
-            StatusText.Text = "Mouse wheel zooms; scroll to pan when zoomed. Save As copies the original image.";
-            PreviousButton.IsEnabled = _currentIndex > 0;
-            NextButton.IsEnabled = _currentIndex < _imagePaths.Count - 1;
-            Title = $"Image Inspector — {Path.GetFileName(_imagePaths[_currentIndex])}";
+            await _workGate.WaitAsync();
+            SharpImage image;
+            try
+            {
+                if (imageRevision != Volatile.Read(ref _imageRevision))
+                    return;
+                image = await Task.Run(() => _imageLibrary.LoadInspectorImage(path));
+            }
+            finally
+            {
+                _workGate.Release();
+            }
+
+            if (_closed || imageRevision != _imageRevision)
+            {
+                image.Dispose();
+                return;
+            }
+            _image = image;
+            ImageNameText.Text = $"{Path.GetFileName(path)}  ({_currentIndex + 1}/{_imagePaths.Count})  ·  {image.Width} × {image.Height}";
             ApplyImageScale();
         }
         catch (Exception ex)
         {
-            PreviewImage.Source = null;
-            ImageNameText.Text = Path.GetFileName(_imagePaths[_currentIndex]);
-            StatusText.Text = $"Could not open image: {ex.Message}";
+            if (!_closed && imageRevision == _imageRevision)
+                StatusText.Text = $"Could not open image: {ex.Message}";
         }
     }
 
     private void PreviewScrollViewer_LayoutUpdated(object? sender, EventArgs e)
     {
-        if (_fitPending)
+        if (_fitPending || _layoutRenderScale != RenderScaling)
             ApplyImageScale();
     }
 
     private void ApplyImageScale()
     {
-        if (_bitmap is null)
+        if (_image is null || _closed)
             return;
 
-        double viewportWidth = PreviewScrollViewer.Viewport.Width;
-        double viewportHeight = PreviewScrollViewer.Viewport.Height;
-        if (viewportWidth <= 0 || viewportHeight <= 0)
+        Size viewport = PreviewScrollViewer.Viewport;
+        if (viewport.Width <= 0 || viewport.Height <= 0)
         {
             _fitPending = true;
             return;
         }
 
         _fitPending = false;
+        _layoutRenderScale = RenderScaling;
         double scale = _fitToWindow
-            ? Math.Min(1, Math.Min(viewportWidth / _bitmap.PixelSize.Width, viewportHeight / _bitmap.PixelSize.Height))
+            ? ImageInspectorGeometry.FitScale(_image.Width, _image.Height, viewport)
             : _zoom;
-        double imageWidth = Math.Max(1, _bitmap.PixelSize.Width * scale);
-        double imageHeight = Math.Max(1, _bitmap.PixelSize.Height * scale);
-        PreviewImage.Width = imageWidth;
-        PreviewImage.Height = imageHeight;
-        ImageCanvas.Width = Math.Max(viewportWidth, imageWidth);
-        ImageCanvas.Height = Math.Max(viewportHeight, imageHeight);
+        ImageCanvas.Width = Math.Max(viewport.Width, _image.Width * scale);
+        ImageCanvas.Height = Math.Max(viewport.Height, _image.Height * scale);
         ZoomText.Text = $"{Math.Round(scale * 100)}%";
+        var region = ImageInspectorGeometry.VisibleRegion(
+            _image.Width, _image.Height, viewport, PreviewScrollViewer.Offset, scale, RenderScaling);
+        if (region is null || region == _requestedRegion)
+            return;
+
+        _requestedRegion = region;
+        Interlocked.Increment(ref _renderRevision);
+        _renderTimer.Stop();
+        _renderTimer.Start();
     }
 
     private void ChangeZoom(double factor)
     {
-        if (_bitmap is null)
+        if (_image is null)
             return;
         if (_fitToWindow)
         {
-            double viewportWidth = PreviewScrollViewer.Viewport.Width;
-            double viewportHeight = PreviewScrollViewer.Viewport.Height;
-            _zoom = viewportWidth > 0 && viewportHeight > 0
-                ? Math.Min(1, Math.Min(viewportWidth / _bitmap.PixelSize.Width, viewportHeight / _bitmap.PixelSize.Height))
+            Size viewport = PreviewScrollViewer.Viewport;
+            _zoom = viewport.Width > 0 && viewport.Height > 0
+                ? ImageInspectorGeometry.FitScale(_image.Width, _image.Height, viewport)
                 : 1;
             _fitToWindow = false;
         }
@@ -167,10 +216,115 @@ public sealed partial class ImageInspectorWindow : Window
 
     private void PreviewScrollViewer_SizeChanged(object? sender, SizeChangedEventArgs e) => ApplyImageScale();
 
+    private void PreviewScrollViewer_ScrollChanged(object? sender, ScrollChangedEventArgs e) => ApplyImageScale();
+
     private void PreviewScrollViewer_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
         ChangeZoom(e.Delta.Y > 0 ? 1.15 : 1 / 1.15);
         e.Handled = true;
+    }
+
+    private async void RenderTimer_Tick(object? sender, EventArgs e)
+    {
+        _renderTimer.Stop();
+        if (_closed || _image is not { } image || _requestedRegion is not { } region)
+            return;
+
+        int imageRevision = _imageRevision;
+        int renderRevision = _renderRevision;
+        try
+        {
+            await _workGate.WaitAsync();
+            byte[] pixels;
+            try
+            {
+                if (imageRevision != Volatile.Read(ref _imageRevision) ||
+                    renderRevision != Volatile.Read(ref _renderRevision))
+                    return;
+                pixels = await Task.Run(() => RenderRegion(image, region));
+            }
+            finally
+            {
+                _workGate.Release();
+            }
+
+            if (_closed || imageRevision != _imageRevision || renderRevision != _renderRevision)
+                return;
+            var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+            Bitmap bitmap;
+            try
+            {
+                bitmap = new Bitmap(PixelFormat.Rgba8888, AlphaFormat.Unpremul, handle.AddrOfPinnedObject(),
+                    region.Raster, new Vector(96, 96), checked(region.Raster.Width * 4));
+            }
+            finally
+            {
+                handle.Free();
+            }
+
+            var previous = _bitmap;
+            _bitmap = bitmap;
+            PreviewImage.Source = bitmap;
+            Canvas.SetLeft(PreviewImage, region.Left);
+            Canvas.SetTop(PreviewImage, region.Top);
+            PreviewImage.Width = region.Width;
+            PreviewImage.Height = region.Height;
+            previous?.Dispose();
+            StatusText.Text = "Mouse wheel zooms; scroll to pan when zoomed. Save As copies the original image.";
+        }
+        catch (Exception ex)
+        {
+            if (!_closed && imageRevision == _imageRevision && renderRevision == _renderRevision)
+            {
+                _requestedRegion = null;
+                StatusText.Text = $"Could not render image: {ex.Message}";
+            }
+        }
+    }
+
+    private static byte[] RenderRegion(SharpImage image, InspectorRenderRegion region)
+    {
+        var rect = region.Source;
+        using var rendered = new SharpImage(rect.Width, rect.Height);
+        image.ProcessPixelRows(rendered, (source, target) =>
+        {
+            for (int y = 0; y < rect.Height; y++)
+                source.GetRowSpan(rect.Y + y).Slice(rect.X, rect.Width).CopyTo(target.GetRowSpan(y));
+        });
+        if (rect.Width != region.Raster.Width || rect.Height != region.Raster.Height)
+            rendered.Mutate(context => context.Resize(region.Raster.Width, region.Raster.Height));
+        var pixels = new byte[checked(region.Raster.Width * region.Raster.Height * 4)];
+        rendered.CopyPixelDataTo(pixels);
+        return pixels;
+    }
+
+    private async void DisposeImageLater(SharpImage? image)
+    {
+        if (image is null)
+            return;
+        await _workGate.WaitAsync();
+        try
+        {
+            image.Dispose();
+        }
+        finally
+        {
+            _workGate.Release();
+        }
+    }
+
+    private void ImageInspectorWindow_Closed(object? sender, EventArgs e)
+    {
+        _closed = true;
+        Interlocked.Increment(ref _imageRevision);
+        Interlocked.Increment(ref _renderRevision);
+        _renderTimer.Stop();
+        PreviewImage.Source = null;
+        _bitmap?.Dispose();
+        _bitmap = null;
+        var image = _image;
+        _image = null;
+        DisposeImageLater(image);
     }
 
     private async void SaveAsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

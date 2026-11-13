@@ -24,11 +24,12 @@
             <ScrollViewer x:Name="PreviewScrollViewer"
                           HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Auto"
+                          ScrollChanged="PreviewScrollViewer_ScrollChanged"
                           PointerWheelChanged="PreviewScrollViewer_PointerWheelChanged"
                           SizeChanged="PreviewScrollViewer_SizeChanged">
-                <Grid x:Name="ImageCanvas" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Image x:Name="PreviewImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Grid>
+                <Canvas x:Name="ImageCanvas" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Image x:Name="PreviewImage" Stretch="Fill" />
+                </Canvas>
             </ScrollViewer>
         </Border>
 

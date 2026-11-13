@@ -135,6 +135,22 @@ public sealed class ImageLibraryService
         return new ImageAssetPreview(output.ToArray(), width, height, format, frameCount, hasTransparency);
     }
 
+    internal Image<Rgba32> LoadInspectorImage(string imagePath)
+    {
+        ValidateManagedImagePath(imagePath);
+        Image<Rgba32> image = SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = 1 }, imagePath);
+        try
+        {
+            image.Mutate(context => context.AutoOrient());
+            return image;
+        }
+        catch
+        {
+            image.Dispose();
+            throw;
+        }
+    }
+
     public byte[] CreateProcessedPreview(string imagePath, ImageProcessingOptions options)
     {
         using Image<Rgba32> image = LoadProcessed(imagePath, options);

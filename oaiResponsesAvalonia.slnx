@@ -2,5 +2,8 @@
   <Project Path="oaiResponsesAvalonia/oaiResponsesAvalonia.csproj">
     <Deploy Solution="Release|*" />
   </Project>
+  <Folder Name="/tests/">
+    <Project Path="tests/ImageInspector.Tests/ImageInspector.Tests.csproj" />
+  </Folder>
   <Project Path="CredentialCachePlayground/CredentialCachePlayground.csproj" />
 </Solution>

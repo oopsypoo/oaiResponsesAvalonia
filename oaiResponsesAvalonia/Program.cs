@@ -20,9 +20,11 @@ sealed class Program
         var builder = AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont();
+        /* Need subscription to use developer tools
 #if DEBUG
         builder = builder.WithDeveloperTools();
 #endif
+        */
         return builder.LogToTrace();
     }
 }

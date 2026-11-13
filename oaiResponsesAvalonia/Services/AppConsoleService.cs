@@ -915,15 +915,7 @@ internal sealed class AppConsoleService
 
         if (!images)
             EnsureNoReparsePoints(filePath, workspace);
-        var info = new FileInfo(filePath);
-        if (info.Length > MaximumFileBytes)
-            throw new InvalidOperationException($"file is larger than the {MaximumFileBytes / 1024} KiB console limit.");
-
-        byte[] bytes = File.ReadAllBytes(filePath);
-        if (bytes.Contains((byte)0))
-            throw new InvalidOperationException("binary files are not displayed by cat.");
-
-        return Encoding.UTF8.GetString(bytes).TrimEnd('\r', '\n');
+        return ReadConsoleText(filePath);
     }
 
     private string ReadTextFile(string filePath, bool workspace, bool images)
@@ -934,13 +926,59 @@ internal sealed class AppConsoleService
             EnsureImageNoReparsePoints(_imageLocation!.Value, filePath);
         else
             EnsureNoReparsePoints(filePath, workspace);
+        return ReadConsoleText(filePath);
+    }
+
+    private static readonly HashSet<string> KnownBinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".ico", ".gif", ".tif", ".tiff",
+        ".mp4", ".mkv", ".avi", ".mov", ".webm", ".mp3", ".wav", ".flac", ".ogg",
+        ".zip", ".7z", ".rar", ".gz", ".exe", ".dll", ".pdf", ".db", ".sqlite"
+    };
+
+    private string ReadConsoleText(string filePath)
+    {
         var info = new FileInfo(filePath);
+        string name = Path.GetFileName(filePath);
+        string extension = Path.GetExtension(filePath);
+        if (extension.Length > 0 && KnownBinaryExtensions.Contains(extension))
+        {
+            string hint = _imageLibrary is not null && ActiveContext == ConsoleContext.Images
+                ? " Use 'info' or 'preview' for images."
+                : string.Empty;
+            throw new InvalidOperationException($"{name}: {extension.TrimStart('.').ToUpperInvariant()} is not a text file and cannot be displayed.{hint}");
+        }
         if (info.Length > MaximumFileBytes)
-            throw new InvalidOperationException($"file is larger than the {MaximumFileBytes / 1024} KiB console limit.");
+            throw new InvalidOperationException($"{name}: file is larger than the {MaximumFileBytes / 1024} KiB console limit.");
+
         byte[] bytes = File.ReadAllBytes(filePath);
-        if (bytes.Contains((byte)0))
-            throw new InvalidOperationException("binary files are not displayed by cat.");
-        return Encoding.UTF8.GetString(bytes).TrimEnd('\r', '\n');
+        Encoding encoding;
+        int offset;
+        if (bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0 && bytes[3] == 0)
+            (encoding, offset) = (new UTF32Encoding(false, false, true), 4);
+        else if (bytes.Length >= 4 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0xFE && bytes[3] == 0xFF)
+            (encoding, offset) = (new UTF32Encoding(true, false, true), 4);
+        else if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            (encoding, offset) = (new UnicodeEncoding(false, false, true), 2);
+        else if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            (encoding, offset) = (new UnicodeEncoding(true, false, true), 2);
+        else if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            (encoding, offset) = (new UTF8Encoding(false, true), 3);
+        else
+        {
+            if (bytes.Contains((byte)0))
+                throw new InvalidOperationException($"{name}: not a text file (contains binary data).");
+            (encoding, offset) = (new UTF8Encoding(false, true), 0);
+        }
+
+        try
+        {
+            return encoding.GetString(bytes, offset, bytes.Length - offset).TrimEnd('\r', '\n');
+        }
+        catch (DecoderFallbackException)
+        {
+            throw new InvalidOperationException($"{name}: not a text file (invalid {encoding.WebName} content).");
+        }
     }
 
     /// <summary>

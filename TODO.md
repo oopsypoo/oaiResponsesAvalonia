@@ -20,6 +20,7 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * \[x] Tidy up help messages (messy). Too much! (or just format the information better?)
 -better now. Still some irritating things
 * \[x] autocompletion on paths/files (it only shows what is available and does not actually fill out what is possible to fill out)(important for effectiveness)
+* \[ ] Audit terminal auto-completion: many commands' completions are out of date (for example, new `ls` options `-r`, `-S`, `-t`, `-X`, `--sort=<key>`, `--reverse`, and other commands' flags and values). Make completion derive from the same option definitions as parsing and help.
 * \[ ] command '***open***': autocompletion can suggest 'programs from ´*open with*`-context menu'?
 * \[ ] when opening terminal the first time: should it be opened at ´workspace`? if ´workspace root`(Developer Tools) is chosen?
 * \[ ] Improve terminal workflows for starting, creating, inspecting, and building projects without introducing unrestricted shell or filesystem access by default.

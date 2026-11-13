@@ -349,11 +349,10 @@ internal sealed class AppConsoleService
     private string ListImageDirectory(string[] args)
     {
         EnsureImageLibrary();
-        bool showHidden = args.Contains("-a", StringComparer.Ordinal);
-        bool detailed = args.Contains("-l", StringComparer.Ordinal);
-        string[] paths = args.Where(arg => arg is not ("-a" or "-l")).ToArray();
-        if (args.Any(arg => arg.StartsWith("-", StringComparison.Ordinal) && arg is not ("-a" or "-l")) || paths.Length > 1)
-            throw new InvalidOperationException("usage: ls [-a] [-l] [path]");
+        LsOptions options = ParseLsArgs(args);
+        string[] paths = options.Paths;
+        bool showHidden = options.ShowHidden;
+        bool detailed = options.Detailed;
 
         string? directoryAtRoot = null;
         if (_imageLocation is null || _imageCurrentDirectory is null)
@@ -371,48 +370,13 @@ internal sealed class AppConsoleService
         }
 
         if (paths.Length == 1 && HasWildcard(paths[0]) && directoryAtRoot is null)
-            return ListWildcardEntries(paths[0], showHidden, detailed, images: true);
+            return ListWildcardEntries(paths[0], options, images: true);
 
         string directory = directoryAtRoot ?? (paths.Length == 0 ? _imageCurrentDirectory! : ResolveImageDirectory(paths[0]));
         if (!Directory.Exists(directory))
             throw new DirectoryNotFoundException($"not a directory: {paths.FirstOrDefault() ?? directory}");
 
-        IReadOnlyList<string> pathsInDirectory = Directory.EnumerateFileSystemEntries(directory)
-            .Where(path => !IsReparsePoint(path))
-            .OrderBy(path => !Directory.Exists(path))
-            .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var entries = new List<string>();
-        foreach (string path in pathsInDirectory)
-        {
-            string name = Path.GetFileName(path);
-            if (!showHidden && (name.StartsWith(".", StringComparison.Ordinal) || IsHidden(path)))
-                continue;
-
-            bool isDirectory = Directory.Exists(path);
-            if (detailed)
-            {
-                long size = isDirectory ? 0 : new FileInfo(path).Length;
-                DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
-                entries.Add($"{(isDirectory ? "dir" : "file"),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
-            }
-            else
-            {
-                entries.Add(isDirectory ? name + "/" : name);
-            }
-
-            if (entries.Count >= MaximumListItems)
-            {
-                entries.Add($"... listing limited to {MaximumListItems} entries");
-                break;
-            }
-        }
-
-        if (entries.Count == 0)
-            return "(empty)";
-        return detailed
-            ? "Type  Size (bytes)  Last modified     Name\n" + string.Join("\n", entries)
-            : string.Join("\n", entries);
+        return FormatLsEntries(Directory.EnumerateFileSystemEntries(directory), options) ?? "(empty)";
     }
 
     private string ChangeImageDirectory(string[] args)
@@ -772,8 +736,8 @@ internal sealed class AppConsoleService
         string synopsis = command switch
         {
             "ls" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: ls [--columns N[,N...]]\nLists sessions at /, messages inside a session, or fields inside a message.",
-            "ls" when ActiveContext == ConsoleContext.Images => "usage: ls [-a] [-l] [path-or-pattern]\nUses the same filesystem listing behavior as other filesystem contexts. Lists all files and folders; -a includes hidden entries and -l shows type, byte size, and modified time. File-name patterns may use * and ? (for example, *.png).",
-            "ls" => "usage: ls [-a] [-l] [path-or-pattern]\nLists entries in the current filesystem context (application data or workspace). -a includes hidden entries; -l shows type, size, and last-modified time. File-name patterns may use * and ? (for example, *.txt). Short options can be combined, for example -la.",
+            "ls" when ActiveContext == ConsoleContext.Images => "usage: ls [-a] [-l] [-r] [-S|-t|-X|--sort=<key>] [path-or-pattern]\nLists files and folders in the selected image folder; folders are always listed first. File-name patterns may use * and ? (for example, *.png). Short options can be combined, for example -lat.\n\t-a\tInclude hidden entries.\n\t-l\tLong format: type, size in bytes, last-modified time, and name.\n\t-r, --reverse\tReverse the sort order.\n\t--sort=<key>\tSort by name (default, A-Z), size (largest first), time (newest first), or type.\n\t-S\tShortcut for --sort=size.\n\t-t\tShortcut for --sort=time.\n\t-X\tShortcut for --sort=type.",
+            "ls" => "usage: ls [-a] [-l] [-r] [-S|-t|-X|--sort=<key>] [path-or-pattern]\nLists entries in the current filesystem context (application data or workspace); folders are always listed first. File-name patterns may use * and ? (for example, *.txt). Short options can be combined, for example -lat.\n\t-a\tInclude hidden entries.\n\t-l\tLong format: type, size in bytes, last-modified time, and name.\n\t-r, --reverse\tReverse the sort order.\n\t--sort=<key>\tSort by name (default, A-Z), size (largest first), time (newest first), or type.\n\t-S\tShortcut for --sort=size.\n\t-t\tShortcut for --sort=time.\n\t-X\tShortcut for --sort=type.",
             "grep" => "usage: grep <search-term> <file-pattern ...> OR <command> | grep <search-term>\nSearches literal text, case-insensitively, with line numbers and colored matches by default. File-name patterns may use * and ?; file search is available in filesystem contexts, while piped output can be searched in database context too.",
             "cd" when ActiveContext == ConsoleContext.Database || databaseAlias => "usage: cd <session-id|message-id|media|..|/>\nNavigates sessions, messages, and a message's media records; does not change filesystem directories.",
             "cd" when ActiveContext == ConsoleContext.Images => "usage: cd [path]\nSelects images or the configured User Images folder, then navigates within it. Use cd / to return to the image roots.",
@@ -789,7 +753,7 @@ internal sealed class AppConsoleService
             "workspace" => "usage: workspace\nEnters the configured workspace context in read-only mode. Requires Developer Tools to be enabled and an existing workspace root.",
             "img" => "usage: img\nEnters the read-only image-browsing context. Use ls to see image roots, then cd images or cd user.",
             "info" => "usage: info <image-pattern ...>\nShows dimensions, format, frame count, and transparency for images in the selected image folder. File-name patterns may use * and ? (for example, *.png).",
-            "preview" => "usage: preview [-o|--open] [-s <width>x<height>|--size=<width>x<height>] <image-or-pattern ...>\nDisplays up to 24 inline thumbnails (default 8x4 cells); use -s/--size to resize them or -o/--open to inspect matches in a resizable window. The inspector supports zoom, mouse-wheel zoom, previous/next, and Save As of an unchanged copy. File-name patterns may use * and ?.",
+            "preview" => "usage: preview [-o|--open] [-s <width>x<height>|--size=<width>x<height>] <image-or-pattern ...>\nDisplays up to 24 inline thumbnails, or opens them in the image inspector. File-name patterns may use * and ?.\n\t-o, --open\tOpen the matches in the resizable inspector (zoom, mouse-wheel zoom, previous/next, Save As of an unchanged copy).\n\t-s, --size=<w>x<h>\tThumbnail size in terminal cells (default 8x4; width 1-40, height 1-20).",
             "app" or "application" => "usage: app\nReturns to the application-data context.",
             "database" => "usage: database\nSwitches to the currently connected database context.",
             "find" => "usage: find sessions [--sid ID] [--has-media] [--role VALUE] [--content TEXT] [--model VALUE] [--reasoning-level VALUE] [--tool VALUE] [--same-message]\nFilters combine with AND. By default filters may match different messages; --same-message requires one message to satisfy all message filters. Results show session IDs and matching message IDs in one column per message filter; content is not printed.",
@@ -815,8 +779,17 @@ internal sealed class AppConsoleService
             return $"{synopsis.TrimEnd()}\n\n{FormatHelpHeading("CONTEXT")}\n  {context}";
 
         string usage = explanationStart >= 0 ? synopsis[..explanationStart][7..] : synopsis[7..];
-        string explanation = explanationStart >= 0 ? synopsis[(explanationStart + 1)..] : string.Empty;
-        return $"{HelpCommandStyle}{(databaseAlias ? $"db {command}" : command)}{HelpReset}\n\n{FormatHelpHeading("USAGE")}\n  {FormatHelpUsage(usage)}\n\n{FormatHelpHeading("EXPLANATION")}\n  {explanation}\n\n{FormatHelpHeading("CONTEXT")}\n  {context}";
+        string[] explanationLines = explanationStart >= 0 ? synopsis[(explanationStart + 1)..].Split('\n') : [];
+        string explanation = string.Join("\n  ", explanationLines.Where(line => !line.StartsWith('\t')));
+        string[][] options = explanationLines.Where(line => line.StartsWith('\t')).Select(line => line.TrimStart('\t').Split('\t', 2)).ToArray();
+        string optionsSection = string.Empty;
+        if (options.Length > 0)
+        {
+            int width = options.Max(option => option[0].Length);
+            optionsSection = $"\n\n{FormatHelpHeading("OPTIONS")}\n" + string.Join("\n", options.Select(option =>
+                $"  {HelpFlagStyle}{option[0].PadRight(width)}{HelpReset}  {(option.Length > 1 ? option[1] : string.Empty)}"));
+        }
+        return $"{HelpCommandStyle}{(databaseAlias ? $"db {command}" : command)}{HelpReset}\n\n{FormatHelpHeading("USAGE")}\n  {FormatHelpUsage(usage)}\n\n{FormatHelpHeading("EXPLANATION")}\n  {explanation}{optionsSection}\n\n{FormatHelpHeading("CONTEXT")}\n  {context}";
 
 
     }
@@ -826,46 +799,114 @@ internal sealed class AppConsoleService
         if (ActiveContext == ConsoleContext.Images)
             return ListImageDirectory(args);
 
-        bool showHidden = args.Contains("-a", StringComparer.Ordinal);
-        bool detailed = args.Contains("-l", StringComparer.Ordinal);
-        string[] paths = args.Where(arg => arg is not ("-a" or "-l")).ToArray();
-        if (args.Any(arg => arg.StartsWith("-", StringComparison.Ordinal) && arg is not ("-a" or "-l")))
-            throw new InvalidOperationException("usage: ls [-a] [-l] [path]");
-        if (paths.Length > 1)
-            throw new InvalidOperationException("usage: ls [-a] [-l] [path]");
+        LsOptions options = ParseLsArgs(args);
+        string[] paths = options.Paths;
 
         bool workspace = ActiveContext == ConsoleContext.Workspace;
         if (paths.Length == 1 && HasWildcard(paths[0]))
-            return ListWildcardEntries(paths[0], showHidden, detailed, images: false, workspace);
+            return ListWildcardEntries(paths[0], options, images: false, workspace);
 
         string directory = paths.Length == 0 ? CurrentFilesystemDirectory : ResolvePath(paths[0], workspace);
         if (!Directory.Exists(directory))
             throw new DirectoryNotFoundException($"not a directory: {paths.FirstOrDefault() ?? directory}");
         EnsureNoReparsePoints(directory, workspace);
 
-        var entries = new List<string>();
-        foreach (string path in Directory.EnumerateFileSystemEntries(directory)
-                     .OrderBy(path => !Directory.Exists(path))
-                     .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+        return FormatLsEntries(Directory.EnumerateFileSystemEntries(directory), options) ?? "(empty)";
+    }
+
+    private sealed record LsOptions(bool ShowHidden, bool Detailed, string SortKey, bool Reverse, string[] Paths);
+
+    private const string LsUsage = "usage: ls [-a] [-l] [-r] [-S|-t|-X|--sort=name|size|time|type] [path-or-pattern]";
+
+    private static LsOptions ParseLsArgs(string[] args)
+    {
+        bool showHidden = false, detailed = false, reverse = false;
+        string sortKey = "name";
+        var paths = new List<string>();
+        foreach (string arg in args)
         {
-            string name = Path.GetFileName(path);
-            if (!showHidden && (name.StartsWith(".", StringComparison.Ordinal) || IsHidden(path)))
-                continue;
-
-            if (IsReparsePoint(path))
-                continue;
-
-            bool isDirectory = Directory.Exists(path);
-            if (detailed)
+            if (arg.StartsWith("--sort=", StringComparison.Ordinal))
             {
-                long size = isDirectory ? 0 : new FileInfo(path).Length;
-                DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
-                entries.Add($"{(isDirectory ? "dir" : "file"),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
+                sortKey = arg["--sort=".Length..].ToLowerInvariant();
+                if (sortKey is not ("name" or "size" or "time" or "type"))
+                    throw new InvalidOperationException($"unknown sort key '{sortKey}'; use name, size, time, or type.");
+            }
+            else if (arg == "--reverse")
+            {
+                reverse = true;
+            }
+            else if (arg.StartsWith("-", StringComparison.Ordinal) && arg.Length > 1 && !arg.StartsWith("--", StringComparison.Ordinal))
+            {
+                foreach (char flag in arg.AsSpan(1))
+                {
+                    switch (flag)
+                    {
+                        case 'a': showHidden = true; break;
+                        case 'l': detailed = true; break;
+                        case 'r': reverse = true; break;
+                        case 'S': sortKey = "size"; break;
+                        case 't': sortKey = "time"; break;
+                        case 'X': sortKey = "type"; break;
+                        default: throw new InvalidOperationException(LsUsage);
+                    }
+                }
+            }
+            else if (arg.StartsWith("--", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(LsUsage);
             }
             else
             {
-                entries.Add(isDirectory ? name + "/" : name);
+                paths.Add(arg);
             }
+        }
+
+        if (paths.Count > 1)
+            throw new InvalidOperationException(LsUsage);
+        return new LsOptions(showHidden, detailed, sortKey, reverse, paths.ToArray());
+    }
+
+    // Shared by every filesystem listing: filters, sorts (folders first), limits, and formats. Returns null when nothing is listed.
+    private string? FormatLsEntries(IEnumerable<string> candidates, LsOptions options)
+    {
+        var items = new List<(string Name, bool IsDirectory, string Type, long Size, DateTime Modified)>();
+        foreach (string path in candidates)
+        {
+            if (IsReparsePoint(path))
+                continue;
+            string name = Path.GetFileName(path);
+            if (!options.ShowHidden && (name.StartsWith(".", StringComparison.Ordinal) || IsHidden(path)))
+                continue;
+            bool isDirectory = Directory.Exists(path);
+            long size = isDirectory ? 0 : new FileInfo(path).Length;
+            DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
+            items.Add((name, isDirectory, GetEntryType(path, isDirectory), size, modified));
+        }
+
+        int sign = options.Reverse ? -1 : 1;
+        items.Sort((a, b) =>
+        {
+            if (a.IsDirectory != b.IsDirectory)
+                return a.IsDirectory ? -1 : 1;
+            int result = options.SortKey switch
+            {
+                "size" => b.Size.CompareTo(a.Size),
+                "time" => b.Modified.CompareTo(a.Modified),
+                "type" => string.CompareOrdinal(a.Type, b.Type),
+                _ => 0
+            };
+            if (result == 0)
+                result = string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+            return result * sign;
+        });
+
+        var entries = new List<string>();
+        foreach (var item in items)
+        {
+            string label = item.Name + (item.IsDirectory ? "/" : string.Empty);
+            entries.Add(options.Detailed
+                ? $"{item.Type,-4} {item.Size,12} {item.Modified:yyyy-MM-dd HH:mm}  {label}"
+                : label);
             if (entries.Count >= MaximumListItems)
             {
                 entries.Add($"... listing limited to {MaximumListItems} entries");
@@ -874,8 +915,8 @@ internal sealed class AppConsoleService
         }
 
         if (entries.Count == 0)
-            return "(empty)";
-        return detailed
+            return null;
+        return options.Detailed
             ? "Type  Size (bytes)  Last modified     Name\n" + string.Join("\n", entries)
             : string.Join("\n", entries);
     }
@@ -915,15 +956,7 @@ internal sealed class AppConsoleService
 
         if (!images)
             EnsureNoReparsePoints(filePath, workspace);
-        var info = new FileInfo(filePath);
-        if (info.Length > MaximumFileBytes)
-            throw new InvalidOperationException($"file is larger than the {MaximumFileBytes / 1024} KiB console limit.");
-
-        byte[] bytes = File.ReadAllBytes(filePath);
-        if (bytes.Contains((byte)0))
-            throw new InvalidOperationException("binary files are not displayed by cat.");
-
-        return Encoding.UTF8.GetString(bytes).TrimEnd('\r', '\n');
+        return ReadConsoleText(filePath);
     }
 
     private string ReadTextFile(string filePath, bool workspace, bool images)
@@ -934,13 +967,83 @@ internal sealed class AppConsoleService
             EnsureImageNoReparsePoints(_imageLocation!.Value, filePath);
         else
             EnsureNoReparsePoints(filePath, workspace);
+        return ReadConsoleText(filePath);
+    }
+
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".ico", ".gif", ".tif", ".tiff"
+    };
+
+    private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".json", ".xml", ".csv", ".log", ".yml", ".yaml", ".ini", ".cfg", ".config",
+        ".cs", ".axaml", ".js", ".ts", ".html", ".css", ".sql", ".sh", ".ps1", ".bat", ".cmd"
+    };
+
+    // Four-character type tag for 'ls -l': dir, img, txt, bin, or file when unknown.
+    private static string GetEntryType(string path, bool isDirectory)
+    {
+        if (isDirectory)
+            return "dir";
+        string extension = Path.GetExtension(path);
+        if (ImageExtensions.Contains(extension))
+            return "img";
+        if (TextExtensions.Contains(extension))
+            return "txt";
+        return KnownBinaryExtensions.Contains(extension) ? "bin" : "file";
+    }
+
+    private static readonly HashSet<string> KnownBinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".ico", ".gif", ".tif", ".tiff",
+        ".mp4", ".mkv", ".avi", ".mov", ".webm", ".mp3", ".wav", ".flac", ".ogg",
+        ".zip", ".7z", ".rar", ".gz", ".exe", ".dll", ".pdf", ".db", ".sqlite"
+    };
+
+    private string ReadConsoleText(string filePath)
+    {
         var info = new FileInfo(filePath);
+        string name = Path.GetFileName(filePath);
+        string extension = Path.GetExtension(filePath);
+        if (extension.Length > 0 && KnownBinaryExtensions.Contains(extension))
+        {
+            string hint = _imageLibrary is not null && ActiveContext == ConsoleContext.Images
+                ? " Use 'info' or 'preview' for images."
+                : string.Empty;
+            throw new InvalidOperationException($"{name}: {extension.TrimStart('.').ToUpperInvariant()} is not a text file and cannot be displayed.{hint}");
+        }
         if (info.Length > MaximumFileBytes)
-            throw new InvalidOperationException($"file is larger than the {MaximumFileBytes / 1024} KiB console limit.");
+            throw new InvalidOperationException($"{name}: file is larger than the {MaximumFileBytes / 1024} KiB console limit.");
+
         byte[] bytes = File.ReadAllBytes(filePath);
-        if (bytes.Contains((byte)0))
-            throw new InvalidOperationException("binary files are not displayed by cat.");
-        return Encoding.UTF8.GetString(bytes).TrimEnd('\r', '\n');
+        Encoding encoding;
+        int offset;
+        if (bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0 && bytes[3] == 0)
+            (encoding, offset) = (new UTF32Encoding(false, false, true), 4);
+        else if (bytes.Length >= 4 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0xFE && bytes[3] == 0xFF)
+            (encoding, offset) = (new UTF32Encoding(true, false, true), 4);
+        else if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            (encoding, offset) = (new UnicodeEncoding(false, false, true), 2);
+        else if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            (encoding, offset) = (new UnicodeEncoding(true, false, true), 2);
+        else if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            (encoding, offset) = (new UTF8Encoding(false, true), 3);
+        else
+        {
+            if (bytes.Contains((byte)0))
+                throw new InvalidOperationException($"{name}: not a text file (contains binary data).");
+            (encoding, offset) = (new UTF8Encoding(false, true), 0);
+        }
+
+        try
+        {
+            return encoding.GetString(bytes, offset, bytes.Length - offset).TrimEnd('\r', '\n');
+        }
+        catch (DecoderFallbackException)
+        {
+            throw new InvalidOperationException($"{name}: not a text file (invalid {encoding.WebName} content).");
+        }
     }
 
     /// <summary>
@@ -1026,7 +1129,7 @@ internal sealed class AppConsoleService
         return matches;
     }
 
-    private string ListWildcardEntries(string pattern, bool showHidden, bool detailed, bool images, bool workspace = false)
+    private string ListWildcardEntries(string pattern, LsOptions options, bool images, bool workspace = false)
     {
         string normalized = pattern.Replace('/', Path.DirectorySeparatorChar);
         string namePattern = Path.GetFileName(normalized);
@@ -1040,40 +1143,9 @@ internal sealed class AppConsoleService
         if (!Directory.Exists(directory))
             throw new DirectoryNotFoundException($"no such directory: {directoryPart}");
 
-        var entries = new List<string>();
-        foreach (string path in Directory.EnumerateFileSystemEntries(directory)
-                     .Where(path => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(namePattern, Path.GetFileName(path), OperatingSystem.IsWindows()))
-                     .OrderBy(path => !Directory.Exists(path))
-                     .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
-        {
-            if (IsReparsePoint(path))
-                continue;
-            string name = Path.GetFileName(path);
-            if (!showHidden && (name.StartsWith(".", StringComparison.Ordinal) || IsHidden(path)))
-                continue;
-            bool isDirectory = Directory.Exists(path);
-            if (detailed)
-            {
-                long size = isDirectory ? 0 : new FileInfo(path).Length;
-                DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
-                entries.Add($"{(isDirectory ? "dir" : "file"),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
-            }
-            else
-            {
-                entries.Add(isDirectory ? name + "/" : name);
-            }
-            if (entries.Count >= MaximumListItems)
-            {
-                entries.Add($"... listing limited to {MaximumListItems} entries");
-                break;
-            }
-        }
-
-        if (entries.Count == 0)
-            throw new FileNotFoundException($"no entries match pattern: {pattern}");
-        return detailed
-            ? "Type  Size (bytes)  Last modified     Name\n" + string.Join("\n", entries)
-            : string.Join("\n", entries);
+        IEnumerable<string> matches = Directory.EnumerateFileSystemEntries(directory)
+            .Where(path => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(namePattern, Path.GetFileName(path), OperatingSystem.IsWindows()));
+        return FormatLsEntries(matches, options) ?? throw new FileNotFoundException($"no entries match pattern: {pattern}");
     }
 
     private string GrepFiles(string[] patterns, string searchTerm)
@@ -2510,7 +2582,7 @@ internal sealed class AppConsoleService
         "Context: application data. Filesystem access is confined to the app-data directory.\n\n" +
         "  help                         Show help for the current context\n" +
         "  pwd                          Show the current app-data directory\n" +
-        "  ls [-a] [-l] [path]          List files; -l shows type, byte size, and modified time; combine flags with -la\n" +
+        "  ls [-alr] [-S|-t|-X] [path]  List files; -l long format, -r reverse, -S/-t/-X sort by size/time/type (see: help ls)\n" +
         "  cd [path]                    Change directory within app data\n" +
         "  cat <file>                   Display a small text file\n" +
         "  grep <term> <file>           Search text (case-insensitive, numbered, colored)\n" +
@@ -2528,7 +2600,7 @@ internal sealed class AppConsoleService
         "Image browsing is confined to the configured Application Images and User Images folders. The user folder is displayed by its configured folder name even when stored elsewhere.\n\n" +
         "  help                         Show image-context help\n" +
         "  pwd                          Show full configured image-folder path(s)\n" +
-        "  ls [-a] [-l] [path]          List all files and folders; -l shows type, byte size, and modified time\n" +
+        "  ls [-alr] [-S|-t|-X] [path]  List files and folders; -l long format, -r reverse, -S/-t/-X sort by size/time/type (see: help ls)\n" +
         "  cd [images|user|folder]      Select an image root or navigate folders; cd / returns to the roots\n" +
         "  cat <file>                   Display a small text file\n" +
         "  grep <term> <file>           Search text; command output can also be piped to grep\n" +
@@ -2545,7 +2617,7 @@ internal sealed class AppConsoleService
         "Filesystem access is confined to the configured workspace root; symbolic links and reparse points are not followed.\n\n" +
         "  help                         Show workspace help\n" +
         "  pwd                          Show the current workspace directory\n" +
-        "  ls [-a] [-l] [path]          List workspace files and directories; combine flags with -la\n" +
+        "  ls [-alr] [-S|-t|-X] [path]  List workspace files; -l long format, -r reverse, -S/-t/-X sort by size/time/type (see: help ls)\n" +
         "  cd [path]                    Change directory within the workspace\n" +
         "  cat <file>                   Display a small text file\n" +
         "  grep <term> <file>           Search workspace text\n" +

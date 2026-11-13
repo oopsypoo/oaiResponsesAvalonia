@@ -572,12 +572,19 @@ internal sealed class AppConsoleService
                 : string.Empty;
             return $"Opening {displayedPaths.Length} image(s) in the inspector.{openOmittedMessage}";
         }
-        imagePreviews = displayedPaths.Select(imagePath =>
-        {
+        foreach (string imagePath in displayedPaths)
             EnsureImageNoReparsePoints(location, imagePath);
-            byte[] thumbnail = _imageLibrary!.CreateThumbnail(imagePath, maxSize: 320);
-            return new TerminalImagePreview(Path.GetFileName(imagePath), Convert.ToBase64String(thumbnail));
-        }).ToList();
+
+        // Tiles are only a few cells wide, so decode them at roughly 2x cell pixels instead of 320px.
+        int thumbnailSize = Math.Clamp(Math.Max(previewWidth * 16, previewHeight * 32), 96, 512);
+        ImageLibraryService imageLibrary = _imageLibrary!;
+        imagePreviews = displayedPaths
+            .AsParallel()
+            .AsOrdered()
+            .Select(imagePath => new TerminalImagePreview(
+                Path.GetFileName(imagePath),
+                Convert.ToBase64String(imageLibrary.CreateThumbnail(imagePath, thumbnailSize))))
+            .ToList();
 
         string omittedMessage = imagePaths.Length > displayedPaths.Length
             ? $" Showing the first {displayedPaths.Length} of {imagePaths.Length} matches."

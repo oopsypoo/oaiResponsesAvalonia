@@ -424,27 +424,35 @@
     applyWorkspaceNotification(change);
   };
 
-  const normalizePreviewImage = async (preview, widthCells, heightCells) => {
-    const screen = terminalContainer.querySelector('.xterm-screen');
-    const bounds = screen?.getBoundingClientRect();
-    const cellWidth = bounds && terminal.cols > 0 ? bounds.width / terminal.cols : 8;
-    const cellHeight = bounds && terminal.rows > 0 ? bounds.height / terminal.rows : 16;
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(widthCells * cellWidth));
-    canvas.height = Math.max(1, Math.round(heightCells * cellHeight));
+    const previewCellSize = () => {
+      const bounds = terminalContainer.querySelector('.xterm-screen')?.getBoundingClientRect();
+      return {
+        width: bounds && terminal.cols > 0 ? bounds.width / terminal.cols : 8,
+        height: bounds && terminal.rows > 0 ? bounds.height / terminal.rows : 16
+      };
+    };
 
-    const image = new Image();
-    await new Promise((resolve, reject) => {
-      image.onload = resolve;
-      image.onerror = () => reject(new Error(`Could not decode preview image: ${preview.fileName}`));
-      image.src = `data:image/png;base64,${preview.base64}`;
-    });
+    const normalizePreviewImage = async (preview, widthCells, heightCells, cell) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(widthCells * cell.width));
+    canvas.height = Math.max(1, Math.round(heightCells * cell.height));
+
+    const binary = atob(preview.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    let image;
+    try {
+      image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+    } catch {
+      throw new Error(`Could not decode preview image: ${preview.fileName}`);
+    }
 
     const context = canvas.getContext('2d');
-    const scale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
-    const drawWidth = image.naturalWidth * scale;
-    const drawHeight = image.naturalHeight * scale;
+    const scale = Math.min(canvas.width / image.width, canvas.height / image.height);
+    const drawWidth = image.width * scale;
+    const drawHeight = image.height * scale;
     context.drawImage(image, (canvas.width - drawWidth) / 2, (canvas.height - drawHeight) / 2, drawWidth, drawHeight);
+    image.close();
     return { ...preview, base64: canvas.toDataURL('image/png').split(',')[1] };
   };
 
@@ -473,7 +481,8 @@
       return caption + (index < row.length - 1 ? ' '.repeat(gap) : '');
     }).join('');
 
-    const normalizedPreviews = await Promise.all(previews.map(preview => normalizePreviewImage(preview, imageWidth, imageHeight)));
+    const cell = previewCellSize();
+    const normalizedPreviews = await Promise.all(previews.map(preview => normalizePreviewImage(preview, imageWidth, imageHeight, cell)));
     for (let offset = 0; offset < normalizedPreviews.length; offset += tileColumns) {
       const row = normalizedPreviews.slice(offset, offset + tileColumns);
       terminal.write(writeCaptionLine(row, 0) + '\r\n' + writeCaptionLine(row, 1) + '\r\n');

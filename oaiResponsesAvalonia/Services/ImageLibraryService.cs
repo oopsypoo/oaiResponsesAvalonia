@@ -8,6 +8,7 @@ using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Bmp;
 using SixLabors.ImageSharp.Formats.Icon;
 using SixLabors.ImageSharp.Formats.Ico;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using SharpImage = SixLabors.ImageSharp.Image;
@@ -104,14 +105,15 @@ public sealed class ImageLibraryService
     public byte[] CreateThumbnail(string imagePath, int maxSize = 88)
     {
         ValidateManagedImagePath(imagePath);
-        using Image<Rgba32> image = SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = 1 }, imagePath);
+        var size = new Size(maxSize, maxSize);
+        using Image<Rgba32> image = SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = 1, TargetSize = size }, imagePath);
         image.Mutate(context => context.AutoOrient().Resize(new ResizeOptions
         {
-            Size = new Size(maxSize, maxSize),
+            Size = size,
             Mode = ResizeMode.Max
         }));
         using var output = new MemoryStream();
-        image.SaveAsPng(output);
+        image.SaveAsPng(output, new PngEncoder { CompressionLevel = PngCompressionLevel.BestSpeed });
         return output.ToArray();
     }
 

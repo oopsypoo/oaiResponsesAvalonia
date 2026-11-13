@@ -394,7 +394,7 @@ internal sealed class AppConsoleService
             {
                 long size = isDirectory ? 0 : new FileInfo(path).Length;
                 DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
-                entries.Add($"{(isDirectory ? "dir" : "file"),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
+                entries.Add($"{GetEntryType(path, isDirectory),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
             }
             else
             {
@@ -860,7 +860,7 @@ internal sealed class AppConsoleService
             {
                 long size = isDirectory ? 0 : new FileInfo(path).Length;
                 DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
-                entries.Add($"{(isDirectory ? "dir" : "file"),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
+                entries.Add($"{GetEntryType(path, isDirectory),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
             }
             else
             {
@@ -927,6 +927,30 @@ internal sealed class AppConsoleService
         else
             EnsureNoReparsePoints(filePath, workspace);
         return ReadConsoleText(filePath);
+    }
+
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".ico", ".gif", ".tif", ".tiff"
+    };
+
+    private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".json", ".xml", ".csv", ".log", ".yml", ".yaml", ".ini", ".cfg", ".config",
+        ".cs", ".axaml", ".js", ".ts", ".html", ".css", ".sql", ".sh", ".ps1", ".bat", ".cmd"
+    };
+
+    // Four-character type tag for 'ls -l': dir, img, txt, bin, or file when unknown.
+    private static string GetEntryType(string path, bool isDirectory)
+    {
+        if (isDirectory)
+            return "dir";
+        string extension = Path.GetExtension(path);
+        if (ImageExtensions.Contains(extension))
+            return "img";
+        if (TextExtensions.Contains(extension))
+            return "txt";
+        return KnownBinaryExtensions.Contains(extension) ? "bin" : "file";
     }
 
     private static readonly HashSet<string> KnownBinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -1094,7 +1118,7 @@ internal sealed class AppConsoleService
             {
                 long size = isDirectory ? 0 : new FileInfo(path).Length;
                 DateTime modified = isDirectory ? Directory.GetLastWriteTime(path) : File.GetLastWriteTime(path);
-                entries.Add($"{(isDirectory ? "dir" : "file"),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
+                entries.Add($"{GetEntryType(path, isDirectory),-4} {size,12} {modified:yyyy-MM-dd HH:mm}  {name}{(isDirectory ? "/" : string.Empty)}");
             }
             else
             {

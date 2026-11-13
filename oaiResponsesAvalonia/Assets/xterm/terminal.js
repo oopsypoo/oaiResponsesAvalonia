@@ -1,6 +1,7 @@
 (() => {
   const terminal = new Terminal({
     cursorBlink: true,
+    lineHeight: 1.1,
     fontFamily: 'Cascadia Mono, Consolas, monospace',
     fontSize: 14,
     theme: {

@@ -8,7 +8,9 @@ using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Bmp;
 using SixLabors.ImageSharp.Formats.Icon;
 using SixLabors.ImageSharp.Formats.Ico;
+using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using SharpImage = SixLabors.ImageSharp.Image;
@@ -34,7 +36,9 @@ public sealed record ImageProcessingOptions(
     int? ResizeHeight = null,
     bool KeepAspectRatio = true,
     int RotationDegrees = 0,
-    string Filter = "None");
+    string Filter = "None",
+    double? FreeRotationDegrees = null,
+    float? FilterAmount = null);
 
 /// <summary>
 /// Shared image operations for the gallery/editor and the planned img terminal context.
@@ -166,19 +170,19 @@ public sealed class ImageLibraryService
         return output.ToArray();
     }
 
-    public byte[] ConvertToBytes(string imagePath, ImageProcessingOptions options, string extension, bool keepTransparency, IReadOnlyList<int>? icoSizes = null)
+    public byte[] ConvertToBytes(string imagePath, ImageProcessingOptions options, string extension,     bool keepTransparency, IReadOnlyList<int>? icoSizes = null, int quality = 90, Rgba32? background = null)
     {
         using Image<Rgba32> image = LoadProcessed(imagePath, options);
-        if (extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) || !keepTransparency)
-            FlattenTransparency(image);
+            if (extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) || !keepTransparency)
+                FlattenTransparency(image, background ?? new Rgba32(255, 255, 255, 255));
 
         using var output = new MemoryStream();
         switch (extension.ToLowerInvariant())
         {
             case ".png": image.SaveAsPng(output); break;
-            case ".webp": image.SaveAsWebp(output); break;
+            case ".webp": image.Save(output, new WebpEncoder { Quality = quality }); break;
             case ".jpg":
-            case ".jpeg": image.SaveAsJpeg(output); break;
+            case ".jpeg": image.Save(output, new JpegEncoder { Quality = quality }); break;
             case ".bmp":
                 if (keepTransparency)
                     image.Save(output, new BmpEncoder { BitsPerPixel = BmpBitsPerPixel.Bit32, SupportTransparency = true });
@@ -260,6 +264,81 @@ public sealed class ImageLibraryService
         Directory.Delete(fullPath, recursive: true);
     }
 
+    public string CreateUserDirectory(string path, bool createParents)
+    {
+        string fullPath = Path.GetFullPath(path);
+        EnsureWithinRoot(_userImagesRoot, fullPath);
+        if (File.Exists(fullPath) || Directory.Exists(fullPath))
+            throw new IOException("a file or folder with that name already exists.");
+
+        string ancestor = Path.GetDirectoryName(fullPath) ?? _userImagesRoot;
+        while (!Directory.Exists(ancestor))
+        {
+            if (!createParents)
+                throw new DirectoryNotFoundException("the parent folder does not exist (use -p to create parent folders).");
+            ancestor = Path.GetDirectoryName(ancestor) ?? _userImagesRoot;
+            EnsureWithinRoot(_userImagesRoot, ancestor);
+        }
+
+        EnsureNoReparsePointsBetween(_userImagesRoot, ancestor);
+        Directory.CreateDirectory(fullPath);
+        return fullPath;
+    }
+
+    public string WriteUserFile(string destination, byte[] bytes, bool overwrite)
+    {
+        string fullPath = PrepareUserDestination(destination, overwrite);
+        using var stream = new FileStream(fullPath, overwrite ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        stream.Write(bytes);
+        return fullPath;
+    }
+
+    public string CopyToUserImages(string source, string destination, bool overwrite)
+    {
+        ValidateManagedImagePath(source);
+        string fullPath = PrepareUserDestination(destination, overwrite);
+        if (string.Equals(Path.GetFullPath(source), fullPath, PathComparison))
+            throw new IOException("the source and destination are the same file.");
+        File.Copy(source, fullPath, overwrite);
+        return fullPath;
+    }
+
+    public string MoveUserFile(string source, string destination, bool overwrite)
+    {
+        ValidateManagedImagePath(source);
+        string fullSource = Path.GetFullPath(source);
+        EnsureStrictlyWithinRoot(_userImagesRoot, fullSource);
+        EnsureNoReparsePointsBetween(_userImagesRoot, fullSource);
+        string fullPath = PrepareUserDestination(destination, overwrite);
+        if (string.Equals(fullSource, fullPath, PathComparison))
+            throw new IOException("the source and destination are the same file.");
+        File.Move(fullSource, fullPath, overwrite);
+        return fullPath;
+    }
+
+    private string PrepareUserDestination(string destination, bool overwrite)
+    {
+        string fullPath = Path.GetFullPath(destination);
+        EnsureWithinRoot(_userImagesRoot, fullPath);
+        if (string.Equals(fullPath, _userImagesRoot, PathComparison))
+            throw new UnauthorizedAccessException("The User Images root is not a file.");
+        if (!SupportedExtensions.Contains(Path.GetExtension(fullPath)))
+            throw new NotSupportedException("Only PNG, WebP, JPEG, BMP, and ICO files are supported.");
+
+        string parent = RequireDirectoryWithinRoot(_userImagesRoot, Path.GetDirectoryName(fullPath) ?? _userImagesRoot);
+        EnsureNoReparsePointsBetween(_userImagesRoot, parent);
+        if (Directory.Exists(fullPath))
+            throw new IOException("a folder with that name already exists.");
+        if (File.Exists(fullPath))
+        {
+            if (!overwrite)
+                throw new IOException("the file already exists.");
+            if (IsReparsePoint(fullPath))
+                throw new UnauthorizedAccessException("Linked files cannot be overwritten.");
+        }
+        return fullPath;
+    }
+
     public string GetSafeCurrentDirectory(ImageBrowserLocation location, string directory) =>
         RequireDirectoryWithinRoot(GetRoot(location), directory);
 
@@ -300,7 +379,10 @@ public sealed class ImageLibraryService
                 default: throw new ArgumentOutOfRangeException(nameof(options), "Rotation must be 0, 90, 180, or 270 degrees.");
             }
 
-            ApplyFilter(image, options.Filter);
+            if (options.FreeRotationDegrees is double freeAngle)
+                image.Mutate(context => context.Rotate((float)freeAngle));
+
+            ApplyFilter(image, options.Filter, options.FilterAmount);
             return image;
         }
         catch
@@ -310,10 +392,18 @@ public sealed class ImageLibraryService
         }
     }
 
-    private static void ApplyFilter(Image<Rgba32> image, string filter)
+    private static void ApplyFilter(Image<Rgba32> image, string filter, float? amount)
     {
         if (string.Equals(filter, "None", StringComparison.OrdinalIgnoreCase))
             return;
+
+        switch (filter.ToLowerInvariant())
+        {
+            case "blur": image.Mutate(context => context.GaussianBlur(amount ?? 3f)); return;
+            case "sharpen": image.Mutate(context => context.GaussianSharpen(amount ?? 3f)); return;
+            case "brightness": image.Mutate(context => context.Brightness(amount ?? 1.2f)); return;
+            case "contrast": image.Mutate(context => context.Contrast(amount ?? 1.2f)); return;
+        }
 
         image.ProcessPixelRows(accessor =>
         {
@@ -368,7 +458,7 @@ public sealed class ImageLibraryService
         return found;
     }
 
-    private static void FlattenTransparency(Image<Rgba32> image)
+    private static void FlattenTransparency(Image<Rgba32> image, Rgba32 background)
     {
         image.ProcessPixelRows(accessor =>
         {
@@ -382,9 +472,9 @@ public sealed class ImageLibraryService
                         continue;
                     int alpha = pixel.A;
                     row[x] = new Rgba32(
-                        (byte)((pixel.R * alpha + 255 * (255 - alpha) + 127) / 255),
-                        (byte)((pixel.G * alpha + 255 * (255 - alpha) + 127) / 255),
-                        (byte)((pixel.B * alpha + 255 * (255 - alpha) + 127) / 255), 255);
+                        (byte)((pixel.R * alpha + background.R * (255 - alpha) + 127) / 255),
+                        (byte)((pixel.G * alpha + background.G * (255 - alpha) + 127) / 255),
+                        (byte)((pixel.B * alpha + background.B * (255 - alpha) + 127) / 255), 255);
                 }
             }
         });

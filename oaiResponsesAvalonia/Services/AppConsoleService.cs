@@ -2117,7 +2117,7 @@ internal sealed partial class AppConsoleService
             {
                 ConsoleContext.Database => ["help", "pwd", "ls", "cd", "grep", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "workspace", "img", "app", "clear", "quit", "exit"],
                 ConsoleContext.Workspace => ["help", "pwd", "ls", "cd", "cat", "grep", "workspace", "img", "app", "database", "disconnect", "clear", "quit", "exit"],
-                ConsoleContext.Images => ["help", "pwd", "ls", "cd", "cat", "grep", "info", "preview", "img", "app", "database", "workspace", "clear", "quit", "exit"],
+                ConsoleContext.Images => ["help", "pwd", "ls", "cd", "cat", "grep", "info", "preview", "mkdir", "cp", "mv", "resize", "rotate", "convert", "filter", "img", "app", "database", "workspace", "clear", "quit", "exit"],
                 _ => ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "disconnect", "workspace", "database", "img", "clear", "quit", "exit"]
             };
             return new AppConsoleCompletionResult(tokenStart, commands.Where(item => item.StartsWith(typedCommand, StringComparison.OrdinalIgnoreCase)).ToArray());
@@ -2219,6 +2219,30 @@ internal sealed partial class AppConsoleService
             }
             return new AppConsoleCompletionResult(tokenStart, []);
         }
+        if (ActiveContext == ConsoleContext.Images && command is "mkdir" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter")
+        {
+            string typedArgument = DecodeCompletionToken(rawToken);
+            string? previous = precedingArgs.Count > 1 ? precedingArgs[^1] : null;
+            bool previousIsDirOption = previous is "-d" or "--dir";
+            if (typedArgument.StartsWith("-", StringComparison.Ordinal) && !previousIsDirOption)
+                return new AppConsoleCompletionResult(tokenStart, GetImageWriteFlags(command)
+                    .Where(option => option.StartsWith(typedArgument, StringComparison.OrdinalIgnoreCase)).ToArray());
+            if (previous is not null && previous.StartsWith("-", StringComparison.Ordinal) && !previousIsDirOption && !IsImageWriteSwitch(previous))
+                return new AppConsoleCompletionResult(tokenStart, command == "convert" && previous is "-t" or "--to"
+                    ? new[] { "png", "jpg", "webp", "ico", "bmp" }.Where(item => item.StartsWith(typedArgument, StringComparison.OrdinalIgnoreCase)).ToArray()
+                    : Array.Empty<string>());
+            if (command == "filter" && !precedingArgs.Skip(1).Any(arg => !arg.StartsWith("-", StringComparison.Ordinal)) && !previousIsDirOption)
+                return new AppConsoleCompletionResult(tokenStart, new[] { "grayscale", "sepia", "invert", "blur", "sharpen", "brightness", "contrast" }
+                    .Where(item => item.StartsWith(typedArgument, StringComparison.OrdinalIgnoreCase)).ToArray());
+            if (command == "convert" && precedingArgs.Skip(1).Any(arg => !arg.StartsWith("-", StringComparison.Ordinal)) && !previousIsDirOption &&
+                typedArgument.IndexOfAny(['/', (char)92, '.', '*', '?']) < 0)
+            {
+                var formats = new[] { "png", "jpg", "webp", "ico", "bmp" }.Where(item => item.StartsWith(typedArgument, StringComparison.OrdinalIgnoreCase)).ToList();
+                formats.AddRange(GetImagePathCompletions(command, rawToken, tokenStart).Candidates);
+                return new AppConsoleCompletionResult(tokenStart, formats);
+            }
+            return GetImagePathCompletions(command, rawToken, tokenStart, command == "mkdir" || previousIsDirOption);
+        }
         if (ActiveContext == ConsoleContext.Images && command == "preview")
         {
             string typedPreviewArgument = DecodeCompletionToken(rawToken);
@@ -2290,7 +2314,20 @@ internal sealed partial class AppConsoleService
         return new AppConsoleCompletionResult(tokenStart, candidates);
     }
 
-    private AppConsoleCompletionResult GetImagePathCompletions(string command, string rawToken, int tokenStart)
+    private static bool IsImageWriteSwitch(string option) =>
+        option is "--force" or "--no-transparency" or "--exact" or "-p" or "--parents";
+
+    private static string[] GetImageWriteFlags(string command) => command switch
+    {
+        "mkdir" => ["-p", "--parents"],
+        "cp" or "mv" => ["-d", "--dir", "-o", "--output", "-b", "--body", "--force"],
+        "resize" => ["-s", "--size", "--exact", "-d", "--dir", "-o", "--output", "-b", "--body", "-q", "--quality", "--no-transparency", "--background", "--force"],
+        "rotate" => ["-a", "--angle", "-d", "--dir", "-o", "--output", "-b", "--body", "-q", "--quality", "--no-transparency", "--background", "--force"],
+        "convert" => ["-t", "--to", "-s", "--size", "-q", "--quality", "-d", "--dir", "-o", "--output", "-b", "--body", "--no-transparency", "--background", "--force"],
+        _ => ["-n", "--amount", "-d", "--dir", "-o", "--output", "-b", "--body", "-q", "--quality", "--force"]
+    };
+
+    private AppConsoleCompletionResult GetImagePathCompletions(string command, string rawToken, int tokenStart, bool directoriesOnly = false)
     {
         string typedPath = DecodeCompletionToken(rawToken);
         try
@@ -2325,7 +2362,7 @@ internal sealed partial class AppConsoleService
             {
                 string name = Path.GetFileName(entry);
                 bool isDirectory = Directory.Exists(entry);
-                if (command == "cd" && !isDirectory)
+                if ((command == "cd" || directoriesOnly) && !isDirectory)
                     continue;
                 if (command is "info" or "cat" or "grep" or "preview" && isDirectory)
                     continue;

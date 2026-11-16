@@ -184,6 +184,22 @@ public sealed class ImgConsoleWriteTests : IDisposable
     }
 
     [Fact]
+    public void Completion_OffersWriteCommandsFlagsAndPaths()
+    {
+        Run("cd images");
+        Run("mkdir sub");
+        Run("cd /");
+        Run("cd user");
+        Assert.Contains("resize", _console.GetPathCompletions("res").Candidates);
+        Assert.Contains("--exact", _console.GetPathCompletions("resize pic.png --e").Candidates);
+        Assert.Contains("sepia", _console.GetPathCompletions("filter se").Candidates);
+        Assert.Equal(["sub/"], _console.GetPathCompletions("cp pic.png -d s").Candidates);
+        Run("cd /");
+        Run("cd images");
+        Assert.Contains("pic2.png", _console.GetPathCompletions("convert pic2").Candidates);
+    }
+
+    [Fact]
     public void ExplicitOutputThatExistsIsRefusedWithoutForce()
     {
         Run("cd images");

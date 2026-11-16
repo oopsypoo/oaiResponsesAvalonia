@@ -200,6 +200,43 @@ public sealed class ImgConsoleWriteTests : IDisposable
     }
 
     [Fact]
+    public void Filter_InUserSubfolderWritesIntoThatFolder()
+    {
+        Run("cd images");
+        Run("mkdir sub");
+        Run("cp pic.png sub/");
+        Run("cd /");
+        Run("cd user");
+        Run("cd sub");
+        Run("filter grayscale pic.png -b gray");
+        Assert.True(File.Exists(Path.Combine(_userImages, "sub", "gray.png")));
+        Assert.False(File.Exists(Path.Combine(_userImages, "gray.png")));
+    }
+
+    [Fact]
+    public void Rm_DeletesFilesAndFoldersOnlyInsideUserImages()
+    {
+        Run("cd images");
+        Run("mkdir -p a/b");
+        Run("cp pic.png a/b/");
+        Run("cd /");
+        Run("cd user");
+        Assert.Contains("is a folder", RunError("rm a"));
+        Run("cd /");
+        Run("cd user");
+        Run("rm a/b/pic.png");
+        Assert.False(File.Exists(Path.Combine(_userImages, "a", "b", "pic.png")));
+        Run("rm -r a");
+        Assert.False(Directory.Exists(Path.Combine(_userImages, "a")));
+        Assert.Contains("cannot", RunError("rm -r /"));
+        Assert.Contains("cannot", RunError("rm -r ."));
+        Run("cd /");
+        Run("cd images");
+        Assert.Contains("Application Images", RunError("rm pic.png"));
+        Assert.True(File.Exists(Path.Combine(_appImages, "pic.png")));
+    }
+
+    [Fact]
     public void ExplicitOutputThatExistsIsRefusedWithoutForce()
     {
         Run("cd images");

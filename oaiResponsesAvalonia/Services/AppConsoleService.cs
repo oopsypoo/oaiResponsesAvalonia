@@ -219,7 +219,7 @@ internal sealed partial class AppConsoleService
                 "img" => EnterImages(args.Skip(1).ToArray()),
                 "info" => GetImageInfo(args.Skip(1).ToArray()),
                 "preview" => CreateTerminalImagePreview(args.Skip(1).ToArray(), out imagePreviews, out openImagePaths, out previewWidth, out previewHeight),
-                "mkdir" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" => ExecuteImageWrite(command, args.Skip(1).ToArray()),
+                "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" => ExecuteImageWrite(command, args.Skip(1).ToArray()),
                 "app" or "application" => SwitchToApplication(args.Skip(1).ToArray()),
                 "database" => SwitchToDatabase(args.Skip(1).ToArray()),
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
@@ -245,7 +245,7 @@ internal sealed partial class AppConsoleService
 
             bool closeWindow = command is "quit" or "exit";
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or "grep" or
-                "connect" or "disconnect" or "workspace" or "img" or "info" or "preview" or "mkdir" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
+                "connect" or "disconnect" or "workspace" or "img" or "info" or "preview" or "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
             string kind = !knownCommand ? "error" : command is "connect" or "disconnect" or "workspace" or "img" or "app" or "application" or "database" ? "success" : "normal";
             return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode, imagePreviews, openImagePaths, previewWidth, previewHeight);
         }
@@ -259,7 +259,7 @@ internal sealed partial class AppConsoleService
     {
         if (command == "connect" && ActiveContext != ConsoleContext.Application)
             throw new InvalidOperationException("switch to application context before connecting to a database.");
-        if (command is "info" or "preview" or "mkdir" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" && ActiveContext != ConsoleContext.Images)
+        if (command is "info" or "preview" or "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" && ActiveContext != ConsoleContext.Images)
             throw new InvalidOperationException($"'{command}' requires the img context. Use 'img' to enter it.");
         if (command is "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" && ActiveContext != ConsoleContext.Database)
             throw new InvalidOperationException($"'{command}' requires the database context. Use 'database' to switch contexts.");
@@ -268,7 +268,7 @@ internal sealed partial class AppConsoleService
         {
             "ls" => ConsoleOperationCapability.List,
             "info" or "preview" => ConsoleOperationCapability.ImageRead,
-            "mkdir" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" => ConsoleOperationCapability.ImageWrite,
+            "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" => ConsoleOperationCapability.ImageWrite,
             "cat" => ConsoleOperationCapability.Read,
             "grep" => ConsoleOperationCapability.Search | (grepReadsFile ? ConsoleOperationCapability.Read : ConsoleOperationCapability.None),
             "connect" or "disconnect" or "workspace" or "img" or "app" or "application" or "database" => ConsoleOperationCapability.ContextSwitch,
@@ -306,7 +306,7 @@ internal sealed partial class AppConsoleService
         _imageLocation = null;
         _imageCurrentDirectory = null;
         ActiveContext = ConsoleContext.Images;
-        return $"img context active. Application Images are read-only; mkdir, cp, mv, resize, rotate, convert and filter write only inside the User Images folder '{_userImagesDisplayName}' at {_userImagesRoot}.";
+        return $"img context active. Application Images are read-only; mkdir, rm, cp, mv, resize, rotate, convert and filter write only inside the User Images folder '{_userImagesDisplayName}' at {_userImagesRoot}.";
     }
 
     private void EnsureImageLibrary()
@@ -754,7 +754,8 @@ internal sealed partial class AppConsoleService
             "disconnect" => "usage: disconnect\nDisconnects and returns this terminal to application-data context.",
             "cat" => "usage: cat <file-pattern ...>\nDisplays small text files in filesystem contexts. File-name patterns may use * and ?; multiple matches are shown with file-name headings.",
             "workspace" => "usage: workspace\nEnters the configured workspace context in read-only mode. Requires Developer Tools to be enabled and an existing workspace root.",
-            "img" => "usage: img\nEnters the image context. Application Images are read-only; write commands (mkdir, cp, mv, resize, rotate, convert, filter) write only inside the User Images folder. Use ls to see image roots, then cd images or cd user.",
+            "img" => "usage: img\nEnters the image context. Application Images are read-only; write commands (mkdir, rm, cp, mv, resize, rotate, convert, filter) write only inside the User Images folder. Use ls to see image roots, then cd images or cd user.",
+            "rm" => "usage: rm [-r] <image-or-folder ...>\nDeletes images or folders inside User Images (never Application Images, never the User Images folder itself). Folders need -r and are deleted with their contents. Image patterns may use * and ?.\n\t-r, --recursive\tDelete folders and everything in them.",
             "mkdir" => "usage: mkdir [-p] <folder ...>\nCreates folders inside User Images. Relative paths start at the current User Images folder (or the User Images root when browsing Application Images); a leading / starts at the root.\n\t-p, --parents\tCreate missing parent folders; no error if the folder exists.",
             "cp" => "usage: cp <image-or-pattern ...> [destination] [-d <dir>] [-o <name>] [-b <body>] [--force]\nCopies images from either image root into User Images (the current User Images folder, or its root, by default). A destination is an existing folder, or a new name when one image is copied; a name without extension keeps the original extension. Name collisions are auto-numbered (name_2.png).\n\t-d, --dir <dir>\tDestination folder inside User Images; created if missing.\n\t-o, --output <name>\tFile name for a single image.\n\t-b, --body <body>\tName a batch <body>_01, <body>_02, ... (cannot be combined with -o).\n\t--force\tOverwrite an existing file instead of auto-numbering (-o and plain names).",
             "mv" => "usage: mv <image-or-pattern ...> <destination> [-d <dir>] [-o <name>] [-b <body>] [--force]\nMoves or renames images inside User Images; Application Images cannot be moved (use cp). A destination is an existing folder, or a new name when one image is moved; a name without extension keeps the original extension. Collisions are auto-numbered.\n\t-d, --dir <dir>\tDestination folder inside User Images; created if missing.\n\t-o, --output <name>\tNew file name for a single image.\n\t-b, --body <body>\tRename a batch <body>_01, <body>_02, ... (cannot be combined with -o).\n\t--force\tOverwrite an existing file instead of auto-numbering.",
@@ -2117,7 +2118,7 @@ internal sealed partial class AppConsoleService
             {
                 ConsoleContext.Database => ["help", "pwd", "ls", "cd", "grep", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "workspace", "img", "app", "clear", "quit", "exit"],
                 ConsoleContext.Workspace => ["help", "pwd", "ls", "cd", "cat", "grep", "workspace", "img", "app", "database", "disconnect", "clear", "quit", "exit"],
-                ConsoleContext.Images => ["help", "pwd", "ls", "cd", "cat", "grep", "info", "preview", "mkdir", "cp", "mv", "resize", "rotate", "convert", "filter", "img", "app", "database", "workspace", "clear", "quit", "exit"],
+                ConsoleContext.Images => ["help", "pwd", "ls", "cd", "cat", "grep", "info", "preview", "mkdir", "rm", "cp", "mv", "resize", "rotate", "convert", "filter", "img", "app", "database", "workspace", "clear", "quit", "exit"],
                 _ => ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "disconnect", "workspace", "database", "img", "clear", "quit", "exit"]
             };
             return new AppConsoleCompletionResult(tokenStart, commands.Where(item => item.StartsWith(typedCommand, StringComparison.OrdinalIgnoreCase)).ToArray());
@@ -2219,7 +2220,7 @@ internal sealed partial class AppConsoleService
             }
             return new AppConsoleCompletionResult(tokenStart, []);
         }
-        if (ActiveContext == ConsoleContext.Images && command is "mkdir" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter")
+        if (ActiveContext == ConsoleContext.Images && command is "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter")
         {
             string typedArgument = DecodeCompletionToken(rawToken);
             string? previous = precedingArgs.Count > 1 ? precedingArgs[^1] : null;
@@ -2241,7 +2242,7 @@ internal sealed partial class AppConsoleService
                 formats.AddRange(GetImagePathCompletions(command, rawToken, tokenStart).Candidates);
                 return new AppConsoleCompletionResult(tokenStart, formats);
             }
-            return GetImagePathCompletions(command, rawToken, tokenStart, command == "mkdir" || previousIsDirOption);
+            return GetImagePathCompletions(command, rawToken, tokenStart, command is "mkdir" || previousIsDirOption);
         }
         if (ActiveContext == ConsoleContext.Images && command == "preview")
         {
@@ -2315,11 +2316,12 @@ internal sealed partial class AppConsoleService
     }
 
     private static bool IsImageWriteSwitch(string option) =>
-        option is "--force" or "--no-transparency" or "--exact" or "-p" or "--parents";
+        option is "--force" or "--no-transparency" or "--exact" or "-p" or "--parents" or "-r" or "--recursive";
 
     private static string[] GetImageWriteFlags(string command) => command switch
     {
         "mkdir" => ["-p", "--parents"],
+        "rm" => ["-r", "--recursive"],
         "cp" or "mv" => ["-d", "--dir", "-o", "--output", "-b", "--body", "--force"],
         "resize" => ["-s", "--size", "--exact", "-d", "--dir", "-o", "--output", "-b", "--body", "-q", "--quality", "--no-transparency", "--background", "--force"],
         "rotate" => ["-a", "--angle", "-d", "--dir", "-o", "--output", "-b", "--body", "-q", "--quality", "--no-transparency", "--background", "--force"],
@@ -2654,6 +2656,7 @@ internal sealed partial class AppConsoleService
         "  info <image>                 Show dimensions, format, frames, and transparency\n" +
          "  preview [-o] [-s 8x4|--size=8x4] <image-or-pattern>  Inline grid or zoomable inspector; Save As copies originals\n" +
         "  mkdir [-p] <folder>          Create a folder inside User Images\n" +
+        "  rm [-r] <image-or-folder>    Delete images or folders inside User Images\n" +
         "  cp <image> [destination]     Copy an image into User Images (see: help cp)\n" +
         "  mv <image> <destination>     Move or rename an image inside User Images (see: help mv)\n" +
         "  resize <image> -s <size>     Resized copy: W=512, H=512, 50% or 800x600 --exact (see: help resize)\n" +

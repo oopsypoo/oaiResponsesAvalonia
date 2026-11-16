@@ -41,6 +41,7 @@ internal sealed partial class AppConsoleService
         return command switch
         {
             "mkdir" => MakeImageDirectories(args),
+            "rm" => RemoveUserItems(args),
             "cp" or "mv" => CopyOrMoveImages(command, args),
             "resize" => ResizeImages(args),
             "rotate" => RotateImages(args),
@@ -65,6 +66,64 @@ internal sealed partial class AppConsoleService
             _imageLibrary!.CreateUserDirectory(full, parents);
             return $"created {FormatUserImagePath(full)}";
         }, path => path);
+    }
+
+    private string RemoveUserItems(string[] args)
+    {
+        ImgCommandArguments parsed = ImgCommandArguments.Parse(args, Map(), Map("-r", "recursive", "-R", "recursive", "--recursive", "recursive"));
+        if (parsed.Positionals.Count == 0)
+            throw new InvalidOperationException("usage: rm [-r] <image-or-folder ...>");
+        if (_imageLocation == ImageBrowserLocation.ApplicationImages)
+            throw new InvalidOperationException("rm works only inside the User Images folder; Application Images cannot be deleted.");
+
+        bool recursive = parsed.Has("recursive");
+        var targets = new List<string>();
+        foreach (string pattern in parsed.Positionals)
+        {
+            if (!HasWildcard(pattern))
+            {
+                targets.Add(ResolveUserWritePath(pattern));
+                continue;
+            }
+
+            string[] matches = ExpandFileMatches(pattern, workspace: false, images: true)
+                .Where(path => ImgCommandHelpers.TryGetFormatExtension(Path.GetExtension(path)) is not null).ToArray();
+            if (matches.Length == 0)
+                throw new FileNotFoundException($"no images match pattern: {pattern}");
+            targets.AddRange(matches);
+        }
+
+        string[] distinct = targets.Distinct(PathComparer).ToArray();
+        if (distinct.Length > ImgCommandHelpers.MaximumBatchFiles)
+            throw new InvalidOperationException($"{distinct.Length} items match; the limit is {ImgCommandHelpers.MaximumBatchFiles} per command.");
+
+        return RunImageBatch(distinct, full =>
+        {
+            string display = FormatUserImagePath(full);
+            if (string.Equals(Path.GetFullPath(full).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(_userImagesRoot!).TrimEnd(Path.DirectorySeparatorChar), GetPathComparison()))
+                throw new InvalidOperationException("cannot delete the User Images folder itself.");
+            EnsureImageNoReparsePoints(ImageBrowserLocation.UserImages, full);
+
+            if (Directory.Exists(full))
+            {
+                if (!recursive)
+                    throw new InvalidOperationException($"{display} is a folder (use -r to delete it and its contents).");
+                if (Directory.EnumerateFileSystemEntries(full, "*", SearchOption.AllDirectories).Any(IsReparsePoint))
+                    throw new InvalidOperationException($"{display} contains a link or reparse point; refusing to delete it.");
+                string current = _imageCurrentDirectory!;
+                Directory.Delete(full, recursive: true);
+                if (!Directory.Exists(current))
+                    _imageCurrentDirectory = _imageLibrary!.GetRoot(ImageBrowserLocation.UserImages);
+                return $"removed {display}/";
+            }
+
+            if (!File.Exists(full))
+                throw new FileNotFoundException($"no such image or folder: {display}");
+            if (ImgCommandHelpers.TryGetFormatExtension(Path.GetExtension(full)) is null)
+                throw new InvalidOperationException($"{display} is not a supported image file.");
+            File.Delete(full);
+            return $"removed {display}";
+        }, Path.GetFileName);
     }
 
     private string CopyOrMoveImages(string command, string[] args)

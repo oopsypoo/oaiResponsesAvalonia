@@ -658,7 +658,7 @@ namespace oaiResponsesAvalonia
 
             return tools.ToArray();
         }
-        private ResponsesRequest BuildRequest(object input, string? previousResponseId, DeveloperToolsOptions developerToolsOptions, IReadOnlyList<object>? mcpTools = null)
+        private ResponsesRequest BuildRequest(object input, DeveloperToolsOptions developerToolsOptions, IReadOnlyList<object>? mcpTools = null)
         {
             var hostedTools = GetToolsForCurrentSelection().Cast<object>().ToList();
             var localFunctionTools = GetLocalFunctionTools(developerToolsOptions);
@@ -669,8 +669,9 @@ namespace oaiResponsesAvalonia
             {
                 Model = CurrentModel,
                 Input = input,
-                Store = true,
-                PreviousResponseId = previousResponseId,
+                // Stateless by design: nothing is kept on OpenAI's servers; full context is resent each round.
+                Store = false,
+                Include = new[] { "reasoning.encrypted_content" },
                 Tools = allTools,
                 ToolChoice = allTools.Length > 0 ? "auto" : null,
                 // Local file and process operations must execute in a deterministic order.
@@ -757,8 +758,8 @@ namespace oaiResponsesAvalonia
                 processManager);
             var dispatcher = new LocalToolDispatcher(fileService, searchService, dotNetProjectService);
 
-            string? previousResponseId = null;
-            object currentInput = openAIContext;
+            // Stateless: the running input holds the full context, including the model's own output items.
+            var currentInput = new List<object>(openAIContext);
             int customWebSearchCalls = 0;
 
             var options = new JsonSerializerOptions
@@ -777,7 +778,7 @@ namespace oaiResponsesAvalonia
             while (true)
             {
                 progress?.Report("Building request...");
-                var request = BuildRequest(currentInput, previousResponseId, developerToolsOptions, mcp?.FunctionTools);
+                var request = BuildRequest(currentInput, developerToolsOptions, mcp?.FunctionTools);
 
                 var json = JsonSerializer.Serialize(request, options);
 #if DEBUG
@@ -801,8 +802,7 @@ namespace oaiResponsesAvalonia
 
                 if (!string.IsNullOrEmpty(apiResponse.Id))
                 {
-                    previousResponseId = apiResponse.Id;
-                    LastResponseId = apiResponse.Id; // okay to store, but not use as input source
+                    LastResponseId = apiResponse.Id; // informational only; never sent back as previous_response_id
                 }
 
                 var functionCalls = ExtractFunctionCalls(apiResponse);
@@ -814,6 +814,16 @@ namespace oaiResponsesAvalonia
                     parsed.RawJson = responseString;
                     parsed.ImageOutputFormat = NormalizeImageOutputFormat(ImageGenOutputFormat);
                     return parsed;
+                }
+
+                using (var outputDoc = JsonDocument.Parse(responseString))
+                {
+                    if (outputDoc.RootElement.TryGetProperty("output", out var outputItems) &&
+                        outputItems.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in outputItems.EnumerateArray())
+                            currentInput.Add(item.Clone());
+                    }
                 }
 
                 var toolOutputs = new List<object>();
@@ -930,7 +940,7 @@ namespace oaiResponsesAvalonia
                     });
                 }
 
-                currentInput = toolOutputs;
+                currentInput.AddRange(toolOutputs);
                 progress?.Report("Continuing conversation with tool outputs...");
             }
         }
@@ -1310,6 +1320,10 @@ namespace oaiResponsesAvalonia
 
             [JsonPropertyName("store")]
             public bool Store { get; set; } = false;
+
+            [JsonPropertyName("include")]
+            public string[]? Include { get; set; }
+
             [JsonPropertyName("instructions")]
             public string Instructions { get; set; } = "Return all final answers as clean, well-formed GitHub-style Markdown.\r\n\r\nUse Markdown features fully when they improve clarity, including:\r\n- headings\r\n- short paragraphs\r\n- bullet lists\r\n- numbered lists\r\n- nested lists\r\n- task lists\r\n- tables\r\n- blockquotes\r\n- inline code\r\n- fenced code blocks with language tags\r\n- links\r\n- horizontal rules\r\n\r\nFormatting rules:\r\n- Use headings to organize longer answers.\r\n- Use bullet lists and numbered lists where appropriate.\r\n- Use nested lists when structure benefits from it.\r\n- Use fenced code blocks with the correct language tag whenever you provide code.\r\n- Use inline code for identifiers, class names, method names, file names, commands, property names, enum values, and config keys.\r\n- Use tables when they clearly improve readability.\r\n- Use blockquotes for notes, warnings, and important remarks.\r\n- Keep Markdown valid, clean, and well-formed.\r\n- Do not wrap the entire answer in a single code block.\r\n- Do not use raw HTML unless explicitly requested.\r\n- Prefer readable structure over dense prose.";
 

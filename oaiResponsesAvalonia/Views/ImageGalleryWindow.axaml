@@ -100,23 +100,42 @@
                         <CheckBox x:Name="KeepAspectCheckBox" Content="Keep aspect ratio" IsChecked="True" IsCheckedChanged="ProcessingOption_Changed" />
                     </StackPanel>
                     <CheckBox x:Name="RotationToolCheckBox" Content="Rotate" IsCheckedChanged="RotationToolCheckBox_Changed" />
-                    <ComboBox x:Name="RotationPicker" IsVisible="False" SelectedIndex="0" SelectionChanged="ProcessingPicker_SelectionChanged">
-                        <ComboBoxItem Content="None" Tag="0" />
-                        <ComboBoxItem Content="90° clockwise" Tag="90" />
-                        <ComboBoxItem Content="180°" Tag="180" />
-                        <ComboBoxItem Content="270° clockwise" Tag="270" />
-                    </ComboBox>
-                    <CheckBox x:Name="FilterToolCheckBox" Content="Filter" IsCheckedChanged="FilterToolCheckBox_Changed" />
-                    <ComboBox x:Name="FilterPicker" IsVisible="False" SelectedIndex="0" SelectionChanged="ProcessingPicker_SelectionChanged">
-                        <ComboBoxItem Content="None" Tag="None" />
-                        <ComboBoxItem Content="Grayscale" Tag="Grayscale" />
-                        <ComboBoxItem Content="Sepia" Tag="Sepia" />
-                        <ComboBoxItem Content="Invert" Tag="Invert" />
-                    </ComboBox>
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-
-
-                    </Grid>
+                    <StackPanel x:Name="RotationControlsPanel" IsVisible="False" Spacing="6">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Angle" />
+                            <TextBlock x:Name="RotationAngleValue" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="0°" />
+                        </Grid>
+                        <Slider x:Name="RotationAngleSlider" Minimum="0" Maximum="359" Value="0" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="RotationAngleSlider_ValueChanged" />
+                        <CheckBox x:Name="KeepCanvasSizeCheckBox" Content="Keep canvas size" IsCheckedChanged="ProcessingOption_Changed" />
+                    </StackPanel>
+                    <CheckBox x:Name="FilterToolCheckBox" Content="Filter stack" IsCheckedChanged="FilterToolCheckBox_Changed" />
+                    <StackPanel x:Name="FilterControlsPanel" IsVisible="False" Spacing="6">
+                        <ComboBox x:Name="FilterPicker" SelectedIndex="0" SelectionChanged="FilterPicker_SelectionChanged">
+                            <ComboBoxItem Content="Choose a filter…" Tag="None" />
+                            <ComboBoxItem Content="Grayscale" Tag="Grayscale" />
+                            <ComboBoxItem Content="Sepia" Tag="Sepia" />
+                            <ComboBoxItem Content="Invert" Tag="Invert" />
+                            <ComboBoxItem Content="Blur" Tag="Blur" />
+                            <ComboBoxItem Content="Sharpen" Tag="Sharpen" />
+                            <ComboBoxItem Content="Brightness" Tag="Brightness" />
+                            <ComboBoxItem Content="Contrast" Tag="Contrast" />
+                        </ComboBox>
+                        <StackPanel x:Name="FilterAmountPanel" IsVisible="False" Spacing="3">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock x:Name="FilterAmountDescription" Grid.Column="0" VerticalAlignment="Center" Text="Amount" />
+                                <TextBlock x:Name="FilterAmountValue" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="3" />
+                            </Grid>
+                            <Slider x:Name="FilterAmountSlider" Minimum="1" Maximum="50" Value="3" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="FilterAmountSlider_ValueChanged" />
+                            <TextBlock x:Name="FilterAmountHint" FontSize="11" Opacity="0.75" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button Content="Add filter" Click="AddFilterButton_Click" />
+                        <TextBlock Text="Applied in order:" FontWeight="SemiBold" />
+                        <ListBox x:Name="AppliedFiltersList" MaxHeight="110" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                            <Button Grid.Column="0" Content="Undo last" Click="UndoFilterButton_Click" />
+                            <Button Grid.Column="1" Content="Clear all" Click="ClearFiltersButton_Click" />
+                        </Grid>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
             <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />

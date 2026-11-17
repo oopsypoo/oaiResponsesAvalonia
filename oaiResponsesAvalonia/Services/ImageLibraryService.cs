@@ -27,6 +27,8 @@ public sealed record ImageAssetEntry(string FullPath, string Name, bool IsDirect
 
 public sealed record ImageAssetPreview(byte[] PngBytes, int Width, int Height, string Format, int FrameCount, bool HasTransparency);
 
+public sealed record ImageFilterStep(string Filter, float? Amount = null);
+
 public sealed record ImageProcessingOptions(
     int? CropX = null,
     int? CropY = null,
@@ -39,7 +41,8 @@ public sealed record ImageProcessingOptions(
     string Filter = "None",
     double? FreeRotationDegrees = null,
     float? FilterAmount = null,
-    bool KeepCanvasSize = false);
+    bool KeepCanvasSize = false,
+    IReadOnlyList<ImageFilterStep>? FilterSteps = null);
 
 /// <summary>
 /// Shared image operations for the gallery/editor and the planned img terminal context.
@@ -397,6 +400,11 @@ public sealed class ImageLibraryService
             }
 
             ApplyFilter(image, options.Filter, options.FilterAmount);
+            if (options.FilterSteps is not null)
+            {
+                foreach (ImageFilterStep step in options.FilterSteps)
+                    ApplyFilter(image, step.Filter, step.Amount);
+            }
             return image;
         }
         catch

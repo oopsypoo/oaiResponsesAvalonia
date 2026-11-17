@@ -183,14 +183,17 @@ internal sealed partial class AppConsoleService
 
     private string RotateImages(string[] args)
     {
-        ImgCommandArguments parsed = ImgCommandArguments.Parse(args, Merge(ProcessingValueOptions, "-a", "angle", "--angle", "angle"), ProcessingFlags);
-        string angleText = parsed.Value("angle") ?? throw new InvalidOperationException("usage: rotate <image-or-pattern ...> -a <degrees> [-d <dir>] [-o <name> | -b <body>] [-q N] [--no-transparency] [--background <colour>] [--force]");
+        ImgCommandArguments parsed = ImgCommandArguments.Parse(args, Merge(ProcessingValueOptions, "-a", "angle", "--angle", "angle", "--canvas", "canvas"), ProcessingFlags);
+        string canvas = parsed.Value("canvas")?.ToLowerInvariant() ?? "expand";
+        if (canvas is not ("expand" or "keep"))
+            throw new InvalidOperationException("--canvas must be 'expand' (default) or 'keep'.");
+        string angleText = parsed.Value("angle") ?? throw new InvalidOperationException("usage: rotate <image-or-pattern ...> -a <degrees> [--canvas expand|keep] [-d <dir>] [-o <name> | -b <body>] [-q N] [--no-transparency] [--background <colour>] [--force]");
         if (!double.TryParse(angleText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double angle))
             throw new InvalidOperationException("angle must be a number of degrees (positive is clockwise).");
         (int? rightAngle, double? freeAngle) = ImgCommandHelpers.NormalizeAngle(angle);
         string[] sources = ExpandImageSources(RequirePositionals(parsed, "rotate"));
 
-        return ProcessImages(sources, parsed, "rotated", null, null, _ => new ImageProcessingOptions(RotationDegrees: rightAngle ?? 0, FreeRotationDegrees: freeAngle));
+        return ProcessImages(sources, parsed, "rotated", null, null, _ => new ImageProcessingOptions(RotationDegrees: rightAngle ?? 0, FreeRotationDegrees: freeAngle, KeepCanvasSize: canvas == "keep"));
     }
 
     private string ConvertImages(string[] args)

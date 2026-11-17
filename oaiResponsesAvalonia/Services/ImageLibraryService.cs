@@ -38,7 +38,8 @@ public sealed record ImageProcessingOptions(
     int RotationDegrees = 0,
     string Filter = "None",
     double? FreeRotationDegrees = null,
-    float? FilterAmount = null);
+    float? FilterAmount = null,
+    bool KeepCanvasSize = false);
 
 /// <summary>
 /// Shared image operations for the gallery/editor and the planned img terminal context.
@@ -380,7 +381,16 @@ public sealed class ImageLibraryService
             }
 
             if (options.FreeRotationDegrees is double freeAngle)
+            {
+                int keepWidth = image.Width, keepHeight = image.Height;
                 image.Mutate(context => context.Rotate((float)freeAngle));
+                if (options.KeepCanvasSize && (image.Width != keepWidth || image.Height != keepHeight))
+                {
+                    int cropWidth = Math.Min(keepWidth, image.Width), cropHeight = Math.Min(keepHeight, image.Height);
+                    var area = new Rectangle((image.Width - cropWidth) / 2, (image.Height - cropHeight) / 2, cropWidth, cropHeight);
+                    image.Mutate(context => context.Crop(area));
+                }
+            }
 
             ApplyFilter(image, options.Filter, options.FilterAmount);
             return image;

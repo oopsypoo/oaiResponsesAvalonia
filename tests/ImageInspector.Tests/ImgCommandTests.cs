@@ -140,6 +140,16 @@ public sealed class ImgConsoleWriteTests : IDisposable
     }
 
     [Fact]
+    public void Rotate_CanvasKeepPreservesOriginalSize()
+    {
+        Run("cd images");
+        Run("rotate pic.png -a 45 --canvas keep -o kept");
+        using Image kept = Image.Load(Path.Combine(_userImages, "kept.png"));
+        Assert.Equal((100, 40), (kept.Width, kept.Height));
+        Assert.Contains("--canvas", RunError("rotate pic.png -a 45 --canvas bogus"));
+    }
+
+    [Fact]
     public void Convert_ToIcoWritesOneFramePerSize()
     {
         Run("cd images");

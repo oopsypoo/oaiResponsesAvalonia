@@ -1,6 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using oaiResponsesAvalonia.Services;
+using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.IO;
 using System.Linq;
@@ -46,8 +48,10 @@ public partial class SaveAsWindow : Window
             string extension = SelectedTag(OutputFormatPicker, ".png").ToLowerInvariant();
             int[]? icoSizes = extension == ".ico" ? ParseIcoSizes(IcoSizesBox.Text ?? string.Empty) : null;
             bool keepTransparency = KeepTransparencyCheckBox.IsChecked == true;
+            Color selectedColor = BackgroundColorPicker.Color;
+            var background = new Rgba32(selectedColor.R, selectedColor.G, selectedColor.B, 255);
             byte[] output = await Task.Run(() => _imageService.ConvertToBytes(
-                _imagePath, _options, extension, keepTransparency, icoSizes));
+                _imagePath, _options, extension, keepTransparency, icoSizes, background: background));
             string savedPath = _imageService.SaveToUserImages(_targetDirectory, baseName + extension, output);
             Close(savedPath);
         }
@@ -66,17 +70,22 @@ public partial class SaveAsWindow : Window
 
     private void OutputFormatPicker_SelectionChanged(object? sender, SelectionChangedEventArgs e) => UpdateFormatOptions();
 
+    private void KeepTransparencyCheckBox_Changed(object? sender, RoutedEventArgs e) => UpdateFormatOptions();
+
     private void UpdateFormatOptions()
     {
         if (IcoSizesBox is null)
             return;
 
-        string extension = SelectedTag(OutputFormatPicker, ".png");
+        string extension = SelectedTag(OutputFormatPicker, ".png").ToLowerInvariant();
         IcoSizesBox.IsVisible = extension == ".ico";
-        KeepTransparencyCheckBox.IsVisible = extension is ".png" or ".webp" or ".bmp" or ".ico";
+        bool transparencySupported = extension is ".png" or ".webp" or ".bmp" or ".ico";
+        KeepTransparencyCheckBox.IsVisible = transparencySupported;
+        bool mustFlatten = extension is ".jpg" or ".jpeg" || !transparencySupported || KeepTransparencyCheckBox.IsChecked != true;
+        BackgroundColorPanel.IsVisible = mustFlatten;
         TransparencyHelpText.Text = extension is ".jpg" or ".jpeg"
-            ? "JPEG cannot store transparency; transparent pixels will be composited onto white."
-            : "When unchecked, transparent pixels are composited onto white before saving.";
+            ? "JPEG cannot store transparency; transparent pixels will be composited onto the selected background color."
+            : "When unchecked, transparent pixels are composited onto the selected background color.";
     }
 
     private static int[] ParseIcoSizes(string text)

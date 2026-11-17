@@ -20,8 +20,12 @@
         </ComboBox>
         <TextBox x:Name="IcoSizesBox" Grid.Row="3" Text="256,128,64,48,32,16" PlaceholderText="ICO embedded sizes" IsVisible="False" />
         <StackPanel Grid.Row="4" Spacing="4">
-            <CheckBox x:Name="KeepTransparencyCheckBox" Content="Keep transparency" IsChecked="True" />
+            <CheckBox x:Name="KeepTransparencyCheckBox" Content="Keep transparency" IsChecked="True" IsCheckedChanged="KeepTransparencyCheckBox_Changed" />
             <TextBlock x:Name="TransparencyHelpText" TextWrapping="Wrap" FontSize="12" Opacity="0.8" />
+            <StackPanel x:Name="BackgroundColorPanel" IsVisible="False" Spacing="4">
+                <TextBlock Text="Background color" FontWeight="SemiBold" />
+                <ColorPicker x:Name="BackgroundColorPicker" Color="#FFFFFFFF" IsAlphaEnabled="False" />
+            </StackPanel>
         </StackPanel>
         <TextBlock x:Name="DialogStatusText" Grid.Row="5" TextWrapping="Wrap" IsVisible="False" />
         <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">

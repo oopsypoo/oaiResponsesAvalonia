@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using oaiResponsesAvalonia.Services;
@@ -19,6 +20,8 @@ public partial class SaveAsWindow : Window
     private readonly ImageProcessingOptions _options;
     private readonly bool _hasTransparency;
     private Bitmap? _previewBitmap;
+    private SixLabors.ImageSharp.Image<Rgba32>? _previewPixels;
+    private bool _isPickingColor;
     private bool _initializing = true;
 
     public SaveAsWindow(
@@ -38,6 +41,7 @@ public partial class SaveAsWindow : Window
         OutputNameBox.Text = defaultBaseName;
         using (var stream = new MemoryStream(previewPng, writable: false))
             _previewBitmap = new Bitmap(stream);
+        _previewPixels = SixLabors.ImageSharp.Image.Load<Rgba32>(previewPng);
         PreviewImage.Source = _previewBitmap;
         KeepTransparencyCheckBox.IsChecked = _hasTransparency;
         _initializing = false;
@@ -49,6 +53,8 @@ public partial class SaveAsWindow : Window
         base.OnClosed(e);
         _previewBitmap?.Dispose();
         _previewBitmap = null;
+        _previewPixels?.Dispose();
+        _previewPixels = null;
     }
 
     private async void SaveButton_Click(object? sender, RoutedEventArgs e)
@@ -84,6 +90,59 @@ public partial class SaveAsWindow : Window
 
     private void CancelButton_Click(object? sender, RoutedEventArgs e) => Close(null);
 
+    private void PickFromImageButton_Click(object? sender, RoutedEventArgs e)
+    {
+        _isPickingColor = !_isPickingColor;
+        PickFromImageButton.Content = _isPickingColor ? "Cancel picking" : "Pick from image";
+        PickFromImageStatusText.Text = _isPickingColor
+            ? "Click a point on the image preview to use its visible color as the background."
+            : string.Empty;
+        PickFromImageStatusText.IsVisible = _isPickingColor;
+        PreviewImage.Cursor = _isPickingColor ? new Cursor(StandardCursorType.Cross) : null;
+    }
+
+    private void PreviewImage_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!_isPickingColor || !e.GetCurrentPoint(PreviewImage).Properties.IsLeftButtonPressed || _previewPixels is null)
+            return;
+
+        e.Handled = true;
+        var position = e.GetPosition(PreviewImage);
+        double scale = Math.Min(
+            PreviewImage.Bounds.Width / _previewPixels.Width,
+            PreviewImage.Bounds.Height / _previewPixels.Height);
+        if (scale <= 0)
+            return;
+
+        double displayedWidth = _previewPixels.Width * scale;
+        double displayedHeight = _previewPixels.Height * scale;
+        double offsetX = (PreviewImage.Bounds.Width - displayedWidth) / 2;
+        double offsetY = (PreviewImage.Bounds.Height - displayedHeight) / 2;
+        double imageX = position.X - offsetX;
+        double imageY = position.Y - offsetY;
+        if (imageX < 0 || imageY < 0 || imageX >= displayedWidth || imageY >= displayedHeight)
+        {
+            PickFromImageStatusText.Text = "Click inside the visible image area.";
+            return;
+        }
+
+        int pixelX = Math.Clamp((int)(imageX / scale), 0, _previewPixels.Width - 1);
+        int pixelY = Math.Clamp((int)(imageY / scale), 0, _previewPixels.Height - 1);
+        Rgba32 pixel = _previewPixels[pixelX, pixelY];
+        Color currentBackground = BackgroundColorPicker.Color;
+        int alpha = pixel.A;
+        byte red = (byte)((pixel.R * alpha + currentBackground.R * (255 - alpha) + 127) / 255);
+        byte green = (byte)((pixel.G * alpha + currentBackground.G * (255 - alpha) + 127) / 255);
+        byte blue = (byte)((pixel.B * alpha + currentBackground.B * (255 - alpha) + 127) / 255);
+
+        // Keep the picker synchronized with the sampled color so the selected value is visible and editable.
+        BackgroundColorPicker.Color = Color.FromArgb(255, red, green, blue);
+        _isPickingColor = false;
+        PickFromImageButton.Content = "Pick from image";
+        PickFromImageStatusText.IsVisible = false;
+        PreviewImage.Cursor = null;
+    }
+
     private void OutputFormatPicker_SelectionChanged(object? sender, SelectionChangedEventArgs e) => UpdateFormatOptions();
 
     private void KeepTransparencyCheckBox_Changed(object? sender, RoutedEventArgs e)
@@ -110,6 +169,13 @@ public partial class SaveAsWindow : Window
         bool keepTransparency = _hasTransparency && transparencySupported && KeepTransparencyCheckBox.IsChecked == true;
         bool mustFlatten = _hasTransparency && !keepTransparency;
         BackgroundColorPanel.IsVisible = mustFlatten;
+        if (!mustFlatten && _isPickingColor)
+        {
+            _isPickingColor = false;
+            PickFromImageButton.Content = "Pick from image";
+            PickFromImageStatusText.IsVisible = false;
+            PreviewImage.Cursor = null;
+        }
         TransparencyHelpText.Text = !_hasTransparency
             ? "This preview contains no transparent pixels."
             : mustFlatten

@@ -20,7 +20,7 @@
         </ComboBox>
         <TextBox x:Name="IcoSizesBox" Grid.Row="3" Text="256,128,64,48,32,16" PlaceholderText="ICO embedded sizes" IsVisible="False" />
         <Border x:Name="PreviewBackgroundBorder" Grid.Row="4" BorderBrush="Gray" BorderThickness="1" Padding="4" ClipToBounds="True">
-            <Image x:Name="PreviewImage" Stretch="Uniform" />
+            <Image x:Name="PreviewImage" Stretch="Uniform" PointerPressed="PreviewImage_PointerPressed" />
         </Border>
         <StackPanel Grid.Row="5" Spacing="4">
             <CheckBox x:Name="KeepTransparencyCheckBox" Content="Keep transparency" IsChecked="True" IsCheckedChanged="KeepTransparencyCheckBox_Changed" />
@@ -28,6 +28,8 @@
             <StackPanel x:Name="BackgroundColorPanel" IsVisible="False" Spacing="4">
                 <TextBlock Text="Background color" FontWeight="SemiBold" />
                 <ColorPicker x:Name="BackgroundColorPicker" Color="#FFFFFFFF" IsAlphaEnabled="False" ColorChanged="BackgroundColorPicker_ColorChanged" />
+                <Button x:Name="PickFromImageButton" Content="Pick from image" Click="PickFromImageButton_Click" />
+                <TextBlock x:Name="PickFromImageStatusText" FontSize="11" Opacity="0.8" TextWrapping="Wrap" IsVisible="False" />
             </StackPanel>
         </StackPanel>
         <TextBlock x:Name="DialogStatusText" Grid.Row="6" TextWrapping="Wrap" IsVisible="False" />

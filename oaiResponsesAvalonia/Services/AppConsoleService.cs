@@ -21,7 +21,8 @@ internal enum ConsoleOperationCapability
     Search = 4,
     ContextSwitch = 8,
     DatabaseRead = 16,
-    ImageRead = 32
+    ImageRead = 32,
+    ImageWrite = 64
 }
 
 internal enum ConsoleContext
@@ -35,7 +36,7 @@ internal enum ConsoleContext
 /// <summary>
 /// Implements constrained application commands, not an operating-system shell. Commands are dispatched by the active filesystem or database context.
 /// </summary>
-internal sealed class AppConsoleService
+internal sealed partial class AppConsoleService
 {
     private const int MaximumFileBytes = 32 * 1024;
     private const int MaximumListItems = 200;
@@ -141,7 +142,7 @@ internal sealed class AppConsoleService
     private ConsoleOperationCapability AllowedCapabilities => ActiveContext switch
     {
         ConsoleContext.Workspace => ConsoleOperationCapability.List | ConsoleOperationCapability.Read | ConsoleOperationCapability.Search | ConsoleOperationCapability.ContextSwitch,
-        ConsoleContext.Images => ConsoleOperationCapability.List | ConsoleOperationCapability.Read | ConsoleOperationCapability.Search | ConsoleOperationCapability.ImageRead | ConsoleOperationCapability.ContextSwitch,
+        ConsoleContext.Images => ConsoleOperationCapability.List | ConsoleOperationCapability.Read | ConsoleOperationCapability.Search | ConsoleOperationCapability.ImageRead | ConsoleOperationCapability.ImageWrite | ConsoleOperationCapability.ContextSwitch,
         ConsoleContext.Database => ConsoleOperationCapability.List | ConsoleOperationCapability.Search | ConsoleOperationCapability.ContextSwitch | ConsoleOperationCapability.DatabaseRead,
         _ => ConsoleOperationCapability.List | ConsoleOperationCapability.Read | ConsoleOperationCapability.Search | ConsoleOperationCapability.ContextSwitch | ConsoleOperationCapability.DatabaseRead
     };
@@ -218,6 +219,7 @@ internal sealed class AppConsoleService
                 "img" => EnterImages(args.Skip(1).ToArray()),
                 "info" => GetImageInfo(args.Skip(1).ToArray()),
                 "preview" => CreateTerminalImagePreview(args.Skip(1).ToArray(), out imagePreviews, out openImagePaths, out previewWidth, out previewHeight),
+                "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" => ExecuteImageWrite(command, args.Skip(1).ToArray()),
                 "app" or "application" => SwitchToApplication(args.Skip(1).ToArray()),
                 "database" => SwitchToDatabase(args.Skip(1).ToArray()),
                 "connect" => ConnectDatabase(args.Skip(1).ToArray()),
@@ -243,7 +245,7 @@ internal sealed class AppConsoleService
 
             bool closeWindow = command is "quit" or "exit";
             bool knownCommand = command is "help" or "pwd" or "ls" or "cd" or "cat" or "grep" or
-                "connect" or "disconnect" or "workspace" or "img" or "info" or "preview" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
+                "connect" or "disconnect" or "workspace" or "img" or "info" or "preview" or "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" or "app" or "application" or "database" or "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" or "db" or "clear" or "quit" or "exit";
             string kind = !knownCommand ? "error" : command is "connect" or "disconnect" or "workspace" or "img" or "app" or "application" or "database" ? "success" : "normal";
             return new AppConsoleResult(output, closeWindow ? string.Empty : Prompt, closeWindow, kind, pagerMode, imagePreviews, openImagePaths, previewWidth, previewHeight);
         }
@@ -257,7 +259,7 @@ internal sealed class AppConsoleService
     {
         if (command == "connect" && ActiveContext != ConsoleContext.Application)
             throw new InvalidOperationException("switch to application context before connecting to a database.");
-        if (command is "info" or "preview" && ActiveContext != ConsoleContext.Images)
+        if (command is "info" or "preview" or "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" && ActiveContext != ConsoleContext.Images)
             throw new InvalidOperationException($"'{command}' requires the img context. Use 'img' to enter it.");
         if (command is "sessions" or "find" or "tables" or "describe" or "messages" or "show" or "columns" && ActiveContext != ConsoleContext.Database)
             throw new InvalidOperationException($"'{command}' requires the database context. Use 'database' to switch contexts.");
@@ -266,6 +268,7 @@ internal sealed class AppConsoleService
         {
             "ls" => ConsoleOperationCapability.List,
             "info" or "preview" => ConsoleOperationCapability.ImageRead,
+            "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter" => ConsoleOperationCapability.ImageWrite,
             "cat" => ConsoleOperationCapability.Read,
             "grep" => ConsoleOperationCapability.Search | (grepReadsFile ? ConsoleOperationCapability.Read : ConsoleOperationCapability.None),
             "connect" or "disconnect" or "workspace" or "img" or "app" or "application" or "database" => ConsoleOperationCapability.ContextSwitch,
@@ -303,7 +306,7 @@ internal sealed class AppConsoleService
         _imageLocation = null;
         _imageCurrentDirectory = null;
         ActiveContext = ConsoleContext.Images;
-        return $"img context active (read-only). User Images folder '{_userImagesDisplayName}' is at {_userImagesRoot}.";
+        return $"img context active. Application Images are read-only; mkdir, rm, cp, mv, resize, rotate, convert and filter write only inside the User Images folder '{_userImagesDisplayName}' at {_userImagesRoot}.";
     }
 
     private void EnsureImageLibrary()
@@ -751,7 +754,15 @@ internal sealed class AppConsoleService
             "disconnect" => "usage: disconnect\nDisconnects and returns this terminal to application-data context.",
             "cat" => "usage: cat <file-pattern ...>\nDisplays small text files in filesystem contexts. File-name patterns may use * and ?; multiple matches are shown with file-name headings.",
             "workspace" => "usage: workspace\nEnters the configured workspace context in read-only mode. Requires Developer Tools to be enabled and an existing workspace root.",
-            "img" => "usage: img\nEnters the read-only image-browsing context. Use ls to see image roots, then cd images or cd user.",
+            "img" => "usage: img\nEnters the image context. Application Images are read-only; write commands (mkdir, rm, cp, mv, resize, rotate, convert, filter) write only inside the User Images folder. Use ls to see image roots, then cd images or cd user.",
+            "rm" => "usage: rm [-r] <image-or-folder ...>\nDeletes images or folders inside User Images (never Application Images, never the User Images folder itself). Folders need -r and are deleted with their contents. Image patterns may use * and ?.\n\t-r, --recursive\tDelete folders and everything in them.",
+            "mkdir" => "usage: mkdir [-p] <folder ...>\nCreates folders inside User Images. Relative paths start at the current User Images folder (or the User Images root when browsing Application Images); a leading / starts at the root.\n\t-p, --parents\tCreate missing parent folders; no error if the folder exists.",
+            "cp" => "usage: cp <image-or-pattern ...> [destination] [-d <dir>] [-o <name>] [-b <body>] [--force]\nCopies images from either image root into User Images (the current User Images folder, or its root, by default). A destination is an existing folder, or a new name when one image is copied; a name without extension keeps the original extension. Name collisions are auto-numbered (name_2.png).\n\t-d, --dir <dir>\tDestination folder inside User Images; created if missing.\n\t-o, --output <name>\tFile name for a single image.\n\t-b, --body <body>\tName a batch <body>_01, <body>_02, ... (cannot be combined with -o).\n\t--force\tOverwrite an existing file instead of auto-numbering (-o and plain names).",
+            "mv" => "usage: mv <image-or-pattern ...> <destination> [-d <dir>] [-o <name>] [-b <body>] [--force]\nMoves or renames images inside User Images; Application Images cannot be moved (use cp). A destination is an existing folder, or a new name when one image is moved; a name without extension keeps the original extension. Collisions are auto-numbered.\n\t-d, --dir <dir>\tDestination folder inside User Images; created if missing.\n\t-o, --output <name>\tNew file name for a single image.\n\t-b, --body <body>\tRename a batch <body>_01, <body>_02, ... (cannot be combined with -o).\n\t--force\tOverwrite an existing file instead of auto-numbering.",
+            "resize" => "usage: resize <image-or-pattern ...> -s <size> [-d <dir>] [-o <name>] [-b <body>] [-q <1-100>] [--exact] [--no-transparency] [--background <colour>] [--force]\nWrites resized copies into User Images (name_resized.ext by default); the originals are never changed. The aspect ratio is kept unless --exact is given.\n\t-s, --size <size>\tW=512 or H=512 (one side, keeps aspect ratio), 50% (scale), or 800x600 with --exact.\n\t--exact\tAllow WxH to change the aspect ratio.\n\t-d, --dir <dir>\tDestination folder inside User Images; created if missing.\n\t-o, --output <name>\tFile name for a single image; its extension selects the format.\n\t-b, --body <body>\tName a batch <body>_01, <body>_02, ... (cannot be combined with -o).\n\t-q, --quality <n>\tJPG/WebP quality 1-100 (default 90).\n\t--no-transparency\tFlatten transparency onto the background colour.\n\t--background <colour>\tColour used when flattening (default white); name or #rrggbb.\n\t--force\tOverwrite an existing output file instead of auto-numbering.",
+            "rotate" => "usage: rotate <image-or-pattern ...> -a <degrees> [--canvas expand|keep] [-d <dir>] [-o <name>] [-b <body>] [-q <1-100>] [--no-transparency] [--background <colour>] [--force]\nWrites rotated copies into User Images (name_rotated.ext by default). Any angle is allowed; positive is clockwise. By default angles that are not multiples of 90 enlarge the canvas so nothing is cut off, leaving transparent corners (white in JPG); --canvas keep keeps the original canvas size and scales the whole rotated image down to fit it.\n\t-a, --angle <degrees>\tRotation angle, for example 90 or -37.5.\n\t--canvas <expand|keep>\texpand (default) grows the canvas to fit the rotated image; keep retains the original canvas size and shrinks the image to fit.\n\t-d, --dir <dir>\tDestination folder inside User Images; created if missing.\n\t-o, --output <name>\tFile name for a single image.\n\t-b, --body <body>\tName a batch <body>_01, <body>_02, ... (cannot be combined with -o).\n\t-q, --quality <n>\tJPG/WebP quality 1-100 (default 90).\n\t--no-transparency\tFlatten transparency onto the background colour.\n\t--background <colour>\tColour used when flattening (default white); name or #rrggbb.\n\t--force\tOverwrite an existing output file instead of auto-numbering.",
+            "convert" => "usage: convert <image-or-pattern ...> <png|jpg|webp|bmp|ico> [-s <sizes>] [-q <1-100>] [--no-transparency] [--background <colour>] [-d <dir>] [-o <name>] [-b <body>] [--force]\nConverts images to another format in User Images; the source format is detected automatically and only the first frame is used. Transparency is kept by default (JPG cannot store it and is flattened).\n\t-t, --to <format>\tTarget format; may also be the last argument.\n\t-s, --size <sizes>\tico only: one frame per size, for example 256,128,64 (1-256; default 256,128,64,48,32,16).\n\t-q, --quality <n>\tJPG/WebP quality 1-100 (default 90).\n\t--no-transparency\tFlatten transparency onto the background colour.\n\t--background <colour>\tColour used when flattening (default white); name or #rrggbb.\n\t-d, --dir <dir>\tDestination folder inside User Images; created if missing.\n\t-o, --output <name>\tFile name for a single image.\n\t-b, --body <body>\tName a batch <body>_01, <body>_02, ... (cannot be combined with -o).\n\t--force\tOverwrite an existing output file instead of auto-numbering.",
+            "filter" => "usage: filter <grayscale|sepia|invert|blur|sharpen|brightness|contrast> <image-or-pattern ...> [-n <amount>] [-d <dir>] [-o <name>] [-b <body>] [--force]\nWrites filtered copies into User Images (name_<filter>.ext by default); the originals are never changed.\n\t-n, --amount <value>\tblur/sharpen strength (default 3, max 50); brightness/contrast factor (default 1.2, 1 = unchanged, max 10).\n\t-d, --dir <dir>\tDestination folder inside User Images; created if missing.\n\t-o, --output <name>\tFile name for a single image.\n\t-b, --body <body>\tName a batch <body>_01, <body>_02, ... (cannot be combined with -o).\n\t-q, --quality <n>\tJPG/WebP quality 1-100 (default 90).\n\t--no-transparency\tFlatten transparency onto the background colour.\n\t--background <colour>\tColour used when flattening (default white); name or #rrggbb.\n\t--force\tOverwrite an existing output file instead of auto-numbering.",
             "info" => "usage: info <image-pattern ...>\nShows dimensions, format, frame count, and transparency for images in the selected image folder. File-name patterns may use * and ? (for example, *.png).",
             "preview" => "usage: preview [-o|--open] [-s <width>x<height>|--size=<width>x<height>] <image-or-pattern ...>\nDisplays up to 24 inline thumbnails, or opens them in the image inspector. File-name patterns may use * and ?.\n\t-o, --open\tOpen the matches in the resizable inspector (zoom, mouse-wheel zoom, previous/next, Save As of an unchanged copy).\n\t-s, --size=<w>x<h>\tThumbnail size in terminal cells (default 8x4; width 1-40, height 1-20).",
             "app" or "application" => "usage: app\nReturns to the application-data context.",
@@ -2107,7 +2118,7 @@ internal sealed class AppConsoleService
             {
                 ConsoleContext.Database => ["help", "pwd", "ls", "cd", "grep", "disconnect", "sessions", "find", "tables", "describe", "messages", "show", "columns", "db", "workspace", "img", "app", "clear", "quit", "exit"],
                 ConsoleContext.Workspace => ["help", "pwd", "ls", "cd", "cat", "grep", "workspace", "img", "app", "database", "disconnect", "clear", "quit", "exit"],
-                ConsoleContext.Images => ["help", "pwd", "ls", "cd", "cat", "grep", "info", "preview", "img", "app", "database", "workspace", "clear", "quit", "exit"],
+                ConsoleContext.Images => ["help", "pwd", "ls", "cd", "cat", "grep", "info", "preview", "mkdir", "rm", "cp", "mv", "resize", "rotate", "convert", "filter", "img", "app", "database", "workspace", "clear", "quit", "exit"],
                 _ => ["help", "pwd", "ls", "cd", "cat", "grep", "connect", "disconnect", "workspace", "database", "img", "clear", "quit", "exit"]
             };
             return new AppConsoleCompletionResult(tokenStart, commands.Where(item => item.StartsWith(typedCommand, StringComparison.OrdinalIgnoreCase)).ToArray());
@@ -2209,6 +2220,30 @@ internal sealed class AppConsoleService
             }
             return new AppConsoleCompletionResult(tokenStart, []);
         }
+        if (ActiveContext == ConsoleContext.Images && command is "mkdir" or "rm" or "cp" or "mv" or "resize" or "rotate" or "convert" or "filter")
+        {
+            string typedArgument = DecodeCompletionToken(rawToken);
+            string? previous = precedingArgs.Count > 1 ? precedingArgs[^1] : null;
+            bool previousIsDirOption = previous is "-d" or "--dir";
+            if (typedArgument.StartsWith("-", StringComparison.Ordinal) && !previousIsDirOption)
+                return new AppConsoleCompletionResult(tokenStart, GetImageWriteFlags(command)
+                    .Where(option => option.StartsWith(typedArgument, StringComparison.OrdinalIgnoreCase)).ToArray());
+            if (previous is not null && previous.StartsWith("-", StringComparison.Ordinal) && !previousIsDirOption && !IsImageWriteSwitch(previous))
+                return new AppConsoleCompletionResult(tokenStart, command == "convert" && previous is "-t" or "--to"
+                    ? new[] { "png", "jpg", "webp", "ico", "bmp" }.Where(item => item.StartsWith(typedArgument, StringComparison.OrdinalIgnoreCase)).ToArray()
+                    : Array.Empty<string>());
+            if (command == "filter" && !precedingArgs.Skip(1).Any(arg => !arg.StartsWith("-", StringComparison.Ordinal)) && !previousIsDirOption)
+                return new AppConsoleCompletionResult(tokenStart, new[] { "grayscale", "sepia", "invert", "blur", "sharpen", "brightness", "contrast" }
+                    .Where(item => item.StartsWith(typedArgument, StringComparison.OrdinalIgnoreCase)).ToArray());
+            if (command == "convert" && precedingArgs.Skip(1).Any(arg => !arg.StartsWith("-", StringComparison.Ordinal)) && !previousIsDirOption &&
+                typedArgument.IndexOfAny(['/', (char)92, '.', '*', '?']) < 0)
+            {
+                var formats = new[] { "png", "jpg", "webp", "ico", "bmp" }.Where(item => item.StartsWith(typedArgument, StringComparison.OrdinalIgnoreCase)).ToList();
+                formats.AddRange(GetImagePathCompletions(command, rawToken, tokenStart).Candidates);
+                return new AppConsoleCompletionResult(tokenStart, formats);
+            }
+            return GetImagePathCompletions(command, rawToken, tokenStart, command is "mkdir" || previousIsDirOption);
+        }
         if (ActiveContext == ConsoleContext.Images && command == "preview")
         {
             string typedPreviewArgument = DecodeCompletionToken(rawToken);
@@ -2280,7 +2315,21 @@ internal sealed class AppConsoleService
         return new AppConsoleCompletionResult(tokenStart, candidates);
     }
 
-    private AppConsoleCompletionResult GetImagePathCompletions(string command, string rawToken, int tokenStart)
+    private static bool IsImageWriteSwitch(string option) =>
+        option is "--force" or "--no-transparency" or "--exact" or "-p" or "--parents" or "-r" or "--recursive";
+
+    private static string[] GetImageWriteFlags(string command) => command switch
+    {
+        "mkdir" => ["-p", "--parents"],
+        "rm" => ["-r", "--recursive"],
+        "cp" or "mv" => ["-d", "--dir", "-o", "--output", "-b", "--body", "--force"],
+        "resize" => ["-s", "--size", "--exact", "-d", "--dir", "-o", "--output", "-b", "--body", "-q", "--quality", "--no-transparency", "--background", "--force"],
+        "rotate" => ["-a", "--angle", "--canvas", "-d", "--dir", "-o", "--output", "-b", "--body", "-q", "--quality", "--no-transparency", "--background", "--force"],
+        "convert" => ["-t", "--to", "-s", "--size", "-q", "--quality", "-d", "--dir", "-o", "--output", "-b", "--body", "--no-transparency", "--background", "--force"],
+        _ => ["-n", "--amount", "-d", "--dir", "-o", "--output", "-b", "--body", "-q", "--quality", "--force"]
+    };
+
+    private AppConsoleCompletionResult GetImagePathCompletions(string command, string rawToken, int tokenStart, bool directoriesOnly = false)
     {
         string typedPath = DecodeCompletionToken(rawToken);
         try
@@ -2315,7 +2364,7 @@ internal sealed class AppConsoleService
             {
                 string name = Path.GetFileName(entry);
                 bool isDirectory = Directory.Exists(entry);
-                if (command == "cd" && !isDirectory)
+                if ((command == "cd" || directoriesOnly) && !isDirectory)
                     continue;
                 if (command is "info" or "cat" or "grep" or "preview" && isDirectory)
                     continue;
@@ -2596,7 +2645,7 @@ internal sealed class AppConsoleService
         "Long output: append | more or | less (Space/Down to advance, q to quit).";
 
     private const string ImagesHelpText =
-        "Application console — img context (read-only). This is not a general-purpose or operating-system shell.\n" +
+        "Application console — img context. Application Images are read-only; write commands save only inside the User Images folder. This is not a general-purpose or operating-system shell.\n" +
         "Image browsing is confined to the configured Application Images and User Images folders. The user folder is displayed by its configured folder name even when stored elsewhere.\n\n" +
         "  help                         Show image-context help\n" +
         "  pwd                          Show full configured image-folder path(s)\n" +
@@ -2606,10 +2655,18 @@ internal sealed class AppConsoleService
         "  grep <term> <file>           Search text; command output can also be piped to grep\n" +
         "  info <image>                 Show dimensions, format, frames, and transparency\n" +
          "  preview [-o] [-s 8x4|--size=8x4] <image-or-pattern>  Inline grid or zoomable inspector; Save As copies originals\n" +
+        "  mkdir [-p] <folder>          Create a folder inside User Images\n" +
+        "  rm [-r] <image-or-folder>    Delete images or folders inside User Images\n" +
+        "  cp <image> [destination]     Copy an image into User Images (see: help cp)\n" +
+        "  mv <image> <destination>     Move or rename an image inside User Images (see: help mv)\n" +
+        "  resize <image> -s <size>     Resized copy: W=512, H=512, 50% or 800x600 --exact (see: help resize)\n" +
+        "  rotate <image> -a <degrees>  Rotated copy; any angle (see: help rotate)\n" +
+        "  convert <image> <format>     Convert to png, jpg, webp, bmp or ico (see: help convert)\n" +
+        "  filter <name> <image>        grayscale, sepia, invert, blur, sharpen, brightness, contrast (see: help filter)\n" +
         "  app                          Return to application-data context\n" +
         "  database                     Switch to the connected database context\n" +
         "  workspace                    Switch to the configured workspace (read-only)\n\n" +
-        "No image files are modified by this context. At the img root, ls shows the application image root and the configured User Images folder name; pwd reports their actual full paths.\n" +
+        "Original images are never modified: resize, rotate, convert and filter write new files. Output goes to the current User Images folder (or the User Images root when browsing Application Images). -d <dir> chooses a folder, -o <name> names one file, -b <body> names a numbered batch; name collisions are auto-numbered unless --force is given. A command handles at most 200 images. At the img root, ls shows the application image root and the configured User Images folder name; pwd reports their actual full paths.\n" +
         "Long output: append | more or | less (Space/Down to advance, q to quit).";
 
     private const string WorkspaceHelpText =

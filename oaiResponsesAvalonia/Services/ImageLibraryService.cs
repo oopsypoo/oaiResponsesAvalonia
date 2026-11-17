@@ -386,9 +386,7 @@ public sealed class ImageLibraryService
                 image.Mutate(context => context.Rotate((float)freeAngle));
                 if (options.KeepCanvasSize && (image.Width != keepWidth || image.Height != keepHeight))
                 {
-                    int cropWidth = Math.Min(keepWidth, image.Width), cropHeight = Math.Min(keepHeight, image.Height);
-                    var area = new Rectangle((image.Width - cropWidth) / 2, (image.Height - cropHeight) / 2, cropWidth, cropHeight);
-                    image.Mutate(context => context.Crop(area).Resize(new ResizeOptions
+                    image.Mutate(context => context.Resize(new ResizeOptions
                     {
                         Size = new Size(keepWidth, keepHeight),
                         Mode = ResizeMode.BoxPad,

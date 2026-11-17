@@ -388,7 +388,13 @@ public sealed class ImageLibraryService
                 {
                     int cropWidth = Math.Min(keepWidth, image.Width), cropHeight = Math.Min(keepHeight, image.Height);
                     var area = new Rectangle((image.Width - cropWidth) / 2, (image.Height - cropHeight) / 2, cropWidth, cropHeight);
-                    image.Mutate(context => context.Crop(area));
+                    image.Mutate(context => context.Crop(area).Resize(new ResizeOptions
+                    {
+                        Size = new Size(keepWidth, keepHeight),
+                        Mode = ResizeMode.BoxPad,
+                        Position = AnchorPositionMode.Center,
+                        PadColor = Color.Transparent
+                    }));
                 }
             }
 

@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using oaiResponsesAvalonia.Services;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
@@ -16,6 +17,9 @@ public partial class SaveAsWindow : Window
     private readonly string _imagePath;
     private readonly string _targetDirectory;
     private readonly ImageProcessingOptions _options;
+    private readonly bool _hasTransparency;
+    private Bitmap? _previewBitmap;
+    private bool _initializing = true;
 
     public SaveAsWindow(
         ImageLibraryService imageService,
@@ -23,16 +27,28 @@ public partial class SaveAsWindow : Window
         string targetDirectory,
         string defaultBaseName,
         ImageProcessingOptions options,
-        bool keepTransparency)
+        byte[] previewPng)
     {
         _imageService = imageService;
         _imagePath = imagePath;
         _targetDirectory = targetDirectory;
         _options = options;
+        _hasTransparency = _imageService.PreviewContainsTransparency(previewPng);
         InitializeComponent();
         OutputNameBox.Text = defaultBaseName;
-        KeepTransparencyCheckBox.IsChecked = keepTransparency;
+        using (var stream = new MemoryStream(previewPng, writable: false))
+            _previewBitmap = new Bitmap(stream);
+        PreviewImage.Source = _previewBitmap;
+        KeepTransparencyCheckBox.IsChecked = _hasTransparency;
+        _initializing = false;
         UpdateFormatOptions();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        _previewBitmap?.Dispose();
+        _previewBitmap = null;
     }
 
     private async void SaveButton_Click(object? sender, RoutedEventArgs e)
@@ -70,7 +86,17 @@ public partial class SaveAsWindow : Window
 
     private void OutputFormatPicker_SelectionChanged(object? sender, SelectionChangedEventArgs e) => UpdateFormatOptions();
 
-    private void KeepTransparencyCheckBox_Changed(object? sender, RoutedEventArgs e) => UpdateFormatOptions();
+    private void KeepTransparencyCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (!_initializing)
+            UpdateFormatOptions();
+    }
+
+    private void BackgroundColorPicker_ColorChanged(object? sender, ColorChangedEventArgs e)
+    {
+        if (!_initializing)
+            UpdatePreviewBackground();
+    }
 
     private void UpdateFormatOptions()
     {
@@ -80,12 +106,29 @@ public partial class SaveAsWindow : Window
         string extension = SelectedTag(OutputFormatPicker, ".png").ToLowerInvariant();
         IcoSizesBox.IsVisible = extension == ".ico";
         bool transparencySupported = extension is ".png" or ".webp" or ".bmp" or ".ico";
-        KeepTransparencyCheckBox.IsVisible = transparencySupported;
-        bool mustFlatten = extension is ".jpg" or ".jpeg" || !transparencySupported || KeepTransparencyCheckBox.IsChecked != true;
+        KeepTransparencyCheckBox.IsVisible = _hasTransparency && transparencySupported;
+        bool keepTransparency = _hasTransparency && transparencySupported && KeepTransparencyCheckBox.IsChecked == true;
+        bool mustFlatten = _hasTransparency && !keepTransparency;
         BackgroundColorPanel.IsVisible = mustFlatten;
-        TransparencyHelpText.Text = extension is ".jpg" or ".jpeg"
-            ? "JPEG cannot store transparency; transparent pixels will be composited onto the selected background color."
-            : "When unchecked, transparent pixels are composited onto the selected background color.";
+        TransparencyHelpText.Text = !_hasTransparency
+            ? "This preview contains no transparent pixels."
+            : mustFlatten
+                ? "The preview shows transparent pixels composited onto the selected background color."
+                : "Transparency will be preserved; the background color will not be applied.";
+        UpdatePreviewBackground();
+    }
+
+    private void UpdatePreviewBackground()
+    {
+        if (PreviewBackgroundBorder is null)
+            return;
+
+        string extension = SelectedTag(OutputFormatPicker, ".png").ToLowerInvariant();
+        bool transparencySupported = extension is ".png" or ".webp" or ".bmp" or ".ico";
+        bool flattenTransparency = _hasTransparency &&
+            (!transparencySupported || KeepTransparencyCheckBox.IsChecked != true);
+        Color color = flattenTransparency ? BackgroundColorPicker.Color : Colors.White;
+        PreviewBackgroundBorder.Background = new SolidColorBrush(color);
     }
 
     private static int[] ParseIcoSizes(string text)

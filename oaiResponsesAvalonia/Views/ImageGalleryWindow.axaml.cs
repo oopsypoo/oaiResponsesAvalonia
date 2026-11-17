@@ -747,7 +747,16 @@ public partial class ImageGalleryWindow : Window
 
     private void RotationToolCheckBox_Changed(object? sender, RoutedEventArgs e)
     {
-        RotationPicker.IsVisible = RotationToolCheckBox.IsChecked == true;
+        RotationControlsPanel.IsVisible = RotationToolCheckBox.IsChecked == true;
+        ProcessingOption_Changed(sender, e);
+    }
+
+    private void RotationAngleSlider_ValueChanged(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (_initializing)
+            return;
+
+        RotationAngleValue.Text = $"{(int)e.NewValue}°";
         ProcessingOption_Changed(sender, e);
     }
 
@@ -904,7 +913,7 @@ public partial class ImageGalleryWindow : Window
         FilterToolCheckBox.IsChecked = false;
         CropControlsPanel.IsVisible = false;
         ResizeControlsPanel.IsVisible = false;
-        RotationPicker.IsVisible = false;
+        RotationControlsPanel.IsVisible = false;
         FilterControlsPanel.IsVisible = false;
         _filterSteps.Clear();
         _appliedFilterDescriptions.Clear();
@@ -915,7 +924,9 @@ public partial class ImageGalleryWindow : Window
         CropOverlayCanvas.IsVisible = CropToolCheckBox.IsChecked == true;
         ResizeWidthBox.Text = ResizeHeightBox.Text = string.Empty;
         KeepAspectCheckBox.IsChecked = true;
-        RotationPicker.SelectedIndex = 0;
+        RotationAngleSlider.Value = 0;
+        RotationAngleValue.Text = "0°";
+        KeepCanvasSizeCheckBox.IsChecked = false;
         FilterPicker.SelectedIndex = 0;
         EditorPanel.IsVisible = true;
         GalleryPanel.IsVisible = false;
@@ -942,7 +953,8 @@ public partial class ImageGalleryWindow : Window
             StatusText.Text = "Updating preview…";
             var options = ReadProcessingOptions();
             bool hasOperations = options.CropX.HasValue || options.ResizeWidth.HasValue || options.ResizeHeight.HasValue ||
-                options.RotationDegrees != 0 || !string.Equals(options.Filter, "None", StringComparison.OrdinalIgnoreCase) ||
+                options.RotationDegrees != 0 || options.FreeRotationDegrees is double angle && angle != 0 ||
+                !string.Equals(options.Filter, "None", StringComparison.OrdinalIgnoreCase) ||
                 options.FilterSteps is { Count: > 0 };
             byte[] png = hasOperations
                 ? await Task.Run(() => _imageService.CreateProcessedPreview(sourcePath, options))
@@ -973,12 +985,14 @@ public partial class ImageGalleryWindow : Window
             throw new ArgumentException("Enter all four crop values, or leave all four blank.");
         if (ResizeToolCheckBox.IsChecked == true && !KeepAspectCheckBox.IsChecked.GetValueOrDefault() && (resizeWidth.HasValue != resizeHeight.HasValue))
             throw new ArgumentException("Enter both resize dimensions when Keep aspect ratio is turned off.");
-        int rotation = RotationToolCheckBox.IsChecked == true ? int.Parse(SelectedTag(RotationPicker, "0")) : 0;
+        double? freeRotation = RotationToolCheckBox.IsChecked == true ? RotationAngleSlider.Value : null;
+        bool keepCanvasSize = RotationToolCheckBox.IsChecked == true && KeepCanvasSizeCheckBox.IsChecked == true;
         ImageFilterStep[] filterSteps = FilterToolCheckBox.IsChecked == true
             ? _filterSteps.ToArray()
             : Array.Empty<ImageFilterStep>();
         return new ImageProcessingOptions(cropX, cropY, cropWidth, cropHeight, resizeWidth, resizeHeight,
-            KeepAspectCheckBox.IsChecked == true, rotation, "None", FilterSteps: filterSteps);
+            KeepAspectCheckBox.IsChecked == true, 0, "None", FreeRotationDegrees: freeRotation,
+            KeepCanvasSize: keepCanvasSize, FilterSteps: filterSteps);
     }
 
     private static int? ParseOptionalNumber(string? text, string label)

@@ -100,12 +100,14 @@
                         <CheckBox x:Name="KeepAspectCheckBox" Content="Keep aspect ratio" IsChecked="True" IsCheckedChanged="ProcessingOption_Changed" />
                     </StackPanel>
                     <CheckBox x:Name="RotationToolCheckBox" Content="Rotate" IsCheckedChanged="RotationToolCheckBox_Changed" />
-                    <ComboBox x:Name="RotationPicker" IsVisible="False" SelectedIndex="0" SelectionChanged="ProcessingPicker_SelectionChanged">
-                        <ComboBoxItem Content="None" Tag="0" />
-                        <ComboBoxItem Content="90° clockwise" Tag="90" />
-                        <ComboBoxItem Content="180°" Tag="180" />
-                        <ComboBoxItem Content="270° clockwise" Tag="270" />
-                    </ComboBox>
+                    <StackPanel x:Name="RotationControlsPanel" IsVisible="False" Spacing="6">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Angle" />
+                            <TextBlock x:Name="RotationAngleValue" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="0°" />
+                        </Grid>
+                        <Slider x:Name="RotationAngleSlider" Minimum="0" Maximum="359" Value="0" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="RotationAngleSlider_ValueChanged" />
+                        <CheckBox x:Name="KeepCanvasSizeCheckBox" Content="Keep canvas size" IsCheckedChanged="ProcessingOption_Changed" />
+                    </StackPanel>
                     <CheckBox x:Name="FilterToolCheckBox" Content="Filter stack" IsCheckedChanged="FilterToolCheckBox_Changed" />
                     <StackPanel x:Name="FilterControlsPanel" IsVisible="False" Spacing="6">
                         <ComboBox x:Name="FilterPicker" SelectedIndex="0" SelectionChanged="FilterPicker_SelectionChanged">

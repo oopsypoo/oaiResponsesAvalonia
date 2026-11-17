@@ -24,6 +24,8 @@ public partial class ImageGalleryWindow : Window
 
     private readonly ImageLibraryService _imageService;
     private readonly ObservableCollection<ImageGalleryItem> _entries = new();
+    private readonly ObservableCollection<string> _appliedFilterDescriptions = new();
+    private readonly System.Collections.Generic.List<ImageFilterStep> _filterSteps = new();
     private ImageBrowserLocation _location = ImageBrowserLocation.ApplicationImages;
     private string _currentDirectory;
     private string? _selectedImagePath;
@@ -31,6 +33,9 @@ public partial class ImageGalleryWindow : Window
     private ImageAssetPreview? _selectedPreview;
     private Bitmap? _previewBitmap;
     private Bitmap? _editorBitmap;
+    // Keep true before InitializeComponent: AXAML can raise selection events while controls are
+    // still being constructed, before later x:Name fields are assigned. Initialization-time
+    // handlers must check this flag before accessing other named controls or updating the UI.
     private bool _initializing;
     private Rect? _cropSelection;
     private CropDragMode _cropDragMode;
@@ -68,6 +73,7 @@ public partial class ImageGalleryWindow : Window
         _currentDirectory = _imageService.GetRoot(_location);
         _saveDirectory = _imageService.GetRoot(ImageBrowserLocation.UserImages);
         EntriesList.ItemsSource = _entries;
+        AppliedFiltersList.ItemsSource = _appliedFilterDescriptions;
         _initializing = true;
         LocationPicker.SelectedIndex = 0;
         _initializing = false;
@@ -747,8 +753,93 @@ public partial class ImageGalleryWindow : Window
 
     private void FilterToolCheckBox_Changed(object? sender, RoutedEventArgs e)
     {
-        FilterPicker.IsVisible = FilterToolCheckBox.IsChecked == true;
+        FilterControlsPanel.IsVisible = FilterToolCheckBox.IsChecked == true;
         ProcessingOption_Changed(sender, e);
+    }
+
+    private void FilterPicker_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        // SelectionChanged can fire while InitializeComponent is still loading the AXAML,
+        // before the named amount controls have been initialized.
+        if (_initializing)
+            return;
+
+        UpdateFilterAmountControls();
+    }
+
+    private void UpdateFilterAmountControls()
+    {
+        string filter = SelectedTag(FilterPicker, "None");
+        bool adjustable = filter is "Blur" or "Sharpen" or "Brightness" or "Contrast";
+        FilterAmountPanel.IsVisible = adjustable;
+        if (!adjustable)
+            return;
+
+        bool tonal = filter is "Brightness" or "Contrast";
+        FilterAmountSlider.Minimum = tonal ? 0.1 : 1;
+        FilterAmountSlider.Maximum = tonal ? 10 : 50;
+        FilterAmountSlider.TickFrequency = tonal ? 0.1 : 1;
+        FilterAmountSlider.IsSnapToTickEnabled = !tonal;
+        FilterAmountSlider.Value = tonal ? 1.2 : 3;
+        FilterAmountDescription.Text = $"{filter} amount";
+        FilterAmountHint.Text = tonal
+            ? "Range: greater than 0 to 10; 1 means unchanged."
+            : "Range: 1 to 50; default is 3.";
+        UpdateFilterAmountValue();
+    }
+
+    private void FilterAmountSlider_ValueChanged(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e) =>
+        UpdateFilterAmountValue();
+
+    private void UpdateFilterAmountValue() =>
+        FilterAmountValue.Text = FilterAmountSlider.Value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private void AddFilterButton_Click(object? sender, RoutedEventArgs e)
+    {
+        string filter = SelectedTag(FilterPicker, "None");
+        if (filter == "None")
+        {
+            StatusText.Text = "Choose a filter before adding it.";
+            return;
+        }
+
+        float? amount = filter is "Blur" or "Sharpen" or "Brightness" or "Contrast"
+            ? (float)FilterAmountSlider.Value
+            : null;
+        _filterSteps.Add(new ImageFilterStep(filter, amount));
+        _appliedFilterDescriptions.Add(amount is float value ? $"{_filterSteps.Count}. {filter} — {value:0.0}" : $"{_filterSteps.Count}. {filter}");
+        bool filterToolWasEnabled = FilterToolCheckBox.IsChecked == true;
+        FilterToolCheckBox.IsChecked = true;
+        if (filterToolWasEnabled)
+            _ = UpdateEditorPreviewAsync();
+    }
+
+    private void UndoFilterButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_filterSteps.Count == 0)
+            return;
+        _filterSteps.RemoveAt(_filterSteps.Count - 1);
+        _appliedFilterDescriptions.RemoveAt(_appliedFilterDescriptions.Count - 1);
+        RenumberAppliedFilters();
+        _ = UpdateEditorPreviewAsync();
+    }
+
+    private void ClearFiltersButton_Click(object? sender, RoutedEventArgs e)
+    {
+        _filterSteps.Clear();
+        _appliedFilterDescriptions.Clear();
+        _ = UpdateEditorPreviewAsync();
+    }
+
+    private void RenumberAppliedFilters()
+    {
+        for (int i = 0; i < _appliedFilterDescriptions.Count; i++)
+        {
+            ImageFilterStep step = _filterSteps[i];
+            _appliedFilterDescriptions[i] = step.Amount is float amount
+                ? $"{i + 1}. {step.Filter} — {amount:0.0}"
+                : $"{i + 1}. {step.Filter}";
+        }
     }
 
     private void ProcessingPicker_SelectionChanged(object? sender, SelectionChangedEventArgs e) =>
@@ -814,7 +905,9 @@ public partial class ImageGalleryWindow : Window
         CropControlsPanel.IsVisible = false;
         ResizeControlsPanel.IsVisible = false;
         RotationPicker.IsVisible = false;
-        FilterPicker.IsVisible = false;
+        FilterControlsPanel.IsVisible = false;
+        _filterSteps.Clear();
+        _appliedFilterDescriptions.Clear();
         _cropApplied = false;
         SetCropSelection(null);
         _showingProcessedPreview = false;
@@ -849,7 +942,8 @@ public partial class ImageGalleryWindow : Window
             StatusText.Text = "Updating preview…";
             var options = ReadProcessingOptions();
             bool hasOperations = options.CropX.HasValue || options.ResizeWidth.HasValue || options.ResizeHeight.HasValue ||
-                options.RotationDegrees != 0 || !string.Equals(options.Filter, "None", StringComparison.OrdinalIgnoreCase);
+                options.RotationDegrees != 0 || !string.Equals(options.Filter, "None", StringComparison.OrdinalIgnoreCase) ||
+                options.FilterSteps is { Count: > 0 };
             byte[] png = hasOperations
                 ? await Task.Run(() => _imageService.CreateProcessedPreview(sourcePath, options))
                 : _selectedPreview?.PngBytes ?? Array.Empty<byte>();
@@ -880,9 +974,11 @@ public partial class ImageGalleryWindow : Window
         if (ResizeToolCheckBox.IsChecked == true && !KeepAspectCheckBox.IsChecked.GetValueOrDefault() && (resizeWidth.HasValue != resizeHeight.HasValue))
             throw new ArgumentException("Enter both resize dimensions when Keep aspect ratio is turned off.");
         int rotation = RotationToolCheckBox.IsChecked == true ? int.Parse(SelectedTag(RotationPicker, "0")) : 0;
-        string filter = FilterToolCheckBox.IsChecked == true ? SelectedTag(FilterPicker, "None") : "None";
+        ImageFilterStep[] filterSteps = FilterToolCheckBox.IsChecked == true
+            ? _filterSteps.ToArray()
+            : Array.Empty<ImageFilterStep>();
         return new ImageProcessingOptions(cropX, cropY, cropWidth, cropHeight, resizeWidth, resizeHeight,
-            KeepAspectCheckBox.IsChecked == true, rotation, filter);
+            KeepAspectCheckBox.IsChecked == true, rotation, "None", FilterSteps: filterSteps);
     }
 
     private static int? ParseOptionalNumber(string? text, string label)

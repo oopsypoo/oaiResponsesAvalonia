@@ -1,4 +1,8 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Platform;
+using Avalonia.Threading;
+using System.Runtime.InteropServices;
 using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -23,6 +27,11 @@ public partial class SaveAsWindow : Window
     private SixLabors.ImageSharp.Image<Rgba32>? _previewPixels;
     private bool _isPickingColor;
     private bool _initializing = true;
+    private bool _closed;
+    private bool _fullResolutionReady;
+    private bool _fitToWindow = true;
+    private double _zoom = 1;
+    private int _zoomRevision;
 
     public SaveAsWindow(
         ImageLibraryService imageService,
@@ -41,20 +50,175 @@ public partial class SaveAsWindow : Window
         OutputNameBox.Text = defaultBaseName;
         using (var stream = new MemoryStream(previewPng, writable: false))
             _previewBitmap = new Bitmap(stream);
-        _previewPixels = SixLabors.ImageSharp.Image.Load<Rgba32>(previewPng);
         PreviewImage.Source = _previewBitmap;
+        PickFromImageButton.IsEnabled = false;
         KeepTransparencyCheckBox.IsChecked = _hasTransparency;
         _initializing = false;
         UpdateFormatOptions();
+        Opened += SaveAsWindow_Opened;
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        _closed = true;
+        PreviewImage.Source = null;
         base.OnClosed(e);
         _previewBitmap?.Dispose();
         _previewBitmap = null;
         _previewPixels?.Dispose();
         _previewPixels = null;
+    }
+
+    private async void SaveAsWindow_Opened(object? sender, EventArgs e)
+    {
+        ApplyZoom();
+        try
+        {
+            // Use the same processing path as Save As, not the resized editor preview.
+            var result = await Task.Run(() =>
+            {
+                var image = _imageService.LoadProcessed(_imagePath, _options);
+                try
+                {
+                    // This dialog holds both processed pixels and a display bitmap. Avoid unbounded
+                    // additional allocations; the regular save operation remains available.
+                    if ((long)image.Width * image.Height > 32_000_000)
+                        throw new InvalidOperationException("Image exceeds the 32-megapixel inspection limit. Saving is still available.");
+                    var pixels = new byte[checked(image.Width * image.Height * 4)];
+                    image.CopyPixelDataTo(pixels);
+                    return (Image: image, Pixels: pixels);
+                }
+                catch
+                {
+                    image.Dispose();
+                    throw;
+                }
+            });
+
+            if (_closed)
+            {
+                result.Image.Dispose();
+                return;
+            }
+
+            Bitmap bitmap;
+            try
+            {
+                var handle = GCHandle.Alloc(result.Pixels, GCHandleType.Pinned);
+                try
+                {
+                    bitmap = new Bitmap(PixelFormat.Rgba8888, AlphaFormat.Unpremul, handle.AddrOfPinnedObject(),
+                        new PixelSize(result.Image.Width, result.Image.Height), new Vector(96, 96),
+                        checked(result.Image.Width * 4));
+                }
+                finally
+                {
+                    handle.Free();
+                }
+            }
+            catch
+            {
+                result.Image.Dispose();
+                throw;
+            }
+
+            var previous = _previewBitmap;
+            _previewBitmap = bitmap;
+            _previewPixels = result.Image;
+            PreviewImage.Source = bitmap;
+            previous?.Dispose();
+            _fullResolutionReady = true;
+            ZoomControls.IsEnabled = true;
+            PickFromImageButton.IsEnabled = true;
+            PixelInfoText.Text = "Move over the image to inspect its RGB and alpha. Use the scrollbars to pan.";
+            ApplyZoom();
+        }
+        catch (Exception ex)
+        {
+            if (!_closed)
+                PixelInfoText.Text = $"Full-resolution inspection unavailable: {ex.Message}";
+        }
+    }
+
+    private void ApplyZoom()
+    {
+        if (_initializing || _previewBitmap is null || PreviewScrollViewer is null)
+            return;
+        var viewport = PreviewScrollViewer.Viewport;
+        if (viewport.Width <= 0 || viewport.Height <= 0)
+            return;
+        int width = _previewBitmap.PixelSize.Width;
+        int height = _previewBitmap.PixelSize.Height;
+        double scale = _fitToWindow ? ImageInspectorGeometry.FitScale(width, height, viewport) : _zoom;
+        PreviewImage.Width = width * scale;
+        PreviewImage.Height = height * scale;
+        ZoomText.Text = $"{scale * 100:0.#}%";
+    }
+
+    // Follow the inspector's fit/zoom/scroll pattern; keep the viewport centre stable on zoom.
+    private void SetZoom(double scale)
+    {
+        if (_previewBitmap is null || PreviewScrollViewer.Viewport.Width <= 0 || PreviewImage.Width <= 0)
+            return;
+        var viewport = PreviewScrollViewer.Viewport;
+        var offset = PreviewScrollViewer.Offset;
+        double oldWidth = PreviewImage.Width;
+        double oldHeight = PreviewImage.Height;
+        double centreX = (offset.X + viewport.Width / 2 - Math.Max(0, (viewport.Width - oldWidth) / 2)) / oldWidth;
+        double centreY = (offset.Y + viewport.Height / 2 - Math.Max(0, (viewport.Height - oldHeight) / 2)) / oldHeight;
+        _fitToWindow = false;
+        _zoom = Math.Clamp(scale, 0.0001, 32);
+        ApplyZoom();
+        double x = centreX * PreviewImage.Width + Math.Max(0, (viewport.Width - PreviewImage.Width) / 2) - viewport.Width / 2;
+        double y = centreY * PreviewImage.Height + Math.Max(0, (viewport.Height - PreviewImage.Height) / 2) - viewport.Height / 2;
+        int revision = ++_zoomRevision;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!_closed && revision == _zoomRevision)
+                PreviewScrollViewer.Offset = new Vector(Math.Max(0, x), Math.Max(0, y));
+        }, DispatcherPriority.Loaded);
+    }
+
+    private double CurrentScale => _previewBitmap is null ? 1 : PreviewImage.Width / _previewBitmap.PixelSize.Width;
+    private void ZoomOutButton_Click(object? sender, RoutedEventArgs e) => SetZoom(CurrentScale / 1.5);
+    private void ZoomInButton_Click(object? sender, RoutedEventArgs e) => SetZoom(CurrentScale * 1.5);
+    private void ActualSizeButton_Click(object? sender, RoutedEventArgs e) => SetZoom(1);
+    private void FitButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ++_zoomRevision;
+        _fitToWindow = true;
+        ApplyZoom();
+        PreviewScrollViewer.Offset = default;
+    }
+    private void PreviewScrollViewer_SizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (_fitToWindow)
+            ApplyZoom();
+    }
+
+    private bool TryGetPixel(Point position, out Rgba32 pixel, out int x, out int y)
+    {
+        pixel = default;
+        x = y = 0;
+        if (!_fullResolutionReady || _previewPixels is null || PreviewImage.Bounds.Width <= 0 || PreviewImage.Bounds.Height <= 0 ||
+            position.X < 0 || position.Y < 0 || position.X >= PreviewImage.Bounds.Width || position.Y >= PreviewImage.Bounds.Height)
+            return false;
+        x = Math.Min((int)(position.X * _previewPixels.Width / PreviewImage.Bounds.Width), _previewPixels.Width - 1);
+        y = Math.Min((int)(position.Y * _previewPixels.Height / PreviewImage.Bounds.Height), _previewPixels.Height - 1);
+        pixel = _previewPixels[x, y];
+        return true;
+    }
+
+    private void PreviewImage_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (TryGetPixel(e.GetPosition(PreviewImage), out var pixel, out int x, out int y))
+            PixelInfoText.Text = $"Pixel ({x}, {y})  RGB #{pixel.R:X2}{pixel.G:X2}{pixel.B:X2}  Alpha {pixel.A}/255";
+    }
+
+    private void PreviewImage_PointerExited(object? sender, PointerEventArgs e)
+    {
+        if (_fullResolutionReady)
+            PixelInfoText.Text = "Move over the image to inspect its RGB and alpha. Use the scrollbars to pan.";
     }
 
     private async void SaveButton_Click(object? sender, RoutedEventArgs e)
@@ -90,12 +254,18 @@ public partial class SaveAsWindow : Window
 
     private void CancelButton_Click(object? sender, RoutedEventArgs e) => Close(null);
 
+    private void ResetBackgroundButton_Click(object? sender, RoutedEventArgs e)
+    {
+        BackgroundColorPicker.Color = Colors.White;
+        UpdatePreviewBackground();
+    }
+
     private void PickFromImageButton_Click(object? sender, RoutedEventArgs e)
     {
         _isPickingColor = !_isPickingColor;
         PickFromImageButton.Content = _isPickingColor ? "Cancel picking" : "Pick from image";
         PickFromImageStatusText.Text = _isPickingColor
-            ? "Click a point on the image preview to use its visible color as the background."
+            ? "Click a visible pixel in the image. Partially transparent pixels can be sampled; fully transparent pixels have no usable color."
             : string.Empty;
         PickFromImageStatusText.IsVisible = _isPickingColor;
         PreviewImage.Cursor = _isPickingColor ? new Cursor(StandardCursorType.Cross) : null;
@@ -107,36 +277,20 @@ public partial class SaveAsWindow : Window
             return;
 
         e.Handled = true;
-        var position = e.GetPosition(PreviewImage);
-        double scale = Math.Min(
-            PreviewImage.Bounds.Width / _previewPixels.Width,
-            PreviewImage.Bounds.Height / _previewPixels.Height);
-        if (scale <= 0)
-            return;
-
-        double displayedWidth = _previewPixels.Width * scale;
-        double displayedHeight = _previewPixels.Height * scale;
-        double offsetX = (PreviewImage.Bounds.Width - displayedWidth) / 2;
-        double offsetY = (PreviewImage.Bounds.Height - displayedHeight) / 2;
-        double imageX = position.X - offsetX;
-        double imageY = position.Y - offsetY;
-        if (imageX < 0 || imageY < 0 || imageX >= displayedWidth || imageY >= displayedHeight)
+        if (!TryGetPixel(e.GetPosition(PreviewImage), out Rgba32 pixel, out _, out _))
         {
             PickFromImageStatusText.Text = "Click inside the visible image area.";
             return;
         }
+        if (pixel.A == 0)
+        {
+            PickFromImageStatusText.Text = "That pixel is fully transparent and has no usable color. Pick a visible pixel instead.";
+            return;
+        }
 
-        int pixelX = Math.Clamp((int)(imageX / scale), 0, _previewPixels.Width - 1);
-        int pixelY = Math.Clamp((int)(imageY / scale), 0, _previewPixels.Height - 1);
-        Rgba32 pixel = _previewPixels[pixelX, pixelY];
-        Color currentBackground = BackgroundColorPicker.Color;
-        int alpha = pixel.A;
-        byte red = (byte)((pixel.R * alpha + currentBackground.R * (255 - alpha) + 127) / 255);
-        byte green = (byte)((pixel.G * alpha + currentBackground.G * (255 - alpha) + 127) / 255);
-        byte blue = (byte)((pixel.B * alpha + currentBackground.B * (255 - alpha) + 127) / 255);
-
-        // Keep the picker synchronized with the sampled color so the selected value is visible and editable.
-        BackgroundColorPicker.Color = Color.FromArgb(255, red, green, blue);
+        // Sample the processed image's stored RGB color without compositing it over the current background.
+        // This also accepts partially transparent edge pixels, whose RGB can provide a useful background match.
+        BackgroundColorPicker.Color = Color.FromArgb(255, pixel.R, pixel.G, pixel.B);
         _isPickingColor = false;
         PickFromImageButton.Content = "Pick from image";
         PickFromImageStatusText.IsVisible = false;

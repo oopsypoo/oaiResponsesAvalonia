@@ -8,7 +8,7 @@
         SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
-    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto,220,Auto,Auto,Auto" RowSpacing="10">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto,300,Auto,Auto,Auto" RowSpacing="10">
         <TextBlock Grid.Row="0" Text="Save edited copy to User Images" FontWeight="Bold" />
         <TextBox x:Name="OutputNameBox" Grid.Row="1" PlaceholderText="Output filename" />
         <ComboBox x:Name="OutputFormatPicker" Grid.Row="2" SelectedIndex="0" SelectionChanged="OutputFormatPicker_SelectionChanged">
@@ -19,16 +19,34 @@
             <ComboBoxItem Content="ICO (.ico)" Tag=".ico" />
         </ComboBox>
         <TextBox x:Name="IcoSizesBox" Grid.Row="3" Text="256,128,64,48,32,16" PlaceholderText="ICO embedded sizes" IsVisible="False" />
-        <Border x:Name="PreviewBackgroundBorder" Grid.Row="4" BorderBrush="Gray" BorderThickness="1" Padding="4" ClipToBounds="True">
-            <Image x:Name="PreviewImage" Stretch="Uniform" PointerPressed="PreviewImage_PointerPressed" />
-        </Border>
+        <Grid Grid.Row="4" RowDefinitions="Auto,*,Auto" RowSpacing="4">
+            <StackPanel x:Name="ZoomControls" Orientation="Horizontal" Spacing="6" IsEnabled="False">
+                <Button Content="−" ToolTip.Tip="Zoom out" Click="ZoomOutButton_Click" />
+                <Button Content="+" ToolTip.Tip="Zoom in" Click="ZoomInButton_Click" />
+                <Button Content="Fit" Click="FitButton_Click" />
+                <Button Content="100%" Click="ActualSizeButton_Click" />
+                <TextBlock x:Name="ZoomText" VerticalAlignment="Center" />
+            </StackPanel>
+            <Border x:Name="PreviewBackgroundBorder" Grid.Row="1" BorderBrush="Gray" BorderThickness="1" ClipToBounds="True">
+                <ScrollViewer x:Name="PreviewScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                              SizeChanged="PreviewScrollViewer_SizeChanged">
+                    <Image x:Name="PreviewImage" HorizontalAlignment="Center" VerticalAlignment="Center" Stretch="Fill"
+                           RenderOptions.BitmapInterpolationMode="None" PointerPressed="PreviewImage_PointerPressed"
+                           PointerMoved="PreviewImage_PointerMoved" PointerExited="PreviewImage_PointerExited" />
+                </ScrollViewer>
+            </Border>
+            <TextBlock x:Name="PixelInfoText" Grid.Row="2" FontSize="11" Text="Loading full-resolution image for inspection…" />
+        </Grid>
         <StackPanel Grid.Row="5" Spacing="4">
             <CheckBox x:Name="KeepTransparencyCheckBox" Content="Keep transparency" IsChecked="True" IsCheckedChanged="KeepTransparencyCheckBox_Changed" />
             <TextBlock x:Name="TransparencyHelpText" TextWrapping="Wrap" FontSize="12" Opacity="0.8" />
             <StackPanel x:Name="BackgroundColorPanel" IsVisible="False" Spacing="4">
                 <TextBlock Text="Background color" FontWeight="SemiBold" />
                 <ColorPicker x:Name="BackgroundColorPicker" Color="#FFFFFFFF" IsAlphaEnabled="False" ColorChanged="BackgroundColorPicker_ColorChanged" />
-                <Button x:Name="PickFromImageButton" Content="Pick from image" Click="PickFromImageButton_Click" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button x:Name="PickFromImageButton" Content="Pick from image" Click="PickFromImageButton_Click" />
+                    <Button Content="Reset background to white" Click="ResetBackgroundButton_Click" />
+                </StackPanel>
                 <TextBlock x:Name="PickFromImageStatusText" FontSize="11" Opacity="0.8" TextWrapping="Wrap" IsVisible="False" />
             </StackPanel>
         </StackPanel>

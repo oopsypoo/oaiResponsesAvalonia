@@ -352,7 +352,8 @@ public sealed class ImageLibraryService
     public string GetSafeCurrentDirectory(ImageBrowserLocation location, string directory) =>
         RequireDirectoryWithinRoot(GetRoot(location), directory);
 
-    private Image<Rgba32> LoadProcessed(string imagePath, ImageProcessingOptions options)
+    // The save dialog uses the same full-resolution processing path for pixel inspection.
+    internal Image<Rgba32> LoadProcessed(string imagePath, ImageProcessingOptions options)
     {
         ValidateManagedImagePath(imagePath);
         Image<Rgba32> image = SharpImage.Load<Rgba32>(imagePath);

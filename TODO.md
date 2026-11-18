@@ -6,6 +6,7 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 
 * \[ ] Grow the application into a general-purpose development tool that helps users start, create, and build projects, while retaining the Responses API experience.
 * \[ ] Keep the application cross-platform with Avalonia; regularly verify the supported workflows on Ubuntu 26.04.1 LTS and Windows 11.
+* \[ ] Add synchronization of data over devices. Use a cloud-service of choice
 
 ## Responses API
 
@@ -16,26 +17,24 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 
 ## Terminal and developer tools
 
-* \[x] Visual improvement: colors (green) for commands/tools in help-commands?
-* \[x] Tidy up help messages (messy). Too much! (or just format the information better?)
--better now. Still some irritating things
-* \[x] autocompletion on paths/files (it only shows what is available and does not actually fill out what is possible to fill out)(important for effectiveness)
+* \[x] Tidy up help messages (messy). Too much! (or just format the information better?) -better now. Still some irritating things. Needs an audit
+* \[x] autocompletion on paths/files (it only shows what is available and does not actually fill out what is possible to fill out)(important for effectiveness). Needs an audit.
 * \[ ] Audit terminal auto-completion: many commands' completions are out of date (for example, new `ls` options `-r`, `-S`, `-t`, `-X`, `--sort=<key>`, `--reverse`, and other commands' flags and values). Make completion derive from the same option definitions as parsing and help.
 * \[ ] command '***open***': autocompletion can suggest 'programs from ´*open with*`-context menu'?
-* \[ ] when opening terminal the first time: should it be opened at ´workspace`? if ´workspace root`(Developer Tools) is chosen?
 * \[ ] Improve terminal workflows for starting, creating, inspecting, and building projects without introducing unrestricted shell or filesystem access by default.
 * \[ ] Make common development operations easier to discover, follow, and diagnose, including clear output and handling of long-running tasks.
 * \[ ] Use current API and tool information from MCP servers where appropriate; make its source and freshness visible, and handle unavailable or changed information safely.
 * \[ ] Define the intended behavior and access boundaries for the Developer Tools **Scope** options (**Current repository**, **Workspace**, **Custom**), then re-enable the hidden Scope control. Confirm that each option applies the expected boundaries.
-* \[x] Developer Tools activity window: cannot open and see the specific activity (sometimes) on platform Windows 11
-* \[ ] Add the future `img` terminal context using the shared image service and the same managed image-folder boundaries as Tools → Images.
 * \[ ] Evaluate creating animated image formats (for example, GIF or animated WebP) from multiple still images, including frame timing and format behavior.
-* \[x] The folder 'Images' is actually not just images. It's documents; since everything that is in a conversation ends up here. 'Logs' is no longer used, and maybe it should be renamed to docs or 'other docs'. Or just removed.
 * \[ ] Open activity window should not be hidden behind the "Developers Tools". It should show all activity for all/everything.
 
 ## Images and gallery
 
 * [ ] Low priority: Design and implement image export/file-management actions for one or more files from the image-path gallery. Decide whether this should be a dedicated export workflow or copy/move actions; clarify whether edited images saved in the user's filepath are treated differently from other gallery files. Allow moving a file only when it is bound by the user-context; otherwise offer copy without moving the source.
+* [ ] Add font-support => add text on images
+* [ ] Select parts of an image using different shapes, and freehand =>filters only apply to selected. Also => cut, delete, move area..?
+* [ ] add zoom; in, out, fit, 100% (like other previews)
+* [ ] Move/delete/cut/paste images in preview-gallery (local)
 
 ## Release and documentation
 

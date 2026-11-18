@@ -212,11 +212,23 @@ public partial class SaveAsWindow : Window
     private void PreviewImage_PointerMoved(object? sender, PointerEventArgs e)
     {
         if (TryGetPixel(e.GetPosition(PreviewImage), out var pixel, out int x, out int y))
-            PixelInfoText.Text = $"Pixel ({x}, {y})  RGB #{pixel.R:X2}{pixel.G:X2}{pixel.B:X2}  Alpha {pixel.A}/255";
+        {
+            PixelInfoText.Text = pixel.A == 0
+                ? $"Pixel ({x}, {y})  Fully transparent — no usable color"
+                : $"Pixel ({x}, {y})  Raw RGB #{pixel.R:X2}{pixel.G:X2}{pixel.B:X2}  Alpha {pixel.A}/255";
+            PixelColorSwatch.IsVisible = pixel.A != 0;
+            if (pixel.A != 0)
+                PixelColorSwatch.Background = new SolidColorBrush(Color.FromRgb(pixel.R, pixel.G, pixel.B));
+        }
+        else
+        {
+            PixelColorSwatch.IsVisible = false;
+        }
     }
 
     private void PreviewImage_PointerExited(object? sender, PointerEventArgs e)
     {
+        PixelColorSwatch.IsVisible = false;
         if (_fullResolutionReady)
             PixelInfoText.Text = "Move over the image to inspect its RGB and alpha. Use the scrollbars to pan.";
     }

@@ -35,7 +35,11 @@
                            PointerMoved="PreviewImage_PointerMoved" PointerExited="PreviewImage_PointerExited" />
                 </ScrollViewer>
             </Border>
-            <TextBlock x:Name="PixelInfoText" Grid.Row="2" FontSize="11" Text="Loading full-resolution image for inspection…" />
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+                <Border x:Name="PixelColorSwatch" Width="18" Height="18" BorderBrush="Gray" BorderThickness="1"
+                        IsVisible="False" ToolTip.Tip="Raw RGB color used when picking" />
+                <TextBlock x:Name="PixelInfoText" FontSize="11" VerticalAlignment="Center" Text="Loading full-resolution image for inspection…" />
+            </StackPanel>
         </Grid>
         <StackPanel Grid.Row="5" Spacing="4">
             <CheckBox x:Name="KeepTransparencyCheckBox" Content="Keep transparency" IsChecked="True" IsCheckedChanged="KeepTransparencyCheckBox_Changed" />

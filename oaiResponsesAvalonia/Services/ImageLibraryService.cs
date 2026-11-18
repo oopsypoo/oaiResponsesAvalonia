@@ -174,6 +174,12 @@ public sealed class ImageLibraryService
         return output.ToArray();
     }
 
+    public bool PreviewContainsTransparency(byte[] pngBytes)
+    {
+        using Image<Rgba32> image = SharpImage.Load<Rgba32>(pngBytes);
+        return ContainsTransparency(image);
+    }
+
     public byte[] ConvertToBytes(string imagePath, ImageProcessingOptions options, string extension,     bool keepTransparency, IReadOnlyList<int>? icoSizes = null, int quality = 90, Rgba32? background = null)
     {
         using Image<Rgba32> image = LoadProcessed(imagePath, options);
@@ -346,7 +352,8 @@ public sealed class ImageLibraryService
     public string GetSafeCurrentDirectory(ImageBrowserLocation location, string directory) =>
         RequireDirectoryWithinRoot(GetRoot(location), directory);
 
-    private Image<Rgba32> LoadProcessed(string imagePath, ImageProcessingOptions options)
+    // The save dialog uses the same full-resolution processing path for pixel inspection.
+    internal Image<Rgba32> LoadProcessed(string imagePath, ImageProcessingOptions options)
     {
         ValidateManagedImagePath(imagePath);
         Image<Rgba32> image = SharpImage.Load<Rgba32>(imagePath);

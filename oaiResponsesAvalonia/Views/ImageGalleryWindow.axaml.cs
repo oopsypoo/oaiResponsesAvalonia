@@ -31,6 +31,7 @@ public partial class ImageGalleryWindow : Window
     private string? _selectedImagePath;
     private string _saveDirectory;
     private ImageAssetPreview? _selectedPreview;
+    private byte[]? _editorPreviewPng;
     private Bitmap? _previewBitmap;
     private Bitmap? _editorBitmap;
     // Keep true before InitializeComponent: AXAML can raise selection events while controls are
@@ -452,7 +453,7 @@ public partial class ImageGalleryWindow : Window
                 _saveDirectory,
                 Path.GetFileNameWithoutExtension(_selectedImagePath),
                 ReadProcessingOptions(),
-                _selectedPreview.HasTransparency);
+                _editorPreviewPng ?? _selectedPreview.PngBytes);
             string? savedPath = await dialog.ShowDialog<string?>(this);
             if (savedPath is null)
                 return;
@@ -897,7 +898,8 @@ public partial class ImageGalleryWindow : Window
         _showingProcessedPreview = false;
         EditCropOnSourceButton.IsVisible = false;
         CropOverlayCanvas.IsVisible = CropToolCheckBox.IsChecked == true;
-        SetPreviewBitmap(_selectedPreview.PngBytes, EditorPreviewImage, ref _editorBitmap);
+        _editorPreviewPng = _selectedPreview.PngBytes;
+        SetPreviewBitmap(_editorPreviewPng, EditorPreviewImage, ref _editorBitmap);
         UpdateCropOverlay();
     }
 
@@ -931,7 +933,8 @@ public partial class ImageGalleryWindow : Window
         EditorPanel.IsVisible = true;
         GalleryPanel.IsVisible = false;
         UpdateMenuAvailability();
-        SetPreviewBitmap(_selectedPreview.PngBytes, EditorPreviewImage, ref _editorBitmap);
+        _editorPreviewPng = _selectedPreview.PngBytes;
+        SetPreviewBitmap(_editorPreviewPng, EditorPreviewImage, ref _editorBitmap);
         UpdateCropOverlay();
     }
 
@@ -961,6 +964,7 @@ public partial class ImageGalleryWindow : Window
                 : _selectedPreview?.PngBytes ?? Array.Empty<byte>();
             if (updateVersion != _previewUpdateVersion || png.Length == 0)
                 return;
+            _editorPreviewPng = png;
             SetPreviewBitmap(png, EditorPreviewImage, ref _editorBitmap);
             _showingProcessedPreview = hasOperations;
             CropOverlayCanvas.IsVisible = CropToolCheckBox.IsChecked == true && !hasOperations;

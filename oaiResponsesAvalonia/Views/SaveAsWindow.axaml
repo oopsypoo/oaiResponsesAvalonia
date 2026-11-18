@@ -37,7 +37,7 @@
             </Border>
             <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
                 <Border x:Name="PixelColorSwatch" Width="18" Height="18" BorderBrush="Gray" BorderThickness="1"
-                        IsVisible="False" ToolTip.Tip="Raw RGB color used when picking" />
+                        IsVisible="False" ToolTip.Tip="RGB color used when picking (single pixel or 3×3 median)" />
                 <TextBlock x:Name="PixelInfoText" FontSize="11" VerticalAlignment="Center" Text="Loading full-resolution image for inspection…" />
             </StackPanel>
         </Grid>
@@ -51,6 +51,8 @@
                     <Button x:Name="PickFromImageButton" Content="Pick from image" Click="PickFromImageButton_Click" />
                     <Button Content="Reset background to white" Click="ResetBackgroundButton_Click" />
                 </StackPanel>
+                <CheckBox x:Name="MedianSamplingCheckBox" Content="Use 3×3 median sampling" IsChecked="False"
+                          IsCheckedChanged="MedianSamplingCheckBox_Changed" ToolTip.Tip="Use the median RGB of visible pixels in a 3×3 area; fully transparent pixels are ignored." />
                 <TextBlock x:Name="PickFromImageStatusText" FontSize="11" Opacity="0.8" TextWrapping="Wrap" IsVisible="False" />
             </StackPanel>
         </StackPanel>

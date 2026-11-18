@@ -209,21 +209,74 @@ public partial class SaveAsWindow : Window
         return true;
     }
 
+    // Both hover and click use this same full-resolution sample. Alpha belongs to the
+    // center pixel; median RGB excludes fully transparent neighbors, including the center.
+    private Rgba32 SampleColor(int x, int y, Rgba32 center, out int count)
+    {
+        count = center.A == 0 ? 0 : 1;
+        if (MedianSamplingCheckBox.IsChecked != true || _previewPixels is null)
+            return center;
+
+        Span<byte> red = stackalloc byte[9];
+        Span<byte> green = stackalloc byte[9];
+        Span<byte> blue = stackalloc byte[9];
+        count = 0;
+        for (int row = Math.Max(0, y - 1); row <= Math.Min(_previewPixels.Height - 1, y + 1); row++)
+        {
+            for (int column = Math.Max(0, x - 1); column <= Math.Min(_previewPixels.Width - 1, x + 1); column++)
+            {
+                var pixel = _previewPixels[column, row];
+                if (pixel.A == 0)
+                    continue;
+                red[count] = pixel.R;
+                green[count] = pixel.G;
+                blue[count] = pixel.B;
+                count++;
+            }
+        }
+
+        if (count == 0)
+            return default;
+        return new Rgba32(Median(red[..count]), Median(green[..count]), Median(blue[..count]), 255);
+    }
+
+    private static byte Median(Span<byte> values)
+    {
+        values.Sort();
+        int middle = values.Length / 2;
+        // Round the mean of the middle pair up when there is an even sample count.
+        return values.Length % 2 == 1 ? values[middle] : (byte)((values[middle - 1] + values[middle] + 1) / 2);
+    }
+
     private void PreviewImage_PointerMoved(object? sender, PointerEventArgs e)
     {
         if (TryGetPixel(e.GetPosition(PreviewImage), out var pixel, out int x, out int y))
         {
-            PixelInfoText.Text = pixel.A == 0
-                ? $"Pixel ({x}, {y})  Fully transparent — no usable color"
-                : $"Pixel ({x}, {y})  Raw RGB #{pixel.R:X2}{pixel.G:X2}{pixel.B:X2}  Alpha {pixel.A}/255";
-            PixelColorSwatch.IsVisible = pixel.A != 0;
-            if (pixel.A != 0)
-                PixelColorSwatch.Background = new SolidColorBrush(Color.FromRgb(pixel.R, pixel.G, pixel.B));
+            var sample = SampleColor(x, y, pixel, out int count);
+            bool median = MedianSamplingCheckBox.IsChecked == true;
+            PixelInfoText.Text = count == 0
+                ? $"Pixel ({x}, {y})  {(median ? "3×3 area is" : "Pixel is")} fully transparent — no usable color"
+                : median
+                    ? $"Pixel ({x}, {y})  3×3 median #{sample.R:X2}{sample.G:X2}{sample.B:X2}  Center alpha {pixel.A}/255  ({count} pixels)"
+                    : $"Pixel ({x}, {y})  Raw RGB #{sample.R:X2}{sample.G:X2}{sample.B:X2}  Alpha {pixel.A}/255";
+            PixelColorSwatch.IsVisible = count != 0;
+            if (count != 0)
+                PixelColorSwatch.Background = new SolidColorBrush(Color.FromRgb(sample.R, sample.G, sample.B));
         }
         else
         {
             PixelColorSwatch.IsVisible = false;
         }
+    }
+
+    private void MedianSamplingCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        // The event may also fire while AXAML is still constructing the window.
+        if (_initializing)
+            return;
+        PixelColorSwatch.IsVisible = false;
+        if (_fullResolutionReady)
+            PixelInfoText.Text = "Move over the image to inspect the selected sampling mode.";
     }
 
     private void PreviewImage_PointerExited(object? sender, PointerEventArgs e)
@@ -277,7 +330,7 @@ public partial class SaveAsWindow : Window
         _isPickingColor = !_isPickingColor;
         PickFromImageButton.Content = _isPickingColor ? "Cancel picking" : "Pick from image";
         PickFromImageStatusText.Text = _isPickingColor
-            ? "Click a visible pixel in the image. Partially transparent pixels can be sampled; fully transparent pixels have no usable color."
+            ? "Click the image to pick the shown RGB color. Fully transparent pixels are ignored in 3×3 median mode."
             : string.Empty;
         PickFromImageStatusText.IsVisible = _isPickingColor;
         PreviewImage.Cursor = _isPickingColor ? new Cursor(StandardCursorType.Cross) : null;
@@ -289,20 +342,22 @@ public partial class SaveAsWindow : Window
             return;
 
         e.Handled = true;
-        if (!TryGetPixel(e.GetPosition(PreviewImage), out Rgba32 pixel, out _, out _))
+        if (!TryGetPixel(e.GetPosition(PreviewImage), out Rgba32 pixel, out int x, out int y))
         {
             PickFromImageStatusText.Text = "Click inside the visible image area.";
             return;
         }
-        if (pixel.A == 0)
+        var sample = SampleColor(x, y, pixel, out int count);
+        if (count == 0)
         {
-            PickFromImageStatusText.Text = "That pixel is fully transparent and has no usable color. Pick a visible pixel instead.";
+            PickFromImageStatusText.Text = MedianSamplingCheckBox.IsChecked == true
+                ? "The 3×3 area is fully transparent. Pick an area with visible pixels instead."
+                : "That pixel is fully transparent and has no usable color. Pick a visible pixel instead.";
             return;
         }
 
-        // Sample the processed image's stored RGB color without compositing it over the current background.
-        // This also accepts partially transparent edge pixels, whose RGB can provide a useful background match.
-        BackgroundColorPicker.Color = Color.FromArgb(255, pixel.R, pixel.G, pixel.B);
+        // Pick the same uncomposited RGB shown in the live swatch.
+        BackgroundColorPicker.Color = Color.FromArgb(255, sample.R, sample.G, sample.B);
         _isPickingColor = false;
         PickFromImageButton.Content = "Pick from image";
         PickFromImageStatusText.IsVisible = false;

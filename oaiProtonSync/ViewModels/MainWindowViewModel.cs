@@ -94,8 +94,8 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         return RunCliOperationAsync(
-            "Checking login status by listing the configured Proton Drive folder…",
-            ["filesystem", "list", RemoteFolder, "-j"],
+            "Checking login status by listing the Proton Drive root…",
+            ["filesystem", "list", "/my-files", "-j"],
             onCompleted: (exitCode, standardOutput, allOutput) =>
             {
                 if (exitCode == 0 && IsJsonArray(standardOutput))

@@ -32,6 +32,34 @@ public sealed class RestoredAppCompatibilityTests : IDisposable
     }
 
     [Fact]
+    public async Task RestorePreview_ReadsCurrentCountsWithoutChangingEitherDatabase()
+    {
+        var (restore, livePath) = await CreateRestoredSnapshotAsync();
+        await using (var live = CreateContext(livePath))
+        {
+            var session = await live.Sessions.Include(s => s.Messages).SingleAsync();
+            session.Messages.Add(new ChatMessage { Role = "user", Content = "Newer live message" });
+            await live.SaveChangesAsync();
+        }
+
+        var preflight = new RestorePreflightService();
+        var liveCounts = await preflight.ReadCountsAsync(livePath);
+        var snapshotCounts = await preflight.ReadCountsAsync(restore.DatabasePath);
+        Assert.Equal(new ConversationCounts(1, 3, 3), liveCounts);
+        Assert.Equal(new ConversationCounts(1, 2, 3), snapshotCounts);
+        await using var check = CreateContext(livePath, readOnly: true);
+        Assert.Equal(3, await check.Messages.CountAsync());
+    }
+
+    [Fact]
+    public async Task RestorePreview_MissingDatabaseIsNotCreated()
+    {
+        string path = Path.Combine(_root, "missing.db");
+        await Assert.ThrowsAsync<FileNotFoundException>(() => new RestorePreflightService().ReadCountsAsync(path));
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
     public async Task CompatibilityCheck_FailsWhenRestoredMediaIsMissing()
     {
         var (restore, _) = await CreateRestoredSnapshotAsync();

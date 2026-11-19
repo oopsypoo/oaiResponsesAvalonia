@@ -443,6 +443,25 @@ public partial class MainWindowViewModel : ObservableObject
                 Status = "Isolated restore passed the main application data compatibility check.";
                 AppendActivity(Status);
                 AppendActivity($"Read {compatibility.Sessions} sessions, {compatibility.Messages} messages, and {compatibility.MediaReferences} media references; {compatibility.UniqueMediaFiles} distinct media files were readable.");
+
+                // The comparison is informational only; neither database is replaced or merged.
+                try
+                {
+                    AppendActivity("Reading current local database counts for a restore preview…");
+                    var current = await new RestorePreflightService().ReadCountsAsync(
+                        oaiResponsesAvalonia.Data.AppDbContext.DatabaseFilePath, _activeOperationCancellation.Token);
+                    AppendActivity($"Current local database: {current.Sessions} sessions, {current.Messages} messages, {current.MediaReferences} media references.");
+                    AppendActivity($"Snapshot: {compatibility.Sessions} sessions, {compatibility.Messages} messages, {compatibility.MediaReferences} media references.");
+                    AppendActivity("Counts are informational only: matching counts do not mean the data is identical, and different counts do not identify which conversations differ. A future restore would replace, not merge, local data.");
+                }
+                catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+                {
+                    AppendActivity("Local database comparison stopped; the isolated restore remains available.");
+                }
+                catch (Exception ex)
+                {
+                    AppendActivity($"Could not read current local database counts: {ex.Message}. The isolated restore compatibility check still passed.");
+                }
             }
             catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
             {

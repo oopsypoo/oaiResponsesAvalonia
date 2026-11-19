@@ -43,6 +43,10 @@
       <Button Content="Download and verify selected snapshot" HorizontalAlignment="Left" Command="{Binding DownloadAndVerifySnapshotCommand}" IsEnabled="{Binding CanDownloadSelectedSnapshot}" />
       <TextBlock FontSize="12" TextWrapping="Wrap" Text="Downloads are kept in ProtonSync/Verification. Verification checks the archive, manifest and SQLite integrity; no live data is replaced." />
       <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Preview an isolated restore" />
+      <TextBlock TextWrapping="Wrap" Text="Prepare and validate a separate copy of the downloaded snapshot, then compare its record counts with the current local database. This does not replace or merge live data. Matching counts do not prove that the data matches." />
+      <Button Content="Prepare isolated restore and compare" HorizontalAlignment="Left" Command="{Binding PrepareIsolatedRestoreCommand}" IsEnabled="{Binding CanPrepareIsolatedRestore}" />
+      <Separator />
       <TextBlock FontWeight="SemiBold" Text="Operation status" />
       <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
       <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />

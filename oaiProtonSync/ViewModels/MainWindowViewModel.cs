@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
@@ -12,6 +13,7 @@ public partial class MainWindowViewModel : ObservableObject
 {
     private readonly ProtonDriveCliService _cliService;
     private readonly ConversationSnapshotService _snapshotService;
+    private readonly SnapshotVerificationService _verificationService;
     private CancellationTokenSource? _activeOperationCancellation;
     private string _activeOperationName = "CLI operation";
 
@@ -28,6 +30,11 @@ public partial class MainWindowViewModel : ObservableObject
     private string _lastSnapshotPath = string.Empty;
 
     [ObservableProperty]
+    private RemoteSnapshotFile? _selectedRemoteSnapshot;
+
+    public ObservableCollection<RemoteSnapshotFile> RemoteSnapshots { get; } = [];
+
+    [ObservableProperty]
     private string _status = "Ready. CLI authentication is managed by Proton Drive.";
 
     [ObservableProperty]
@@ -39,10 +46,14 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _isBusy;
 
-    public MainWindowViewModel(ProtonDriveCliService cliService, ConversationSnapshotService snapshotService)
+    public MainWindowViewModel(
+        ProtonDriveCliService cliService,
+        ConversationSnapshotService snapshotService,
+        SnapshotVerificationService verificationService)
     {
         _cliService = cliService;
         _snapshotService = snapshotService;
+        _verificationService = verificationService;
         AppendActivity("Ready. Create a local snapshot before uploading conversation data.");
     }
 
@@ -52,10 +63,16 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool CanUploadSnapshot => !IsBusy && HasSnapshot;
 
+    public bool CanDownloadSelectedSnapshot => !IsBusy && SelectedRemoteSnapshot is not null;
+
+    partial void OnSelectedRemoteSnapshotChanged(RemoteSnapshotFile? value) =>
+        OnPropertyChanged(nameof(CanDownloadSelectedSnapshot));
+
     partial void OnLastSnapshotPathChanged(string value)
     {
         OnPropertyChanged(nameof(HasSnapshot));
         OnPropertyChanged(nameof(CanUploadSnapshot));
+        OnPropertyChanged(nameof(CanDownloadSelectedSnapshot));
     }
 
     public event Action? ActivityWindowRequested;
@@ -67,6 +84,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanStart));
         OnPropertyChanged(nameof(CanStop));
         OnPropertyChanged(nameof(CanUploadSnapshot));
+        OnPropertyChanged(nameof(CanDownloadSelectedSnapshot));
     }
 
     public bool CanStop => IsBusy;
@@ -209,6 +227,155 @@ public partial class MainWindowViewModel : ObservableObject
                 RemoteFolder,
                 "-v"
             ]);
+    }
+
+    [RelayCommand]
+    private Task ListRemoteSnapshotsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(RemoteFolder))
+        {
+            Status = "Enter a Proton Drive destination folder.";
+            AppendActivity(Status);
+            return Task.CompletedTask;
+        }
+
+        return RunCliOperationAsync(
+            $"Listing snapshots in {RemoteFolder}. Proton Drive may take a while to respond…",
+            ["filesystem", "list", RemoteFolder, "-j"],
+            onCompleted: (exitCode, standardOutput, allOutput) =>
+            {
+                if (exitCode != 0)
+                {
+                    Status = $"Remote listing failed with exit code {exitCode}. See activity output.";
+                    AppendActivity(Status);
+                    return;
+                }
+
+                try
+                {
+                    var snapshots = ParseRemoteSnapshots(standardOutput, RemoteFolder);
+                    RemoteSnapshots.Clear();
+                    foreach (var snapshot in snapshots)
+                        RemoteSnapshots.Add(snapshot);
+
+                    SelectedRemoteSnapshot = null;
+                    Status = snapshots.Count == 0
+                        ? "No conversation snapshot archives were found in the remote folder."
+                        : $"Found {snapshots.Count} conversation snapshot archive(s). Select one to download and verify.";
+                    AppendActivity(Status);
+                }
+                catch (JsonException ex)
+                {
+                    Status = $"Could not parse the remote listing: {ex.Message}";
+                    AppendActivity(Status);
+                    if (!string.IsNullOrWhiteSpace(allOutput))
+                        AppendActivity("See the CLI output above for details.");
+                }
+            });
+    }
+
+    [RelayCommand]
+    private async Task DownloadAndVerifySnapshotAsync()
+    {
+        if (IsBusy || SelectedRemoteSnapshot is null)
+            return;
+
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "snapshot download and verification";
+        string verificationDirectory = Path.Combine(
+            oaiResponsesAvalonia.Services.AppPaths.DataDirectory,
+            "ProtonSync",
+            "Verification",
+            $"download_{Guid.NewGuid():N}");
+
+        try
+        {
+            Directory.CreateDirectory(verificationDirectory);
+            var selectedSnapshot = SelectedRemoteSnapshot;
+            Status = $"Downloading {selectedSnapshot.Name} from Proton Drive. This may take a while…";
+            AppendActivity(Status);
+
+            var arguments = new[] { "filesystem", "download", selectedSnapshot.RemotePath, verificationDirectory, "-v" };
+            AppendActivity($"> {Executable} {string.Join(" ", arguments.Select(QuoteForDisplay))}");
+            int exitCode = await _cliService.RunAsync(
+                Executable,
+                arguments,
+                AppendActivity,
+                _activeOperationCancellation.Token);
+            if (exitCode != 0)
+                throw new InvalidOperationException($"Proton Drive download failed with exit code {exitCode}.");
+
+            _activeOperationCancellation.Token.ThrowIfCancellationRequested();
+            string expectedFileName = Path.GetFileName(selectedSnapshot.Name);
+            string[] downloadedFiles = Directory.GetFiles(verificationDirectory, "*", SearchOption.TopDirectoryOnly);
+            string downloadedArchive = downloadedFiles.FirstOrDefault(path =>
+                    string.Equals(Path.GetFileName(path), expectedFileName, StringComparison.OrdinalIgnoreCase))
+                ?? (downloadedFiles.Length == 1
+                    ? downloadedFiles[0]
+                    : throw new FileNotFoundException("Could not identify the downloaded snapshot archive in the temporary download folder."));
+
+            Status = "Download complete. Verifying the archive, database, media hashes, and SQLite integrity…";
+            AppendActivity(Status);
+            string localSnapshotsDirectory = Path.Combine(
+                oaiResponsesAvalonia.Services.AppPaths.DataDirectory,
+                "ProtonSync",
+                "Snapshots");
+            var localArchives = Directory.Exists(localSnapshotsDirectory)
+                ? Directory.EnumerateFiles(localSnapshotsDirectory, "oaiResponsesAvalonia_snapshot_*.zip", SearchOption.TopDirectoryOnly).ToList()
+                : [];
+            if (!string.IsNullOrWhiteSpace(LastSnapshotPath) && File.Exists(LastSnapshotPath) &&
+                !localArchives.Contains(LastSnapshotPath, StringComparer.OrdinalIgnoreCase))
+            {
+                localArchives.Add(LastSnapshotPath);
+            }
+
+            AppendActivity($"Checking the downloaded archive against {localArchives.Count} local snapshot archive(s)…");
+            var result = await _verificationService.VerifyAsync(
+                downloadedArchive,
+                verificationDirectory,
+                localArchives,
+                _activeOperationCancellation.Token);
+
+            Status = result.MatchesLocalArchive switch
+            {
+                true => "Download verified: it exactly matches a local snapshot archive, and all internal checks passed.",
+                false => $"Download verified internally, but its archive bytes differ from all {result.LocalArchivesCompared} local snapshot archive(s) checked.",
+                null => "Download verified internally. No local snapshot archive was available for whole-archive comparison."
+            };
+            AppendActivity(Status);
+            if (result.ComparedLocalArchivePath is not null)
+                AppendActivity($"Matching local snapshot: {result.ComparedLocalArchivePath}");
+            else if (result.LocalArchivesCompared > 0)
+                AppendActivity($"Compared against {result.LocalArchivesCompared} local snapshot archive(s).");
+            AppendActivity($"Snapshot ID: {result.SnapshotId}; media files verified: {result.MediaFileCount}; SQLite integrity_check: {result.DatabaseIntegrity}.");
+            AppendActivity($"Downloaded archive: {result.ArchivePath}");
+            AppendActivity($"Downloaded archive SHA-256: {result.ArchiveSha256}");
+            AppendActivity("The downloaded archive is retained in the local Verification folder for manual inspection; no restore was performed.");
+            foreach (string entry in result.VerifiedEntries)
+                AppendActivity(entry);
+        }
+        catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+        {
+            Status = "Snapshot download or verification was stopped.";
+            AppendActivity(Status);
+        }
+        catch (Win32Exception ex)
+        {
+            Status = $"Could not start '{Executable}'. Check that Proton Drive CLI is installed and on PATH.";
+            AppendActivity($"{Status} Details: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Status = $"Snapshot download or verification failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
     }
 
     [RelayCommand]
@@ -381,6 +548,45 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         return $"{size:0.##} {units[unit]}";
+    }
+
+    private static List<RemoteSnapshotFile> ParseRemoteSnapshots(string json, string remoteFolder)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+            throw new JsonException("The Proton Drive listing was not a JSON array.");
+
+        var snapshots = new List<RemoteSnapshotFile>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object ||
+                !item.TryGetProperty("type", out var typeElement) ||
+                !string.Equals(typeElement.GetString(), "file", StringComparison.OrdinalIgnoreCase) ||
+                !item.TryGetProperty("name", out var nameElement))
+            {
+                continue;
+            }
+
+            string? name = nameElement.ValueKind switch
+            {
+                JsonValueKind.String => nameElement.GetString(),
+                JsonValueKind.Object when nameElement.TryGetProperty("value", out var valueElement) => valueElement.GetString(),
+                _ => null
+            };
+
+            if (string.IsNullOrWhiteSpace(name) ||
+                !name.StartsWith("oaiResponsesAvalonia_snapshot_", StringComparison.OrdinalIgnoreCase) ||
+                !name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains('/') || name.Contains('\\'))
+            {
+                continue;
+            }
+
+            string remotePath = $"{remoteFolder.TrimEnd('/')}/{name}";
+            snapshots.Add(new RemoteSnapshotFile(name, remotePath));
+        }
+
+        return snapshots.OrderByDescending(snapshot => snapshot.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static bool IsJsonArray(string value)

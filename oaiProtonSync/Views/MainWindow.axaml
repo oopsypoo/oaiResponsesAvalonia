@@ -1,13 +1,14 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:oaiProtonSync.ViewModels"
+        xmlns:services="using:oaiProtonSync.Services"
         x:Class="oaiProtonSync.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="oai Proton Sync — Test App"
-        Width="680"
-        Height="610"
+        Width="760"
+        Height="850"
         MinWidth="560"
-        MinHeight="520">
+        MinHeight="620">
   <ScrollViewer>
     <StackPanel Margin="24" Spacing="14">
       <TextBlock FontSize="24" FontWeight="Bold" Text="Proton Drive CLI test" />
@@ -52,6 +53,27 @@
                   IsEnabled="{Binding CanUploadSnapshot}" />
           <TextBlock FontSize="12" TextWrapping="Wrap"
                      Text="Uploads the most recently created local snapshot as one uniquely named archive. No restore or database merge is implemented." />
+          <Separator />
+          <TextBlock FontWeight="SemiBold" Text="Download and verify a remote snapshot" />
+          <Button Content="List remote snapshots"
+                  HorizontalAlignment="Left"
+                  Command="{Binding ListRemoteSnapshotsCommand}"
+                  IsEnabled="{Binding CanStart}" />
+          <ListBox ItemsSource="{Binding RemoteSnapshots}"
+                   SelectedItem="{Binding SelectedRemoteSnapshot}"
+                   Height="130">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="services:RemoteSnapshotFile">
+                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <Button Content="Download and verify selected snapshot"
+                  HorizontalAlignment="Left"
+                  Command="{Binding DownloadAndVerifySnapshotCommand}"
+                  IsEnabled="{Binding CanDownloadSelectedSnapshot}" />
+          <TextBlock FontSize="12" TextWrapping="Wrap"
+                     Text="Downloads to a local verification folder, checks archive and manifest hashes, runs SQLite integrity_check, and compares the downloaded bytes with the current local snapshot when available. It does not restore data." />
         </StackPanel>
       </Border>
 

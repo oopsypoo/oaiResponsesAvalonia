@@ -114,7 +114,14 @@ public partial class MainWindowViewModel : ObservableObject
             if (exitCode == 0)
             {
                 AuthenticationStatus = "Login command completed. Check status to verify remote access.";
+                Status = AuthenticationStatus;
             }
+            else
+            {
+                AuthenticationStatus = "Login did not complete. Check status to verify remote access.";
+                Status = $"Login failed with exit code {exitCode}. See activity output.";
+            }
+            AppendActivity(Status);
         });
 
     [RelayCommand]
@@ -126,7 +133,14 @@ public partial class MainWindowViewModel : ObservableObject
             if (exitCode == 0)
             {
                 AuthenticationStatus = "Signed out (logout command completed).";
+                Status = AuthenticationStatus;
             }
+            else
+            {
+                AuthenticationStatus = "Logout did not complete. Check status to verify remote access.";
+                Status = $"Logout failed with exit code {exitCode}. See activity output.";
+            }
+            AppendActivity(Status);
         });
 
     [RelayCommand]

@@ -16,6 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- These types are compiled into the referenced main app for both UIs. -->
+    <Compile Remove="Services/*.cs;ViewModels/MainWindowViewModel.cs" />
     <ProjectReference Include="../oaiResponsesAvalonia/oaiResponsesAvalonia.csproj" />
   </ItemGroup>
 </Project>

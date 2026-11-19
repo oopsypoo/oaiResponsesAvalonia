@@ -8,7 +8,8 @@ public sealed class ProtonDriveCliService
         string executable,
         IReadOnlyList<string> arguments,
         Action<string> outputReceived,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string>? standardOutputReceived = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -30,7 +31,14 @@ public sealed class ProtonDriveCliService
             throw new InvalidOperationException($"Could not start '{executable}'.");
         }
 
-        var stdoutTask = ForwardLinesAsync(process.StandardOutput, outputReceived, cancellationToken);
+        var stdoutTask = ForwardLinesAsync(
+            process.StandardOutput,
+            line =>
+            {
+                outputReceived(line);
+                standardOutputReceived?.Invoke(line);
+            },
+            cancellationToken);
         var stderrTask = ForwardLinesAsync(process.StandardError, outputReceived, cancellationToken);
 
         try
@@ -42,7 +50,14 @@ public sealed class ProtonDriveCliService
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // The process exited between the HasExited check and Kill.
+                }
             }
 
             throw;

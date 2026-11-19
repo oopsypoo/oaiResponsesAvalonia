@@ -29,6 +29,8 @@
       <WrapPanel ItemSpacing="8" LineSpacing="8">
         <Button Content="Log in" Command="{Binding LoginCommand}" IsEnabled="{Binding CanStart}" />
         <Button Content="Log out" Command="{Binding LogoutCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Check login status" Command="{Binding CheckAuthenticationStatusCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Stop process" Command="{Binding StopOperationCommand}" IsEnabled="{Binding CanStop}" />
         <Button Content="Open activity window" Command="{Binding OpenActivityWindowCommand}" />
       </WrapPanel>
 
@@ -48,7 +50,9 @@
 
       <Border Padding="12" CornerRadius="6" Background="#1A808080">
         <StackPanel Spacing="6">
-          <TextBlock FontWeight="SemiBold" Text="Status" />
+          <TextBlock FontWeight="SemiBold" Text="Login status" />
+          <TextBlock Text="{Binding AuthenticationStatus}" TextWrapping="Wrap" />
+          <TextBlock FontWeight="SemiBold" Text="Operation status" />
           <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
           <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
         </StackPanel>

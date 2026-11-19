@@ -11,6 +11,7 @@ namespace oaiProtonSync.ViewModels;
 public partial class MainWindowViewModel : ObservableObject
 {
     private readonly ProtonDriveCliService _cliService;
+    private readonly ConversationSnapshotService _snapshotService;
     private CancellationTokenSource? _activeOperationCancellation;
     private string _activeOperationName = "CLI operation";
 
@@ -24,6 +25,9 @@ public partial class MainWindowViewModel : ObservableObject
     private string _localFilePath = string.Empty;
 
     [ObservableProperty]
+    private string _lastSnapshotPath = string.Empty;
+
+    [ObservableProperty]
     private string _status = "Ready. CLI authentication is managed by Proton Drive.";
 
     [ObservableProperty]
@@ -35,13 +39,24 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _isBusy;
 
-    public MainWindowViewModel(ProtonDriveCliService cliService)
+    public MainWindowViewModel(ProtonDriveCliService cliService, ConversationSnapshotService snapshotService)
     {
         _cliService = cliService;
-        AppendActivity("Ready. Enter a disposable test-file path before testing uploads.");
+        _snapshotService = snapshotService;
+        AppendActivity("Ready. Create a local snapshot before uploading conversation data.");
     }
 
     public bool CanStart => !IsBusy;
+
+    public bool HasSnapshot => !string.IsNullOrWhiteSpace(LastSnapshotPath);
+
+    public bool CanUploadSnapshot => !IsBusy && HasSnapshot;
+
+    partial void OnLastSnapshotPathChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasSnapshot));
+        OnPropertyChanged(nameof(CanUploadSnapshot));
+    }
 
     public event Action? ActivityWindowRequested;
 
@@ -51,6 +66,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(CanStart));
         OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanUploadSnapshot));
     }
 
     public bool CanStop => IsBusy;
@@ -86,13 +102,6 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private Task CheckAuthenticationStatusAsync()
     {
-        if (string.IsNullOrWhiteSpace(RemoteFolder))
-        {
-            Status = "Enter a Proton Drive destination folder before checking login status.";
-            AppendActivity(Status);
-            return Task.CompletedTask;
-        }
-
         return RunCliOperationAsync(
             "Checking login status by listing the Proton Drive root…",
             ["filesystem", "list", "/my-files", "-j"],
@@ -100,7 +109,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 if (exitCode == 0 && IsJsonArray(standardOutput))
                 {
-                    AuthenticationStatus = "Signed in; remote folder is accessible.";
+                    AuthenticationStatus = "Signed in; Proton Drive root is accessible.";
                     Status = AuthenticationStatus;
                     AppendActivity(AuthenticationStatus);
                 }
@@ -131,6 +140,75 @@ public partial class MainWindowViewModel : ObservableObject
         Status = $"Stopping '{_activeOperationName}'…";
         AppendActivity(Status);
         cancellation.Cancel();
+    }
+
+    [RelayCommand]
+    private async Task CreateSnapshotAsync()
+    {
+        if (IsBusy)
+            return;
+
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "conversation snapshot creation";
+        LastSnapshotPath = string.Empty;
+        Status = "Creating a local conversation snapshot. This may take a while…";
+        AppendActivity(Status);
+        AppendActivity($"Reading the app database at {oaiResponsesAvalonia.Services.AppPaths.DatabaseFilePath}");
+
+        try
+        {
+            var result = await _snapshotService.CreateAsync(
+                AppendActivity,
+                _activeOperationCancellation.Token);
+            LastSnapshotPath = result.ArchivePath;
+            Status = $"Local snapshot ready ({result.MediaFileCount} unique media file(s), {FormatSize(result.ArchiveSize)}).";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+        {
+            Status = "Snapshot creation stopped. No upload was started.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Snapshot creation failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private Task UploadSnapshotAsync()
+    {
+        if (string.IsNullOrWhiteSpace(LastSnapshotPath) || !File.Exists(LastSnapshotPath))
+        {
+            Status = "Create a local snapshot before uploading it.";
+            AppendActivity(Status);
+            return Task.CompletedTask;
+        }
+
+        if (string.IsNullOrWhiteSpace(RemoteFolder))
+        {
+            Status = "Enter a Proton Drive destination folder.";
+            AppendActivity(Status);
+            return Task.CompletedTask;
+        }
+
+        return RunCliOperationAsync(
+            $"Uploading conversation snapshot to {RemoteFolder}. This may take a while…",
+            [
+                "filesystem", "upload",
+                "--file-conflict-strategy", "rename",
+                LastSnapshotPath,
+                RemoteFolder,
+                "-v"
+            ]);
     }
 
     [RelayCommand]
@@ -290,6 +368,20 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     public void ReportActivity(string message) => AppendActivity(message);
+
+    private static string FormatSize(long bytes)
+    {
+        string[] units = ["B", "KiB", "MiB", "GiB"];
+        double size = bytes;
+        int unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+
+        return $"{size:0.##} {units[unit]}";
+    }
 
     private static bool IsJsonArray(string value)
     {

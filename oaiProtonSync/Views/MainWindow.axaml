@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:oaiProtonSync.ViewModels"
+        x:Class="oaiProtonSync.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="oai Proton Sync — Test App"
+        Width="680"
+        Height="610"
+        MinWidth="560"
+        MinHeight="520">
+  <ScrollViewer>
+    <StackPanel Margin="24" Spacing="14">
+      <TextBlock FontSize="24" FontWeight="Bold" Text="Proton Drive CLI test" />
+      <TextBlock TextWrapping="Wrap"
+                 Text="Experimental test app. Authentication is handled by the Proton Drive CLI; this app does not read or store login material. Use a disposable file for the upload test." />
+
+      <StackPanel Spacing="6">
+        <TextBlock FontWeight="SemiBold" Text="CLI executable" />
+        <TextBox Text="{Binding Executable}" />
+        <TextBlock FontSize="12" TextWrapping="Wrap"
+                   Text="Defaults to proton-drive, which must be installed and available on PATH." />
+      </StackPanel>
+
+      <StackPanel Spacing="6">
+        <TextBlock FontWeight="SemiBold" Text="Remote destination" />
+        <TextBox Text="{Binding RemoteFolder}" />
+      </StackPanel>
+
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <Button Content="Log in" Command="{Binding LoginCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Log out" Command="{Binding LogoutCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Open activity window" Command="{Binding OpenActivityWindowCommand}" />
+      </WrapPanel>
+
+      <Border Padding="14" CornerRadius="6" BorderThickness="1" BorderBrush="#66808080">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="Upload a disposable test file" />
+          <TextBox Text="{Binding LocalFilePath}"
+                   PlaceholderText="Full path to a small test file" />
+          <Button Content="Upload test file (verbose)"
+                  HorizontalAlignment="Left"
+                  Command="{Binding UploadTestFileCommand}"
+                  IsEnabled="{Binding CanStart}" />
+          <TextBlock FontSize="12" TextWrapping="Wrap"
+                     Text="Uploads with the rename conflict strategy and verbose output. This does not create or upload a database snapshot." />
+        </StackPanel>
+      </Border>
+
+      <Border Padding="12" CornerRadius="6" Background="#1A808080">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Status" />
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+          <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</Window>

@@ -6,4 +6,5 @@
     <Project Path="tests/ImageInspector.Tests/ImageInspector.Tests.csproj" />
   </Folder>
   <Project Path="CredentialCachePlayground/CredentialCachePlayground.csproj" />
+  <Project Path="oaiProtonSync/oaiProtonSync.csproj" />
 </Solution>

@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:oaiProtonSync.ViewModels"
+        x:Class="oaiProtonSync.Views.ActivityWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Proton Drive Activity"
+        Width="900"
+        Height="650"
+        MinWidth="560"
+        MinHeight="360">
+  <Grid RowDefinitions="Auto,*" Margin="16">
+    <TextBlock Margin="0,0,0,10"
+               Text="Application status and Proton Drive CLI output" />
+    <TextBox Grid.Row="1"
+             Text="{Binding ActivityLog}"
+             IsReadOnly="True"
+             AcceptsReturn="True"
+             TextWrapping="NoWrap" />
+  </Grid>
+</Window>

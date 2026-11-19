@@ -422,7 +422,26 @@ public partial class MainWindowViewModel : ObservableObject
             AppendActivity($"Database: {result.DatabasePath}");
             AppendActivity($"Media files restored: {result.MediaFileCount} (images and files folders).");
             AppendActivity($"Snapshot ID: {result.SnapshotId}; SQLite integrity_check: {result.DatabaseIntegrity}.");
-            AppendActivity("This is an isolated staging copy only; it has not been opened by the main application or installed as live data.");
+            AppendActivity("Testing the isolated copy with the main application's data model and media resolver…");
+            try
+            {
+                var compatibility = await new RestoredAppCompatibilityService().CheckAsync(result, _activeOperationCancellation.Token);
+                Status = "Isolated restore passed the main application data compatibility check.";
+                AppendActivity(Status);
+                AppendActivity($"Read {compatibility.Sessions} sessions, {compatibility.Messages} messages, and {compatibility.MediaReferences} media references; {compatibility.UniqueMediaFiles} distinct media files were readable.");
+            }
+            catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+            {
+                Status = "Compatibility check stopped. The isolated restore remains available for inspection.";
+                AppendActivity(Status);
+            }
+            catch (Exception ex)
+            {
+                Status = $"Main application data compatibility check failed: {ex.Message}";
+                AppendActivity(Status);
+                AppendActivity("The isolated restore remains available for inspection; live data was not changed.");
+            }
+            AppendActivity("This checks the main app's data model and media resolver, but does not launch its UI or test sending messages.");
         }
         catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
         {

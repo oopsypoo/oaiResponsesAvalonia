@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -19,6 +19,7 @@
     <Compile Include="../../oaiResponsesAvalonia/Views/ImageInspectorGeometry.cs" Link="ImageInspectorGeometry.cs" />
     <Compile Include="../../oaiProtonSync/Services/IsolatedSnapshotRestoreService.cs" Link="IsolatedSnapshotRestoreService.cs" />
     <Compile Include="../../oaiProtonSync/Services/ConversationSnapshotService.cs" Link="ConversationSnapshotService.cs" />
+    <Compile Include="../../oaiProtonSync/Services/RestoredAppCompatibilityService.cs" Link="RestoredAppCompatibilityService.cs" />
     <Using Include="Xunit" />
   </ItemGroup>
 

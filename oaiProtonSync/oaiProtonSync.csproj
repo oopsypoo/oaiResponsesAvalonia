@@ -16,6 +16,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="../oaiResponsesAvalonia/Services/AppPaths.cs" Link="Shared/AppPaths.cs" />
+    <ProjectReference Include="../oaiResponsesAvalonia/oaiResponsesAvalonia.csproj" />
   </ItemGroup>
 </Project>

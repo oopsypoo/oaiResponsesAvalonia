@@ -21,6 +21,17 @@ public sealed record IsolatedSnapshotRestoreResult(
 public sealed class IsolatedSnapshotRestoreService
 {
     private const long MaxManifestBytes = 1024 * 1024;
+    private readonly string _restoreRoot;
+
+    public IsolatedSnapshotRestoreService()
+        : this(Path.Combine(AppPaths.DataDirectory, "ProtonSync", "RestoreTests"))
+    {
+    }
+
+    internal IsolatedSnapshotRestoreService(string restoreRoot)
+    {
+        _restoreRoot = restoreRoot;
+    }
 
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -39,9 +50,8 @@ public sealed class IsolatedSnapshotRestoreService
         if (!File.Exists(archivePath))
             throw new FileNotFoundException("The downloaded snapshot archive was not found.", archivePath);
 
-        string restoreRoot = Path.Combine(AppPaths.DataDirectory, "ProtonSync", "RestoreTests");
-        Directory.CreateDirectory(restoreRoot);
-        string restoreDirectory = Path.Combine(restoreRoot, $"restore_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_restoreRoot);
+        string restoreDirectory = Path.Combine(_restoreRoot, $"restore_{Guid.NewGuid():N}");
         string imagesDirectory = Path.Combine(restoreDirectory, "images");
         string filesDirectory = Path.Combine(restoreDirectory, "files");
         string databasePath = Path.Combine(restoreDirectory, "localhistory.db");
@@ -264,7 +274,10 @@ public sealed class IsolatedSnapshotRestoreService
                 $"The snapshot has multiple packaged files matching database media reference '{storedPath}'. " +
                 "The reference cannot be mapped unambiguously.");
 
-        throw new InvalidDataException($"The restored database references media that is absent from the snapshot: {storedPath}");
+        throw new InvalidDataException(
+            $"The snapshot database media reference '{storedPath}' cannot be mapped to a packaged file. " +
+            "Some snapshots may not retain all mappings, including when SQLite changes were left in a WAL file. " +
+            "Create a new snapshot from the original database and media, then upload and download it before retrying.");
     }
 
     private static string GetStoredFileName(string localPath) =>

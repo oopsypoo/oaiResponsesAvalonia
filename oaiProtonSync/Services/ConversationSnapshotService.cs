@@ -10,6 +10,17 @@ public sealed record ConversationSnapshotResult(string ArchivePath, int MediaFil
 
 public sealed class ConversationSnapshotService
 {
+    private readonly string _dataDirectory;
+
+    public ConversationSnapshotService() : this(AppPaths.DataDirectory)
+    {
+    }
+
+    internal ConversationSnapshotService(string dataDirectory)
+    {
+        _dataDirectory = dataDirectory;
+    }
+
     private static readonly string[] ImageExtensions =
     [
         ".apng", ".arw", ".avif", ".bmp", ".cr2", ".cr3", ".dng", ".gif", ".heic", ".heif",
@@ -22,16 +33,16 @@ public sealed class ConversationSnapshotService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(reportProgress);
-        return Task.Run(() => Create(reportProgress, cancellationToken), cancellationToken);
+        return Task.Run(() => Create(_dataDirectory, reportProgress, cancellationToken), cancellationToken);
     }
 
-    private static ConversationSnapshotResult Create(Action<string> reportProgress, CancellationToken cancellationToken)
+    private static ConversationSnapshotResult Create(string dataDirectory, Action<string> reportProgress, CancellationToken cancellationToken)
     {
-        string databasePath = AppPaths.DatabaseFilePath;
+        string databasePath = Path.Combine(dataDirectory, "localhistory.db");
         if (!File.Exists(databasePath))
             throw new FileNotFoundException("The application conversation database was not found.", databasePath);
 
-        string snapshotsDirectory = Path.Combine(AppPaths.DataDirectory, "ProtonSync", "Snapshots");
+        string snapshotsDirectory = Path.Combine(dataDirectory, "ProtonSync", "Snapshots");
         Directory.CreateDirectory(snapshotsDirectory);
 
         string snapshotId = $"{DateTimeOffset.UtcNow:yyyyMMdd'T'HHmmss'Z'}_{Guid.NewGuid():N}";
@@ -49,7 +60,7 @@ public sealed class ConversationSnapshotService
             CreateDatabaseBackup(databasePath, snapshotDatabasePath);
             cancellationToken.ThrowIfCancellationRequested();
 
-            var storageFolders = ReadStorageFolders();
+            var storageFolders = ReadStorageFolders(dataDirectory);
             var mediaRecords = ReadMediaRecords(snapshotDatabasePath);
             reportProgress($"Found {mediaRecords.Count} database media reference(s). Resolving their local files…");
 
@@ -161,12 +172,14 @@ public sealed class ConversationSnapshotService
         var sourceBuilder = new SqliteConnectionStringBuilder
         {
             DataSource = sourcePath,
-            Mode = SqliteOpenMode.ReadOnly
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
         };
         var destinationBuilder = new SqliteConnectionStringBuilder
         {
             DataSource = destinationPath,
-            Mode = SqliteOpenMode.ReadWriteCreate
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
         };
 
         using var source = new SqliteConnection(sourceBuilder.ToString());
@@ -174,6 +187,10 @@ public sealed class ConversationSnapshotService
         source.Open();
         destination.Open();
         source.BackupDatabase(destination);
+        using var command = destination.CreateCommand();
+        command.CommandText = "PRAGMA journal_mode=DELETE;";
+        if (!string.Equals(Convert.ToString(command.ExecuteScalar()), "delete", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Could not make the snapshot database self-contained.");
     }
 
     private static List<MediaRecord> ReadMediaRecords(string databasePath)
@@ -181,7 +198,8 @@ public sealed class ConversationSnapshotService
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWrite
+            Mode = SqliteOpenMode.ReadWrite,
+            Pooling = false
         }.ToString());
         connection.Open();
 
@@ -205,7 +223,8 @@ public sealed class ConversationSnapshotService
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWrite
+            Mode = SqliteOpenMode.ReadWrite,
+            Pooling = false
         }.ToString());
         connection.Open();
 
@@ -231,12 +250,12 @@ public sealed class ConversationSnapshotService
         transaction.Commit();
     }
 
-    private static StorageFolders ReadStorageFolders()
+    private static StorageFolders ReadStorageFolders(string dataDirectory)
     {
-        string appRoot = AppPaths.DataDirectory;
+        string appRoot = dataDirectory;
         string imagesName = "images";
         string filesName = "files";
-        string settingsPath = AppPaths.SettingsFilePath;
+        string settingsPath = Path.Combine(dataDirectory, "settings.json");
 
         if (File.Exists(settingsPath))
         {

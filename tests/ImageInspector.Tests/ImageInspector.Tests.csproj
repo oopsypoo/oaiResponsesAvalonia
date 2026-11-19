@@ -17,6 +17,8 @@
   <ItemGroup>
     <ProjectReference Include="../../oaiResponsesAvalonia/oaiResponsesAvalonia.csproj" />
     <Compile Include="../../oaiResponsesAvalonia/Views/ImageInspectorGeometry.cs" Link="ImageInspectorGeometry.cs" />
+    <Compile Include="../../oaiProtonSync/Services/IsolatedSnapshotRestoreService.cs" Link="IsolatedSnapshotRestoreService.cs" />
+    <Compile Include="../../oaiProtonSync/Services/ConversationSnapshotService.cs" Link="ConversationSnapshotService.cs" />
     <Using Include="Xunit" />
   </ItemGroup>
 

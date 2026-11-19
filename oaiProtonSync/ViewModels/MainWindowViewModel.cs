@@ -14,6 +14,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly ProtonDriveCliService _cliService;
     private readonly ConversationSnapshotService _snapshotService;
     private readonly SnapshotVerificationService _verificationService;
+    private readonly IsolatedSnapshotRestoreService _restoreService;
     private CancellationTokenSource? _activeOperationCancellation;
     private string _activeOperationName = "CLI operation";
 
@@ -28,6 +29,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _lastSnapshotPath = string.Empty;
+
+    [ObservableProperty]
+    private string _lastDownloadedArchivePath = string.Empty;
 
     [ObservableProperty]
     private RemoteSnapshotFile? _selectedRemoteSnapshot;
@@ -49,11 +53,13 @@ public partial class MainWindowViewModel : ObservableObject
     public MainWindowViewModel(
         ProtonDriveCliService cliService,
         ConversationSnapshotService snapshotService,
-        SnapshotVerificationService verificationService)
+        SnapshotVerificationService verificationService,
+        IsolatedSnapshotRestoreService restoreService)
     {
         _cliService = cliService;
         _snapshotService = snapshotService;
         _verificationService = verificationService;
+        _restoreService = restoreService;
         AppendActivity("Ready. Create a local snapshot before uploading conversation data.");
     }
 
@@ -64,6 +70,11 @@ public partial class MainWindowViewModel : ObservableObject
     public bool CanUploadSnapshot => !IsBusy && HasSnapshot;
 
     public bool CanDownloadSelectedSnapshot => !IsBusy && SelectedRemoteSnapshot is not null;
+
+    public bool CanPrepareIsolatedRestore => !IsBusy && !string.IsNullOrWhiteSpace(LastDownloadedArchivePath) && File.Exists(LastDownloadedArchivePath);
+
+    partial void OnLastDownloadedArchivePathChanged(string value) =>
+        OnPropertyChanged(nameof(CanPrepareIsolatedRestore));
 
     partial void OnSelectedRemoteSnapshotChanged(RemoteSnapshotFile? value) =>
         OnPropertyChanged(nameof(CanDownloadSelectedSnapshot));
@@ -85,6 +96,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanStop));
         OnPropertyChanged(nameof(CanUploadSnapshot));
         OnPropertyChanged(nameof(CanDownloadSelectedSnapshot));
+        OnPropertyChanged(nameof(CanPrepareIsolatedRestore));
     }
 
     public bool CanStop => IsBusy;
@@ -283,6 +295,7 @@ public partial class MainWindowViewModel : ObservableObject
         IsBusy = true;
         _activeOperationCancellation = new CancellationTokenSource();
         _activeOperationName = "snapshot download and verification";
+        LastDownloadedArchivePath = string.Empty;
         string verificationDirectory = Path.Combine(
             oaiResponsesAvalonia.Services.AppPaths.DataDirectory,
             "ProtonSync",
@@ -336,6 +349,7 @@ public partial class MainWindowViewModel : ObservableObject
                 verificationDirectory,
                 localArchives,
                 _activeOperationCancellation.Token);
+            LastDownloadedArchivePath = downloadedArchive;
 
             Status = result.MatchesLocalArchive switch
             {
@@ -368,6 +382,56 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             Status = $"Snapshot download or verification failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task PrepareIsolatedRestoreAsync()
+    {
+        if (IsBusy || string.IsNullOrWhiteSpace(LastDownloadedArchivePath) || !File.Exists(LastDownloadedArchivePath))
+        {
+            Status = "Download and verify a remote snapshot before preparing an isolated restore.";
+            AppendActivity(Status);
+            return;
+        }
+
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "isolated snapshot restore preparation";
+        Status = "Preparing an isolated restore copy. The live application database and media will not be changed…";
+        AppendActivity(Status);
+        AppendActivity($"Source archive: {LastDownloadedArchivePath}");
+
+        try
+        {
+            var result = await _restoreService.RestoreAsync(
+                LastDownloadedArchivePath,
+                AppendActivity,
+                _activeOperationCancellation.Token);
+
+            Status = "Isolated restore prepared and verified. No live application data was changed.";
+            AppendActivity(Status);
+            AppendActivity($"Restore test folder: {result.RestoreDirectory}");
+            AppendActivity($"Database: {result.DatabasePath}");
+            AppendActivity($"Media files restored: {result.MediaFileCount} (images and files folders).");
+            AppendActivity($"Snapshot ID: {result.SnapshotId}; SQLite integrity_check: {result.DatabaseIntegrity}.");
+            AppendActivity("This is an isolated staging copy only; it has not been opened by the main application or installed as live data.");
+        }
+        catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+        {
+            Status = "Isolated restore preparation was stopped. Any partial staging directory was removed when possible.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Isolated restore preparation failed: {ex.Message}";
             AppendActivity(Status);
         }
         finally

@@ -73,7 +73,13 @@
                   Command="{Binding DownloadAndVerifySnapshotCommand}"
                   IsEnabled="{Binding CanDownloadSelectedSnapshot}" />
           <TextBlock FontSize="12" TextWrapping="Wrap"
-                     Text="Downloads to a local verification folder, checks archive and manifest hashes, runs SQLite integrity_check, and compares the downloaded bytes with the current local snapshot when available. It does not restore data." />
+                     Text="Downloads to a local verification folder, checks archive and manifest hashes, runs SQLite integrity_check, and compares downloaded bytes with local snapshots when available." />
+           <Button Content="Prepare isolated restore test"
+                   HorizontalAlignment="Left"
+                   Command="{Binding PrepareIsolatedRestoreCommand}"
+                   IsEnabled="{Binding CanPrepareIsolatedRestore}" />
+           <TextBlock FontSize="12" TextWrapping="Wrap"
+                      Text="Creates a separate test folder under ProtonSync/RestoreTests with localhistory.db, images, and files. It never overwrites or modifies the live app data, and it does not open the restored data in the main app." />
         </StackPanel>
       </Border>
 

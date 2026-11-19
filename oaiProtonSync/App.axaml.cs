@@ -18,7 +18,8 @@ public partial class App : Application
             var viewModel = new MainWindowViewModel(
                 new ProtonDriveCliService(),
                 new ConversationSnapshotService(),
-                new SnapshotVerificationService());
+                new SnapshotVerificationService(),
+                new IsolatedSnapshotRestoreService());
             var mainWindow = new MainWindow(viewModel);
             ActivityWindow? activityWindow = null;
 

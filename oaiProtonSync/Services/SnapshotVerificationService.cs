@@ -158,6 +158,13 @@ public sealed class SnapshotVerificationService
             {
                 if (File.Exists(extractedDatabasePath))
                     File.Delete(extractedDatabasePath);
+
+                foreach (string suffix in new[] { "-wal", "-shm", "-journal" })
+                {
+                    string sidecarPath = extractedDatabasePath + suffix;
+                    if (File.Exists(sidecarPath))
+                        File.Delete(sidecarPath);
+                }
             }
             catch
             {

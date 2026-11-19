@@ -16,7 +16,7 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var viewModel = new MainWindowViewModel(new ProtonDriveCliService());
-            var mainWindow = new MainWindow { DataContext = viewModel };
+            var mainWindow = new MainWindow(viewModel);
             ActivityWindow? activityWindow = null;
 
             viewModel.ActivityWindowRequested += () =>

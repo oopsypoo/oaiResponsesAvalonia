@@ -38,6 +38,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public event Action? ActivityWindowRequested;
 
+    public event Action<Uri>? AuthenticationUrlDetected;
+
     partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(CanStart));
 
     [RelayCommand]
@@ -45,8 +47,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [RelayCommand]
     private Task LoginAsync() => RunCliOperationAsync(
-        "Starting Proton Drive login. Complete authentication in the browser window…",
-        ["auth", "login"]);
+        "Starting Proton Drive login. Waiting for browser authentication…",
+        ["auth", "login"],
+        openAuthenticationUrl: true);
 
     [RelayCommand]
     private Task LogoutAsync() => RunCliOperationAsync(
@@ -86,7 +89,10 @@ public partial class MainWindowViewModel : ObservableObject
             ]);
     }
 
-    private async Task RunCliOperationAsync(string startingStatus, IReadOnlyList<string> arguments)
+    private async Task RunCliOperationAsync(
+        string startingStatus,
+        IReadOnlyList<string> arguments,
+        bool openAuthenticationUrl = false)
     {
         if (IsBusy)
         {
@@ -98,9 +104,42 @@ public partial class MainWindowViewModel : ObservableObject
         AppendActivity(startingStatus);
         AppendActivity($"> {Executable} {string.Join(" ", arguments.Select(QuoteForDisplay))}");
 
+        var waitingForAuthenticationUrl = 0;
+        var browserLaunchRequested = 0;
+        void HandleOutput(string line)
+        {
+            AppendActivity(line);
+
+            if (!openAuthenticationUrl)
+            {
+                return;
+            }
+
+            if (line.Contains("Open following URL manually", StringComparison.OrdinalIgnoreCase))
+            {
+                Volatile.Write(ref waitingForAuthenticationUrl, 1);
+            }
+
+            if (Volatile.Read(ref waitingForAuthenticationUrl) == 0 ||
+                !TryExtractProtonAuthenticationUrl(line, out var authenticationUrl) ||
+                Interlocked.Exchange(ref browserLaunchRequested, 1) != 0)
+            {
+                return;
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                AuthenticationUrlDetected?.Invoke(authenticationUrl);
+            }
+            else
+            {
+                AppendActivity("Authentication URL detected; Proton Drive handles browser launching on this platform.");
+            }
+        }
+
         try
         {
-            var exitCode = await _cliService.RunAsync(Executable, arguments, AppendActivity);
+            var exitCode = await _cliService.RunAsync(Executable, arguments, HandleOutput);
             if (exitCode == 0)
             {
                 Status = "Command completed successfully.";
@@ -126,6 +165,29 @@ public partial class MainWindowViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    public void ReportActivity(string message) => AppendActivity(message);
+
+    private static bool TryExtractProtonAuthenticationUrl(string line, out Uri authenticationUrl)
+    {
+        foreach (var candidate in line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var text = candidate.Trim('"', '\'', '<', '>', '[', ']', '(', ')', ',', ';', '.');
+            if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) ||
+                !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                !(string.Equals(uri.Host, "proton.me", StringComparison.OrdinalIgnoreCase) ||
+                  uri.Host.EndsWith(".proton.me", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            authenticationUrl = uri;
+            return true;
+        }
+
+        authenticationUrl = null!;
+        return false;
     }
 
     private void AppendActivity(string message)

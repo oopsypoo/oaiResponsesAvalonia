@@ -206,6 +206,7 @@
         <Menu Grid.Row="0" Height="18" IsEnabled="True">
             <MenuItem Header="File" Name="menuFile" IsEnabled="True">
                 <MenuItem Header="Settings" x:Name="menuSettings" IsEnabled="True" Click="menuSettings_Click"/>
+                <MenuItem Header="Data Sync…" x:Name="menuDataSync" Click="OpenDataSync_Click" />
                 <MenuItem Header="Exit" Name="menuExit" IsEnabled="True" Click="menuExit_Click" />
             </MenuItem>
             <MenuItem Header="Tools" Name="menuTools" IsEnabled="True">
@@ -258,7 +259,7 @@
 
                             <!-- REQUEST SECTION -->
                             <!-- Encapsulate to be able to disable at request(Grid) -->
-                            <Grid Grid.Row="0"
+                            <Grid Grid.Row="0" x:Name="RequestControls"
                                   IsEnabled="{Binding #RootWindow.ResponsesState.AreRequestEditingControlsEnabled}">
                                 <DockPanel Grid.Row="0" LastChildFill="True">
                                     <!-- Header -->

@@ -7,16 +7,27 @@ namespace oaiResponsesAvalonia.Services
     {
         public const string ApplicationDirectoryName = "oaiResponsesAvalonia";
 
-        public static string DataDirectory { get; } = GetDataDirectory();
+        public static string DefaultDataDirectory { get; } = GetDataDirectory();
+        public static string DataDirectory { get; private set; } = DefaultDataDirectory;
+        public static bool IsIsolatedVisualTest { get; private set; }
+
+        public static void ConfigureIsolatedVisualTest(string directory)
+        {
+            if (IsIsolatedVisualTest)
+                throw new InvalidOperationException("The data directory has already been configured.");
+            DataDirectory = IsolatedVisualTestService.ValidateVisualDirectory(directory);
+            IsIsolatedVisualTest = true;
+        }
         public static string SettingsFilePath => Path.Combine(DataDirectory, "settings.json");
         public static string DatabaseFilePath => Path.Combine(DataDirectory, "localhistory.db");
         public static string ModelsFilePath => Path.Combine(DataDirectory, "available_models.json");
         
         public static string ImagesDirectory => Path.Combine(DataDirectory, "images");
         public static string FilesDirectory => Path.Combine(DataDirectory, "files");
-        public static string LegacySettingsFilePath => Path.Combine(AppContext.BaseDirectory, "settings.json");
-        public static string LegacyDatabaseFilePath => Path.Combine(AppContext.BaseDirectory, "localhistory.db");
-        public static string LegacyModelsFilePath => Path.Combine(AppContext.BaseDirectory, "available_models.txt");
+        private static string LegacyDirectory => IsIsolatedVisualTest ? Path.Combine(DataDirectory, ".legacy-disabled") : AppContext.BaseDirectory;
+        public static string LegacySettingsFilePath => Path.Combine(LegacyDirectory, "settings.json");
+        public static string LegacyDatabaseFilePath => Path.Combine(LegacyDirectory, "localhistory.db");
+        public static string LegacyModelsFilePath => Path.Combine(LegacyDirectory, "available_models.txt");
 
         public static void EnsureDataDirectory()
         {

@@ -205,7 +205,11 @@ namespace oaiResponsesAvalonia.Views
 
             List<string> modelsToUse = AvailableModelsStorage.Load();
 
-            if (modelsToUse.Count == 0)
+            if (modelsToUse.Count == 0 && AppPaths.IsIsolatedVisualTest)
+            {
+                modelsToUse = GetHardcodedResponseModels();
+            }
+            else if (modelsToUse.Count == 0)
             {
                 try
                 {
@@ -219,7 +223,7 @@ namespace oaiResponsesAvalonia.Views
                     modelsToUse = GetHardcodedResponseModels();
                 }
             }
-            else
+            else if (!AppPaths.IsIsolatedVisualTest)
             {
                 // Optional: load API list in background so AvailableModels window can use full live list later
                 _ = LoadApiModelsCacheAsync();
@@ -665,6 +669,8 @@ namespace oaiResponsesAvalonia.Views
 
         private async void btnResponsesSendRequestClick(object sender, RoutedEventArgs e)
         {
+            if (AppPaths.IsIsolatedVisualTest)
+                return;
             string userPrompt = ResponsesState.PromptText ?? string.Empty;
             bool hasAttachedFiles = PendingResponseAttachments.Count > 0;
 

@@ -68,6 +68,15 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        if (AppPaths.IsIsolatedVisualTest)
+        {
+            Title = $"ISOLATED RESTORE TEST — {AppPaths.DataDirectory}";
+            menuSettings.IsEnabled = false;
+            menuDataSync.IsEnabled = false;
+            menuTools.IsEnabled = false;
+            RequestControls.IsEnabled = false;
+            btnResponsesSendRequest.IsEnabled = false;
+        }
         Opened += (_, _) => RefreshMcpSummary();
         Closed += MainWindow_Closed;
         _appStatus = new AppStatus(text => StatusText.Text = text ?? string.Empty);
@@ -87,6 +96,11 @@ public partial class MainWindow : Window
 
         EnsureSavePaths();
         tabMain.SelectedItem = tpResponses;
+    }
+
+    private async void OpenDataSync_Click(object? sender, RoutedEventArgs e)
+    {
+        await new DataSyncWindow().ShowDialog(this);
     }
 
     private void OpenDeveloperActivityWindow_Click(object? sender, RoutedEventArgs e)

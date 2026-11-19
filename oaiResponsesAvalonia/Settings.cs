@@ -67,6 +67,10 @@ namespace oaiResponsesAvalonia
         {
             AppPaths.EnsureDataDirectory();
 
+            // Never use device-specific or previously changed paths in a visual restore test.
+            if (AppPaths.IsIsolatedVisualTest)
+                return new AppSettings();
+
             if (!File.Exists(SettingsPath) && File.Exists(AppPaths.LegacySettingsFilePath))
             {
                 File.Copy(AppPaths.LegacySettingsFilePath, SettingsPath);

@@ -9,8 +9,16 @@ sealed class Program
     /// Starts Avalonia's classic desktop lifetime with the configured application builder.
     /// </summary>
     [STAThread]
-    public static void Main(string[] args) => BuildAvaloniaApp()
-        .StartWithClassicDesktopLifetime(args);
+    public static void Main(string[] args)
+    {
+        if (args.Length > 0 && args[0] == Services.IsolatedVisualTestService.Argument)
+        {
+            if (args.Length != 2)
+                throw new ArgumentException("The isolated visual test requires exactly one directory.");
+            Services.AppPaths.ConfigureIsolatedVisualTest(args[1]);
+        }
+        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    }
 
     /// <summary>
     /// Configures the application, platform detection, fonts, developer tools, and trace logging.

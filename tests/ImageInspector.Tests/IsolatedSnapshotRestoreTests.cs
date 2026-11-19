@@ -11,6 +11,21 @@ public sealed class IsolatedSnapshotRestoreTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory().FullName;
 
+    [Theory]
+    [InlineData(60, "20261119T151850+0100")]
+    [InlineData(120, "20261119T151850+0200")]
+    [InlineData(-330, "20261119T151850-0530")]
+    [InlineData(0, "20261119T151850+0000")]
+    public void SnapshotId_UsesLocalTimeAndOffset(int offsetMinutes, string expectedTimestamp)
+    {
+        var localTime = new DateTimeOffset(2026, 11, 19, 15, 18, 50, TimeSpan.FromMinutes(offsetMinutes));
+        var id = Guid.Parse("03f554b2-5492-460e-a308-b22b7def840d");
+
+        string snapshotId = ConversationSnapshotService.CreateSnapshotId(localTime, id);
+
+        Assert.Equal($"{expectedTimestamp}_03f554b25492460ea308b22b7def840d", snapshotId);
+    }
+
     [Fact]
     public async Task Restore_ReportsUnmappedLegacyDeduplicatedReference()
     {

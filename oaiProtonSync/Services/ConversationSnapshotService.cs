@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -36,6 +37,13 @@ public sealed class ConversationSnapshotService
         return Task.Run(() => Create(_dataDirectory, reportProgress, cancellationToken), cancellationToken);
     }
 
+    internal static string CreateSnapshotId(DateTimeOffset localTime, Guid id)
+    {
+        // Include the offset so local times remain unambiguous across time zones and daylight saving changes.
+        string timestamp = localTime.ToString("yyyyMMdd'T'HHmmsszzz", CultureInfo.InvariantCulture).Replace(":", "");
+        return $"{timestamp}_{id:N}";
+    }
+
     private static ConversationSnapshotResult Create(string dataDirectory, Action<string> reportProgress, CancellationToken cancellationToken)
     {
         string databasePath = Path.Combine(dataDirectory, "localhistory.db");
@@ -45,7 +53,7 @@ public sealed class ConversationSnapshotService
         string snapshotsDirectory = Path.Combine(dataDirectory, "ProtonSync", "Snapshots");
         Directory.CreateDirectory(snapshotsDirectory);
 
-        string snapshotId = $"{DateTimeOffset.UtcNow:yyyyMMdd'T'HHmmss'Z'}_{Guid.NewGuid():N}";
+        string snapshotId = CreateSnapshotId(DateTimeOffset.Now, Guid.NewGuid());
         string workingDirectory = Path.Combine(snapshotsDirectory, $".working_{snapshotId}");
         string archivePath = Path.Combine(snapshotsDirectory, $"oaiResponsesAvalonia_snapshot_{snapshotId}.zip");
         string temporaryArchivePath = archivePath + ".tmp";

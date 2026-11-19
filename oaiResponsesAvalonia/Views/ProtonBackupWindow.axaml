@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:oaiProtonSync.ViewModels"
+        xmlns:services="using:oaiProtonSync.Services"
+        x:Class="oaiResponsesAvalonia.Views.ProtonBackupWindow"
+        x:DataType="vm:MainWindowViewModel" x:CompileBindings="True"
+        Title="Data Sync — Proton Drive (experimental)"
+        Width="780" Height="850" MinWidth="520" MinHeight="500"
+        WindowStartupLocation="CenterOwner">
+  <ScrollViewer>
+    <StackPanel Margin="20" Spacing="12">
+      <TextBlock FontSize="22" FontWeight="SemiBold" Text="Proton Drive backup" />
+      <TextBlock TextWrapping="Wrap" Text="Experimental backup and verification only. This does not restore, merge, or delete your data. Proton Drive CLI handles authentication and its token." />
+      <TextBlock FontWeight="SemiBold" Text="CLI executable" />
+      <TextBox Text="{Binding Executable}" IsEnabled="{Binding CanStart}" />
+      <TextBlock FontWeight="SemiBold" Text="Remote destination" />
+      <TextBox Text="{Binding RemoteFolder}" IsEnabled="{Binding CanStart}" />
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <Button Content="Log in" Command="{Binding LoginCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Log out" Command="{Binding LogoutCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Check login status" Command="{Binding CheckAuthenticationStatusCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Stop process" Command="{Binding StopOperationCommand}" IsEnabled="{Binding CanStop}" />
+      </WrapPanel>
+      <TextBlock Text="{Binding AuthenticationStatus}" TextWrapping="Wrap" />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Create and upload a conversation snapshot" />
+      <TextBlock TextWrapping="Wrap" Text="A snapshot contains conversation history and referenced media. It is saved locally before upload and may contain sensitive information. No old snapshots are deleted." />
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <Button Content="Create local snapshot" Command="{Binding CreateSnapshotCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Upload snapshot" Command="{Binding UploadSnapshotCommand}" IsEnabled="{Binding CanUploadSnapshot}" />
+      </WrapPanel>
+      <TextBlock Text="{Binding LastSnapshotPath}" IsVisible="{Binding HasSnapshot}" TextWrapping="Wrap" />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Download and verify a snapshot" />
+      <Button Content="List remote snapshots" HorizontalAlignment="Left" Command="{Binding ListRemoteSnapshotsCommand}" IsEnabled="{Binding CanStart}" />
+      <ListBox ItemsSource="{Binding RemoteSnapshots}" SelectedItem="{Binding SelectedRemoteSnapshot}" Height="110" IsEnabled="{Binding CanStart}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="services:RemoteSnapshotFile">
+            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <Button Content="Download and verify selected snapshot" HorizontalAlignment="Left" Command="{Binding DownloadAndVerifySnapshotCommand}" IsEnabled="{Binding CanDownloadSelectedSnapshot}" />
+      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Downloads are kept in ProtonSync/Verification. Verification checks the archive, manifest and SQLite integrity; no live data is replaced." />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Operation status" />
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+      <TextBlock FontWeight="SemiBold" Text="Activity" />
+      <TextBox Text="{Binding ActivityLog, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" Height="200" />
+    </StackPanel>
+  </ScrollViewer>
+</Window>

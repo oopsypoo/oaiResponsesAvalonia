@@ -192,6 +192,41 @@ public sealed class InitialBaselineTests : IDisposable
             new BaselineChangeDemonstrationService().RunAsync(_root, _ => { }));
     }
 
+    [Fact]
+    public async Task ThreeWayRehearsalRetainsConflictsAndIsRepeatableWithoutChangingSource()
+    {
+        string first = await CreateSnapshotAsync("merge-first", "Linux history", "Linux message", "one");
+        string second = await CreateSnapshotAsync("merge-second", "Windows history", "Windows message", "two");
+        var baseline = await new InitialBaselineService(Path.Combine(_root, "baselines"))
+            .CreateAsync(first, second, _ => { });
+        string original = Path.Combine(baseline.Directory, "localhistory.db");
+        byte[] before = await File.ReadAllBytesAsync(original);
+        var result = await new DisposableThreeWayMergeDemoService(Path.Combine(_root, "BaselineTests"))
+            .RunAsync(baseline.Directory, _ => { });
+        Assert.Equal(2, result.Added);
+        Assert.Equal(1, result.Edited);
+        Assert.Equal(1, result.Conflicts);
+        Assert.Equal(0, result.RepeatedChanges);
+        Assert.Equal(6, result.Sessions);
+        Assert.Equal(6, result.Messages);
+        Assert.Equal(before, await File.ReadAllBytesAsync(original));
+        string visual = IsolatedVisualTestService.CreateCopy(result.ResultDirectory,
+            Path.Combine(_root, "RestoreTests"), Path.Combine(_root, "VisualTests"));
+        Assert.True(File.Exists(Path.Combine(visual, "localhistory.db")));
+        await using var output = Context(Path.Combine(result.ResultDirectory, "localhistory.db"), true);
+        var contents = await output.Messages.Select(m => m.Content).ToListAsync();
+        Assert.Contains("Rehearsal: new message from A", contents);
+        Assert.Contains("Rehearsal: new message from B", contents);
+        Assert.Contains("Rehearsal: edited only on A", contents);
+        Assert.Contains("Rehearsal: original conflicting edit", contents);
+        Assert.DoesNotContain("Rehearsal: conflicting edit on A", contents);
+        Assert.DoesNotContain("Rehearsal: conflicting edit on B", contents);
+        await using var branchA = Context(Path.Combine(result.Workspace, "branch-A", "localhistory.db"), true);
+        await using var branchB = Context(Path.Combine(result.Workspace, "branch-B", "localhistory.db"), true);
+        Assert.True(await branchA.Messages.AnyAsync(m => m.Content == "Rehearsal: conflicting edit on A"));
+        Assert.True(await branchB.Messages.AnyAsync(m => m.Content == "Rehearsal: conflicting edit on B"));
+    }
+
     private static Dictionary<int, string> ReadIdentities(string path, string table, string idColumn)
     {
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder

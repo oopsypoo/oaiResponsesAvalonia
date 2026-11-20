@@ -76,6 +76,8 @@
       <Button Content="Compare baseline identities" HorizontalAlignment="Left" Command="{Binding CompareBaselineIdentitiesCommand}" IsEnabled="{Binding CanStart}" />
       <TextBlock TextWrapping="Wrap" Text="To demonstrate changes, select one experimental baseline folder as copy A above, then run the demonstration. Temporary database copies are changed and compared; the selected baseline and live data are not changed." />
       <Button Content="Demonstrate changes on temporary copies" HorizontalAlignment="Left" Command="{Binding DemonstrateBaselineChangesCommand}" IsEnabled="{Binding CanStart}" />
+      <TextBlock TextWrapping="Wrap" Text="Rehearse a three-way merge using synthetic conversations and the selected baseline. Conflicting edits are not merged; the disposable result and branch copies are retained for inspection. No live data is changed." />
+      <Button Content="Run disposable merge rehearsal" HorizontalAlignment="Left" Command="{Binding RehearseDisposableMergeCommand}" IsEnabled="{Binding CanStart}" />
       <Separator />
       <TextBlock FontWeight="SemiBold" Text="Preview an isolated restore" />
       <TextBlock TextWrapping="Wrap" Text="Prepare and validate a separate copy of the downloaded snapshot, then compare its record counts with the current local database. This does not replace or merge live data. Matching counts do not prove that the data matches." />

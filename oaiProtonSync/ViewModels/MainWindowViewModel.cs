@@ -717,6 +717,46 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task RehearseDisposableMergeAsync()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "disposable merge rehearsal";
+        var token = _activeOperationCancellation.Token;
+        try
+        {
+            Status = "Running a controlled merge rehearsal; live data will not be changed…";
+            AppendActivity(Status);
+            var result = await Task.Run(() => new DisposableThreeWayMergeDemoService().RunAsync(FirstBaselineDirectory, AppendActivity, token), token);
+            AppendActivity($"Simulated changes applied: {result.Added} additions and {result.Edited} one-sided edit; {result.Conflicts} conflict left unresolved.");
+            AppendActivity($"Repeat application: {result.RepeatedChanges} changes; the conflict remains unresolved.");
+            AppendActivity($"Validated disposable result: {result.Sessions} sessions, {result.Messages} messages.");
+            AppendActivity($"Result for isolated visual test: {result.ResultDirectory}");
+            AppendActivity($"Workspace (including both conflict versions): {result.Workspace}");
+            AppendActivity("Only synthetic records were merged. Deletions, real independent changes, media changes and conversation divergence are not handled. Never install this result as live data.");
+            Status = "Disposable merge rehearsal passed; no live data was changed.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Disposable merge rehearsal stopped; no live data was changed.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Disposable merge rehearsal failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
     private static string SafeTitle(string title) => string.IsNullOrWhiteSpace(title)
         ? "untitled" : title.Replace('\r', ' ').Replace('\n', ' ').Trim();
 

@@ -55,6 +55,75 @@ public sealed class InitialBaselineTests : IDisposable
     }
 
     [Fact]
+    public async Task BaselineCopiesPreserveIdsAndAssignDistinctIdsToNewRecords()
+    {
+        string first = await CreateSnapshotAsync("first", "Linux history", "Linux message", "one");
+        string second = await CreateSnapshotAsync("second", "Windows history", "Windows message", "two");
+        var baseline = await new InitialBaselineService(Path.Combine(_root, "baselines"))
+            .CreateAsync(first, second, _ => { });
+        string original = Path.Combine(baseline.Directory, "localhistory.db");
+        string a = Path.Combine(_root, "copy-a.db");
+        string b = Path.Combine(_root, "copy-b.db");
+        using (var source = new SqliteConnection(new SqliteConnectionStringBuilder
+               { DataSource = original, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
+        {
+            source.Open();
+            foreach (string path in new[] { a, b })
+            {
+                using var destination = new SqliteConnection(new SqliteConnectionStringBuilder
+                    { DataSource = path, Pooling = false }.ToString());
+                destination.Open();
+                source.BackupDatabase(destination);
+            }
+        }
+
+        var existingA = ReadIdentities(a, "ExperimentalMessageIdentity", "MessageId");
+        var existingB = ReadIdentities(b, "ExperimentalMessageIdentity", "MessageId");
+        Assert.Equal(existingA.OrderBy(x => x.Key), existingB.OrderBy(x => x.Key));
+        Assert.All(existingA.Values, id => Assert.True(Guid.TryParse(id, out _)));
+
+        async Task<(int SessionId, int MessageId)> AddAsync(string path, string content)
+        {
+            await using var db = Context(path);
+            var session = new ChatSession(EndpointType.Responses, "Responses", content);
+            var message = new ChatMessage { Role = "user", Content = content };
+            session.Messages.Add(message);
+            db.Sessions.Add(session);
+            await db.SaveChangesAsync();
+            return (session.Id, message.Id);
+        }
+        var addedA = await AddAsync(a, "Added on A");
+        var addedB = await AddAsync(b, "Added on B");
+        string sessionA = ReadIdentities(a, "ExperimentalSessionIdentity", "SessionId")[addedA.SessionId];
+        string sessionB = ReadIdentities(b, "ExperimentalSessionIdentity", "SessionId")[addedB.SessionId];
+        string messageA = ReadIdentities(a, "ExperimentalMessageIdentity", "MessageId")[addedA.MessageId];
+        string messageB = ReadIdentities(b, "ExperimentalMessageIdentity", "MessageId")[addedB.MessageId];
+        Assert.NotEqual(sessionA, sessionB);
+        Assert.NotEqual(messageA, messageB);
+        Assert.True(Guid.TryParse(sessionA, out _));
+        Assert.True(Guid.TryParse(messageA, out _));
+        Assert.Equal(existingA, ReadIdentities(original, "ExperimentalMessageIdentity", "MessageId"));
+
+        await using var dbA = Context(a);
+        var sessionToDelete = await dbA.Sessions.FindAsync(addedA.SessionId);
+        dbA.Sessions.Remove(sessionToDelete!);
+        await Assert.ThrowsAsync<DbUpdateException>(() => dbA.SaveChangesAsync());
+    }
+
+    private static Dictionary<int, string> ReadIdentities(string path, string table, string idColumn)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {idColumn}, SyncId FROM {table}";
+        using var reader = command.ExecuteReader();
+        var result = new Dictionary<int, string>();
+        while (reader.Read()) result.Add(reader.GetInt32(0), reader.GetString(1));
+        return result;
+    }
+
+    [Fact]
     public async Task MatchingCandidatesAreRejectedAndIncompleteWorkspaceIsRemoved()
     {
         var first = await CreateSnapshotAsync("first", "Same title", "first message", "one");

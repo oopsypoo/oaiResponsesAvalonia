@@ -67,7 +67,7 @@ public sealed class InitialBaselineService
             File.Delete(Path.Combine(a.RestoreDirectory, "manifest.json"));
             await File.WriteAllTextAsync(Path.Combine(a.RestoreDirectory, "experimental-baseline.json"),
                 "{\"kind\":\"disposable-initial-baseline\",\"version\":1}\n", cancellationToken);
-            progress("Disposable baseline created and checked. It is not a verified snapshot or a sync-enabled database.");
+            progress("Disposable baseline created and checked. New sessions and messages receive experimental IDs; deletions are blocked. This is not a sync-enabled database.");
             success = true;
             return new InitialBaselineResult(a.RestoreDirectory, result.Sessions, result.Messages, result.MediaReferences);
         }
@@ -213,6 +213,11 @@ public sealed class InitialBaselineService
             await target.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO ExperimentalSessionIdentity (SessionId, SyncId) VALUES ({id}, {Guid.NewGuid().ToString("D")});", token);
         foreach (int id in messageIds)
             await target.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO ExperimentalMessageIdentity (MessageId, SyncId) VALUES ({id}, {Guid.NewGuid().ToString("D")});", token);
+        // This is deliberately restricted to the newly-created disposable baseline.
+        // The triggers travel with copies of this database and assign IDs atomically
+        // when new sessions/messages are inserted. Deletion is blocked until a
+        // tombstone design exists; silently losing identity would make sync unsafe.
+        await ExperimentalSyncIdentityService.InstallBaselineTriggersAsync(target, token);
         await transaction.CommitAsync(token);
         await using var command = target.Database.GetDbConnection().CreateCommand();
         command.CommandText = "PRAGMA integrity_check;";

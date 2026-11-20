@@ -77,15 +77,20 @@ public partial class MainWindow : Window
             RequestControls.IsEnabled = false;
             btnResponsesSendRequest.IsEnabled = false;
         }
+        else if (AppPaths.IsDevelopmentDataDirectory)
+        {
+            Title = $"DEVELOPMENT DATA — {AppPaths.DataDirectory}";
+        }
         Opened += (_, _) => RefreshMcpSummary();
         Closed += MainWindow_Closed;
         _appStatus = new AppStatus(text => StatusText.Text = text ?? string.Empty);
 
+        // Validate the copied development settings before touching its database.
+        _settings = AppSettings.LoadSettings();
         AppDbContext.InitializeDatabase();
         _mediaStorageService = new MediaStorageService();
         _historyService = new HistoryService(_mediaStorageService);
         _sessionCleanupService = new SessionCleanupService(_historyService, _mediaStorageService);
-        _settings = AppSettings.LoadSettings();
         ResponsesState.CustomSearchContextSize = string.IsNullOrWhiteSpace(_settings.CustomSearchContextSize)
             ? "medium"
             : _settings.CustomSearchContextSize;

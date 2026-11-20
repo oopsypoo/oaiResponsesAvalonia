@@ -11,6 +11,14 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Temporary branch-specific development location. Remove this block when the
+        // test branch no longer needs its own Linux data directory.
+        if (OperatingSystem.IsLinux())
+        {
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            Services.AppPaths.ConfigureDevelopmentDataDirectory(System.IO.Path.Combine(home, "Documents", "oaira"));
+        }
+
         if (args.Length > 0 && args[0] == Services.IsolatedVisualTestService.Argument)
         {
             if (args.Length != 2)

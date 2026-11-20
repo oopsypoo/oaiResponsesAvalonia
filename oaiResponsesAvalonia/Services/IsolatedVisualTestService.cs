@@ -13,8 +13,8 @@ public static class IsolatedVisualTestService
     private static StringComparison PathComparison => OperatingSystem.IsWindows()
         ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-    public static string RestoreRoot => Path.Combine(AppPaths.DefaultDataDirectory, "ProtonSync", "RestoreTests");
-    public static string VisualTestRoot => Path.Combine(AppPaths.DefaultDataDirectory, "ProtonSync", "VisualTests");
+    public static string RestoreRoot => Path.Combine(AppPaths.BaseDataDirectory, "ProtonSync", "RestoreTests");
+    public static string VisualTestRoot => Path.Combine(AppPaths.BaseDataDirectory, "ProtonSync", "VisualTests");
 
     public static string CreateCopy(string restoreDirectory) => CreateCopy(restoreDirectory, RestoreRoot, VisualTestRoot);
 

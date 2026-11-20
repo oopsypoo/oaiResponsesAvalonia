@@ -64,6 +64,35 @@ public partial class ProtonBackupWindow : Window
         }
     }
 
+    private async void BrowseFirstBaseline(object? sender, RoutedEventArgs e)
+    {
+        var path = await PickBaselineAsync();
+        if (path is not null) _viewModel.FirstBaselineDirectory = path;
+    }
+
+    private async void BrowseSecondBaseline(object? sender, RoutedEventArgs e)
+    {
+        var path = await PickBaselineAsync();
+        if (path is not null) _viewModel.SecondBaselineDirectory = path;
+    }
+
+    private async System.Threading.Tasks.Task<string?> PickBaselineAsync()
+    {
+        try
+        {
+            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "Select a disposable baseline copy", AllowMultiple = false
+            });
+            return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ReportActivity($"Could not select a baseline folder: {ex.Message}");
+            return null;
+        }
+    }
+
     private void OnAuthenticationUrlDetected(Uri authenticationUrl)
     {
         Dispatcher.UIThread.Post(async () =>

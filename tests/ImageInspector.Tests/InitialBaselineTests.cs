@@ -110,6 +110,66 @@ public sealed class InitialBaselineTests : IDisposable
         await Assert.ThrowsAsync<DbUpdateException>(() => dbA.SaveChangesAsync());
     }
 
+    [Fact]
+    public async Task IdentityComparisonFindsIndependentAdditionsAndChangesWithoutWritingInputs()
+    {
+        string first = await CreateSnapshotAsync("first", "Linux history", "Linux message", "one");
+        string second = await CreateSnapshotAsync("second", "Windows history", "Windows message", "two");
+        var baseline = await new InitialBaselineService(Path.Combine(_root, "baselines"))
+            .CreateAsync(first, second, _ => { });
+        string aDir = Directory.CreateDirectory(Path.Combine(_root, "a")).FullName;
+        string bDir = Directory.CreateDirectory(Path.Combine(_root, "b")).FullName;
+        string a = Path.Combine(aDir, "localhistory.db"), b = Path.Combine(bDir, "localhistory.db");
+        File.Copy(Path.Combine(baseline.Directory, "experimental-baseline.json"), Path.Combine(aDir, "experimental-baseline.json"));
+        File.Copy(Path.Combine(baseline.Directory, "experimental-baseline.json"), Path.Combine(bDir, "experimental-baseline.json"));
+        using (var source = new SqliteConnection(new SqliteConnectionStringBuilder
+               { DataSource = Path.Combine(baseline.Directory, "localhistory.db"), Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
+        {
+            source.Open();
+            foreach (var path in new[] { a, b })
+            {
+                using var destination = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
+                destination.Open();
+                source.BackupDatabase(destination);
+            }
+        }
+        var service = new BaselineIdentityComparisonService();
+        var identical = await service.CompareAsync(aDir, bDir);
+        Assert.Equal(2, identical.SharedSessions);
+        Assert.Equal(2, identical.SharedMessages);
+        Assert.Empty(identical.MessagesOnlyA);
+        Assert.Empty(identical.DifferentMessages);
+        foreach (var (path, text) in new[] { (a, "added A"), (b, "added B") })
+        {
+            await using var db = Context(path);
+            var existing = await db.Sessions.OrderBy(s => s.Id).FirstAsync();
+            db.Messages.Add(new ChatMessage { ChatSessionId = existing.Id, Role = "user", Content = text });
+            if (path == b) (await db.Messages.OrderBy(m => m.Id).FirstAsync()).Content = "changed B";
+            await db.SaveChangesAsync();
+        }
+        var beforeA = await File.ReadAllBytesAsync(a);
+        var beforeB = await File.ReadAllBytesAsync(b);
+        var result = await service.CompareAsync(aDir, bDir);
+        Assert.Equal(2, result.SharedSessions);
+        Assert.Equal(2, result.SharedMessages);
+        Assert.Single(result.MessagesOnlyA);
+        Assert.Single(result.MessagesOnlyB);
+        Assert.NotEqual(result.MessagesOnlyA[0].SyncId, result.MessagesOnlyB[0].SyncId);
+        Assert.Single(result.DifferentMessages);
+        Assert.Equal(beforeA, await File.ReadAllBytesAsync(a));
+        Assert.Equal(beforeB, await File.ReadAllBytesAsync(b));
+        await Assert.ThrowsAsync<InvalidDataException>(() => service.CompareAsync(_root, bDir));
+        using (var corrupt = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = b, Pooling = false }.ToString()))
+        {
+            corrupt.Open();
+            using var command = corrupt.CreateCommand();
+            command.CommandText = "DELETE FROM ExperimentalMessageIdentity WHERE MessageId = (SELECT MIN(MessageId) FROM ExperimentalMessageIdentity)";
+            command.ExecuteNonQuery();
+        }
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() => service.CompareAsync(aDir, bDir));
+        Assert.Contains("identity", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static Dictionary<int, string> ReadIdentities(string path, string table, string idColumn)
     {
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder

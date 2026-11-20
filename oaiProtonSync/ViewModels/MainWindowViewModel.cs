@@ -40,6 +40,12 @@ public partial class MainWindowViewModel : ObservableObject
     private string _secondComparisonArchive = string.Empty;
 
     [ObservableProperty]
+    private string _firstBaselineDirectory = string.Empty;
+
+    [ObservableProperty]
+    private string _secondBaselineDirectory = string.Empty;
+
+    [ObservableProperty]
     private bool _confirmIndependentHistories;
 
     partial void OnFirstComparisonArchiveChanged(string value) => ConfirmIndependentHistories = false;
@@ -594,7 +600,7 @@ public partial class MainWindowViewModel : ObservableObject
             AppendActivity(Status);
             AppendActivity($"Baseline directory: {result.Directory}");
             AppendActivity($"Combined records: {result.Sessions} sessions, {result.Messages} messages, {result.MediaReferences} media references.");
-            AppendActivity("Experimental identities are assigned only to existing sessions and messages; new changes and deletions are NOT tracked. Do not install this copy as live data.");
+            AppendActivity("Experimental identities are assigned to existing and new sessions and messages. Edits are not tracked and deletions are blocked; do not install this copy as live data.");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -604,6 +610,62 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             Status = $"Baseline preparation failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CompareBaselineIdentitiesAsync()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "baseline identity comparison";
+        var token = _activeOperationCancellation.Token;
+        string first = FirstBaselineDirectory, second = SecondBaselineDirectory;
+        try
+        {
+            Status = "Comparing experimental baseline copies by identity; no data will be merged…";
+            AppendActivity(Status);
+            AppendActivity($"Copy A: {first}");
+            AppendActivity($"Copy B: {second}");
+            var result = await Task.Run(() => new BaselineIdentityComparisonService().CompareAsync(first, second, token), token);
+            AppendActivity($"Shared identities: {result.SharedSessions} sessions; {result.SharedMessages} messages.");
+            void Report(string label, IReadOnlyList<IdentityDifference> entries)
+            {
+                AppendActivity($"{label}: {entries.Count}");
+                foreach (var entry in entries)
+                {
+                    token.ThrowIfCancellationRequested();
+                    AppendActivity($"  {entry.SyncId:D} — {entry.Detail}");
+                }
+            }
+            Report("Sessions only in A", result.SessionsOnlyA);
+            Report("Sessions only in B", result.SessionsOnlyB);
+            Report("Messages only in A", result.MessagesOnlyA);
+            Report("Messages only in B", result.MessagesOnlyB);
+            Report("Shared sessions with different fields", result.DifferentSessions);
+            Report("Shared messages with different fields or parent", result.DifferentMessages);
+            if (result.SharedSessions == 0)
+                AppendActivity("Warning: no shared session identities. These copies may not share a baseline; identity correspondence is not established.");
+            AppendActivity("Only-in-one-side does not establish whether a record is new or deleted. Differences are not classified as conflicts; media, deletions, common ancestry and conversation order are not compared.");
+            Status = "Identity comparison completed. No merge or live-data changes were performed.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Identity comparison stopped; no merge was performed.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Identity comparison failed: {ex.Message}";
             AppendActivity(Status);
         }
         finally

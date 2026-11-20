@@ -63,6 +63,18 @@
       <CheckBox Content="I confirm these histories were created independently" IsChecked="{Binding ConfirmIndependentHistories}" IsEnabled="{Binding CanStart}" />
       <Button Content="Create disposable baseline" HorizontalAlignment="Left" Command="{Binding CreateInitialBaselineCommand}" IsEnabled="{Binding CanStart}" />
       <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Compare disposable baseline copies by identity" />
+      <TextBlock TextWrapping="Wrap" Text="Select two closed copies of the same experimental baseline folder, including experimental-baseline.json and localhistory.db. This only compares session and message identities and fields; it does not merge, identify deletions or compare media." />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding FirstBaselineDirectory}" IsEnabled="{Binding CanStart}" PlaceholderText="Baseline copy A folder" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseFirstBaseline" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding SecondBaselineDirectory}" IsEnabled="{Binding CanStart}" PlaceholderText="Baseline copy B folder" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseSecondBaseline" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <Button Content="Compare baseline identities" HorizontalAlignment="Left" Command="{Binding CompareBaselineIdentitiesCommand}" IsEnabled="{Binding CanStart}" />
+      <Separator />
       <TextBlock FontWeight="SemiBold" Text="Preview an isolated restore" />
       <TextBlock TextWrapping="Wrap" Text="Prepare and validate a separate copy of the downloaded snapshot, then compare its record counts with the current local database. This does not replace or merge live data. Matching counts do not prove that the data matches." />
       <Button Content="Prepare isolated restore and compare" HorizontalAlignment="Left" Command="{Binding PrepareIsolatedRestoreCommand}" IsEnabled="{Binding CanPrepareIsolatedRestore}" />

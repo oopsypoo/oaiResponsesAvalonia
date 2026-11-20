@@ -170,6 +170,28 @@ public sealed class InitialBaselineTests : IDisposable
         Assert.Contains("identity", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ChangeDemonstrationDetectsChangesAndLeavesBaselineUntouched()
+    {
+        string first = await CreateSnapshotAsync("demo-first", "Linux history", "Linux message", "one");
+        string second = await CreateSnapshotAsync("demo-second", "Windows history", "Windows message", "two");
+        var baseline = await new InitialBaselineService(Path.Combine(_root, "demo-baselines"))
+            .CreateAsync(first, second, _ => { });
+        string database = Path.Combine(baseline.Directory, "localhistory.db");
+        byte[] before = await File.ReadAllBytesAsync(database);
+        var log = new List<string>();
+        var result = await new BaselineChangeDemonstrationService().RunAsync(baseline.Directory, log.Add);
+        Assert.Equal(2, result.SharedSessions);
+        Assert.Equal(2, result.SharedMessages);
+        Assert.Single(result.MessagesOnlyA);
+        Assert.Single(result.MessagesOnlyB);
+        Assert.Single(result.DifferentMessages);
+        Assert.Equal(before, await File.ReadAllBytesAsync(database));
+        Assert.Contains(log, line => line.Contains("Temporary demonstration copies removed"));
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new BaselineChangeDemonstrationService().RunAsync(_root, _ => { }));
+    }
+
     private static Dictionary<int, string> ReadIdentities(string path, string table, string idColumn)
     {
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder

@@ -676,6 +676,47 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task DemonstrateBaselineChangesAsync()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "baseline change demonstration";
+        var token = _activeOperationCancellation.Token;
+        string baseline = FirstBaselineDirectory;
+        try
+        {
+            Status = "Demonstrating changes on temporary copies; the selected baseline and live data will not be changed…";
+            AppendActivity(Status);
+            AppendActivity($"Selected experimental baseline: {baseline}");
+            var result = await Task.Run(() => new BaselineChangeDemonstrationService().RunAsync(baseline, AppendActivity, token), token);
+            AppendActivity($"Comparison: {result.SharedSessions} shared sessions; {result.SharedMessages} shared messages.");
+            AppendActivity($"New message only in A: {result.MessagesOnlyA.Count} (ID {result.MessagesOnlyA[0].SyncId:D}).");
+            AppendActivity($"New message only in B: {result.MessagesOnlyB.Count} (ID {result.MessagesOnlyB[0].SyncId:D}).");
+            AppendActivity($"Existing message with different content in B: {result.DifferentMessages.Count} (ID {result.DifferentMessages[0].SyncId:D}).");
+            AppendActivity("The two new messages have distinct IDs; the edited message keeps its shared ID. No merge, deletion detection, media comparison, or live data change was performed.");
+            Status = "Demonstration passed: the simulated additions and edit were detected.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Demonstration stopped; no merge was performed.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Demonstration failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
     private static string SafeTitle(string title) => string.IsNullOrWhiteSpace(title)
         ? "untitled" : title.Replace('\r', ' ').Replace('\n', ' ').Trim();
 

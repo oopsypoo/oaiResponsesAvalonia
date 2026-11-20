@@ -495,6 +495,47 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task RehearseGuardedRestoreAsync()
+    {
+        if (!CanPrepareIsolatedRestore) return;
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "guarded restore rehearsal";
+        Status = "Rehearsing replacement in a disposable workspace; live data will not be replaced…";
+        AppendActivity(Status);
+        try
+        {
+            string archive = LastDownloadedArchivePath;
+            var token = _activeOperationCancellation.Token;
+            var result = await Task.Run(() => new GuardedRestoreRehearsalService().RunAsync(archive, AppendActivity, token));
+            Status = "Guarded restore rehearsal passed. Live data was not replaced.";
+            AppendActivity(Status);
+            AppendActivity($"Rehearsal workspace: {result.Workspace}");
+            AppendActivity($"Disposable replacement: {result.ReplacedDirectory}");
+            AppendActivity($"Recovery copy of original disposable data: {result.RecoveryDirectory}");
+            AppendActivity($"Original: {result.Original.Sessions} sessions, {result.Original.Messages} messages, {result.Original.MediaReferences} media references.");
+            AppendActivity($"Replacement: {result.Replacement.Sessions} sessions, {result.Replacement.Messages} messages, {result.Replacement.MediaReferences} media references.");
+            AppendActivity("No live restore, automatic crash recovery, or merge is implemented.");
+        }
+        catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+        {
+            Status = "Restore rehearsal stopped. See the activity log for workspace and rollback details.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Restore rehearsal failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task UploadTestFileAsync()
     {
         if (IsBusy)

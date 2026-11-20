@@ -188,7 +188,8 @@ public sealed class IsolatedSnapshotRestoreService
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWrite
+            Mode = SqliteOpenMode.ReadWrite,
+            Pooling = false
         }.ToString());
         connection.Open();
 
@@ -235,7 +236,8 @@ public sealed class IsolatedSnapshotRestoreService
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadOnly
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
         }.ToString());
         connection.Open();
 
@@ -302,7 +304,8 @@ public sealed class IsolatedSnapshotRestoreService
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadOnly
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
         }.ToString());
         connection.Open();
         using var command = connection.CreateCommand();

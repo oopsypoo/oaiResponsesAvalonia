@@ -80,6 +80,10 @@
                    IsEnabled="{Binding CanPrepareIsolatedRestore}" />
            <TextBlock FontSize="12" TextWrapping="Wrap"
                       Text="Creates a separate test folder under ProtonSync/RestoreTests with localhistory.db, images, and files. It never overwrites or modifies the live app data, and it does not open the restored data in the main app." />
+           <Button Content="Run guarded restore rehearsal" HorizontalAlignment="Left"
+                   Command="{Binding RehearseGuardedRestoreCommand}" IsEnabled="{Binding CanPrepareIsolatedRestore}" />
+           <TextBlock FontSize="12" TextWrapping="Wrap"
+                      Text="Creates a fresh local snapshot and rehearses replacement in a disposable workspace; live data is not replaced. Additional disk space is required." />
         </StackPanel>
       </Border>
 

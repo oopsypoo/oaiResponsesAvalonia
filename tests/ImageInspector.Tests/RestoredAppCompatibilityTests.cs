@@ -82,6 +82,51 @@ public sealed class RestoredAppCompatibilityTests : IDisposable
         Assert.Contains("not a portable media path", error.Message);
     }
 
+    [Fact]
+    public async Task GuardedRehearsal_ReplacesDisposableCopyAndRetainsOriginal()
+    {
+        var (_, livePath) = await CreateRestoredSnapshotAsync();
+        string data = Path.GetDirectoryName(livePath)!;
+        string oldArchive = Assert.Single(Directory.GetFiles(Path.Combine(data, "ProtonSync", "Snapshots"), "*.zip"));
+        await using (var db = CreateContext(livePath))
+        {
+            var session = await db.Sessions.Include(s => s.Messages).SingleAsync();
+            session.Messages.Add(new ChatMessage { Role = "user", Content = "new live message" });
+            await db.SaveChangesAsync();
+        }
+        var service = new GuardedRestoreRehearsalService(Path.Combine(_root, "rehearsals"), new ConversationSnapshotService(data));
+        var result = await service.RunAsync(oldArchive, _ => { });
+        Assert.Equal(3, result.Original.Messages);
+        Assert.Equal(2, result.Replacement.Messages);
+        var counts = new RestorePreflightService();
+        Assert.Equal(3, (await counts.ReadCountsAsync(Path.Combine(result.RecoveryDirectory, "localhistory.db"))).Messages);
+        Assert.Equal(2, (await counts.ReadCountsAsync(Path.Combine(result.ReplacedDirectory, "localhistory.db"))).Messages);
+        Assert.Equal(3, (await counts.ReadCountsAsync(livePath)).Messages);
+    }
+
+    [Theory]
+    [InlineData("after-backup")]
+    [InlineData("after-replacement")]
+    public async Task GuardedRehearsal_FailureRollsBackDisposableOriginal(string failurePoint)
+    {
+        var (_, livePath) = await CreateRestoredSnapshotAsync();
+        string data = Path.GetDirectoryName(livePath)!;
+        string archive = Assert.Single(Directory.GetFiles(Path.Combine(data, "ProtonSync", "Snapshots"), "*.zip"));
+        var root = Path.Combine(_root, "rehearsals");
+        var service = new GuardedRestoreRehearsalService(root, new ConversationSnapshotService(data));
+        await Assert.ThrowsAsync<IOException>(() => service.RunCoreAsync(archive, _ => { }, point =>
+        {
+            if (point == failurePoint) throw new IOException("Simulated failure");
+        }));
+        string workspace = Assert.Single(Directory.GetDirectories(root));
+        Assert.True(File.Exists(Path.Combine(workspace, "current", "localhistory.db")));
+        Assert.False(Directory.Exists(Path.Combine(workspace, "recovery")));
+        Assert.Equal(2, (await new RestorePreflightService().ReadCountsAsync(Path.Combine(workspace, "current", "localhistory.db"))).Messages);
+        Assert.Equal(2, (await new RestorePreflightService().ReadCountsAsync(livePath)).Messages);
+        if (failurePoint == "after-replacement")
+            Assert.True(Directory.Exists(Path.Combine(workspace, "rejected-replacement")));
+    }
+
     private async Task<(IsolatedSnapshotRestoreResult Restore, string LiveDb)> CreateRestoredSnapshotAsync()
     {
         string data = Path.Combine(_root, "source");

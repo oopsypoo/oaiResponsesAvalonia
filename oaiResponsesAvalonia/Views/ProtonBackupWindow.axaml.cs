@@ -1,5 +1,7 @@
 using System;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using oaiProtonSync.Services;
 using oaiProtonSync.ViewModels;
@@ -29,6 +31,37 @@ public partial class ProtonBackupWindow : Window
             }
         };
         Closed += (_, _) => _viewModel.AuthenticationUrlDetected -= OnAuthenticationUrlDetected;
+    }
+
+    private async void BrowseFirstSnapshot(object? sender, RoutedEventArgs e)
+    {
+        var path = await PickSnapshotAsync();
+        if (path is not null) _viewModel.FirstComparisonArchive = path;
+    }
+
+    private async void BrowseSecondSnapshot(object? sender, RoutedEventArgs e)
+    {
+        var path = await PickSnapshotAsync();
+        if (path is not null) _viewModel.SecondComparisonArchive = path;
+    }
+
+    private async System.Threading.Tasks.Task<string?> PickSnapshotAsync()
+    {
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Select a conversation snapshot",
+                AllowMultiple = false,
+                FileTypeFilter = new[] { new FilePickerFileType("Snapshot ZIP") { Patterns = new[] { "*.zip" } } }
+            });
+            return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ReportActivity($"Could not select a snapshot: {ex.Message}");
+            return null;
+        }
     }
 
     private void OnAuthenticationUrlDetected(Uri authenticationUrl)

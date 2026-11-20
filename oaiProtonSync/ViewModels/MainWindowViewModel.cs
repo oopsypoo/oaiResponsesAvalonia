@@ -34,6 +34,12 @@ public partial class MainWindowViewModel : ObservableObject
     private string _lastDownloadedArchivePath = string.Empty;
 
     [ObservableProperty]
+    private string _firstComparisonArchive = string.Empty;
+
+    [ObservableProperty]
+    private string _secondComparisonArchive = string.Empty;
+
+    [ObservableProperty]
     private RemoteSnapshotFile? _selectedRemoteSnapshot;
 
     public ObservableCollection<RemoteSnapshotFile> RemoteSnapshots { get; } = [];
@@ -493,6 +499,67 @@ public partial class MainWindowViewModel : ObservableObject
             IsBusy = false;
         }
     }
+
+    [RelayCommand]
+    private async Task CompareSnapshotsAsync()
+    {
+        if (IsBusy) return;
+        if (!File.Exists(FirstComparisonArchive) || !File.Exists(SecondComparisonArchive))
+        {
+            Status = "Select two existing snapshot ZIP files before comparing.";
+            AppendActivity(Status);
+            return;
+        }
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "read-only snapshot comparison";
+        Status = "Verifying and comparing both snapshots; no live data will be changed…";
+        AppendActivity(Status);
+        string first = FirstComparisonArchive, second = SecondComparisonArchive;
+        var token = _activeOperationCancellation.Token;
+        try
+        {
+            var result = await Task.Run(() => new SnapshotComparisonService().CompareAsync(first, second, AppendActivity, token), token);
+            AppendActivity($"Snapshot A: {first} (ID {result.FirstSnapshotId}); {result.FirstSessions.Count} sessions, {result.FirstSessions.Sum(s => s.MessageCount)} messages.");
+            AppendActivity($"Snapshot B: {second} (ID {result.SecondSnapshotId}); {result.SecondSessions.Count} sessions, {result.SecondSessions.Sum(s => s.MessageCount)} messages.");
+            if (string.Equals(result.FirstSnapshotId, result.SecondSnapshotId, StringComparison.Ordinal))
+                AppendActivity("Warning: both archives report the same snapshot ID. Check that you selected snapshots from the intended devices.");
+            AppendActivity("Candidates are NOT confirmed matches. Matching uses equal non-empty titles or exact role and message content of at least 40 characters; IDs, timestamps, short messages and attachments are not matched. No message content is displayed.");
+            foreach (var candidate in result.Candidates)
+            {
+                token.ThrowIfCancellationRequested();
+                AppendActivity($"Candidate{(candidate.Ambiguous ? " (multiple candidates; ambiguous)" : "")}: A #{candidate.First.Id} [{SafeTitle(candidate.First.Title)}] ({candidate.First.MessageCount} messages) ↔ B #{candidate.Second.Id} [{SafeTitle(candidate.Second.Title)}] ({candidate.Second.MessageCount} messages); {candidate.SharedEvidence} distinct exact long-message match(es){(candidate.SameTitle ? "; same title" : "")}.");
+            }
+            var matchedFirst = result.Candidates.Select(c => c.First.Id).ToHashSet();
+            var matchedSecond = result.Candidates.Select(c => c.Second.Id).ToHashSet();
+            foreach (var session in result.FirstSessions.Where(s => !matchedFirst.Contains(s.Id)))
+                AppendActivity($"A — no candidate found: #{session.Id} [{SafeTitle(session.Title)}] ({session.MessageCount} messages).");
+            foreach (var session in result.SecondSessions.Where(s => !matchedSecond.Contains(s.Id)))
+                AppendActivity($"B — no candidate found: #{session.Id} [{SafeTitle(session.Title)}] ({session.MessageCount} messages).");
+            AppendActivity($"Summary: {result.Candidates.Count} candidate pair(s); {result.FirstSessions.Count - matchedFirst.Count} A and {result.SecondSessions.Count - matchedSecond.Count} B session(s) without a candidate. No candidate does not prove uniqueness; similar but non-identical messages are not detected.");
+            Status = "Read-only snapshot comparison completed. Review the activity output; no merge was performed.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Snapshot comparison stopped. No merge was performed.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Snapshot comparison failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    private static string SafeTitle(string title) => string.IsNullOrWhiteSpace(title)
+        ? "untitled" : title.Replace('\r', ' ').Replace('\n', ' ').Trim();
 
     [RelayCommand]
     private async Task RehearseGuardedRestoreAsync()

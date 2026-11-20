@@ -43,6 +43,21 @@
       <Button Content="Download and verify selected snapshot" HorizontalAlignment="Left" Command="{Binding DownloadAndVerifySnapshotCommand}" IsEnabled="{Binding CanDownloadSelectedSnapshot}" />
       <TextBlock FontSize="12" TextWrapping="Wrap" Text="Downloads are kept in ProtonSync/Verification. Verification checks the archive, manifest and SQLite integrity; no live data is replaced." />
       <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Compare two snapshots (read-only)" />
+      <TextBlock TextWrapping="Wrap" Text="Choose two local snapshot ZIPs, for example a Linux snapshot downloaded from Proton and a Windows snapshot created locally. Both are verified. Candidate matches are suggestions only; no merge or live-data changes occur." />
+      <TextBlock Text="Snapshot A" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding FirstComparisonArchive}" IsEnabled="{Binding CanStart}" PlaceholderText="Path to first snapshot ZIP" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseFirstSnapshot" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <TextBlock Text="Snapshot B" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding SecondComparisonArchive}" IsEnabled="{Binding CanStart}" PlaceholderText="Path to second snapshot ZIP" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseSecondSnapshot" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <Button Content="Compare snapshots" HorizontalAlignment="Left" Command="{Binding CompareSnapshotsCommand}" IsEnabled="{Binding CanStart}" />
+      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Review candidates and sessions without candidates in Activity. Titles and long exact message matches are evidence, not identity; no match does not prove uniqueness." />
+      <Separator />
       <TextBlock FontWeight="SemiBold" Text="Preview an isolated restore" />
       <TextBlock TextWrapping="Wrap" Text="Prepare and validate a separate copy of the downloaded snapshot, then compare its record counts with the current local database. This does not replace or merge live data. Matching counts do not prove that the data matches." />
       <Button Content="Prepare isolated restore and compare" HorizontalAlignment="Left" Command="{Binding PrepareIsolatedRestoreCommand}" IsEnabled="{Binding CanPrepareIsolatedRestore}" />

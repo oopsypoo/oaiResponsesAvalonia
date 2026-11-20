@@ -21,14 +21,30 @@ public static class IsolatedVisualTestService
     internal static string CreateCopy(string restoreDirectory, string restoreRoot, string visualTestRoot)
     {
         string source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(restoreDirectory));
-        EnsureDirectChild(source, restoreRoot, "restore_");
+        string? parent = Path.GetDirectoryName(source);
+        string normalizedRestoreRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(restoreRoot));
+        string proof;
+        if (string.Equals(parent, normalizedRestoreRoot, PathComparison))
+        {
+            EnsureDirectChild(source, restoreRoot, "restore_");
+            proof = Path.Combine(source, "manifest.json");
+        }
+        else
+        {
+            string syncRoot = Path.GetDirectoryName(normalizedRestoreRoot)
+                ?? throw new InvalidDataException("Cannot determine the baseline test root.");
+            string baselineRoot = Path.Combine(syncRoot, "BaselineTests");
+            if (parent is null) throw new InvalidDataException("The baseline directory is invalid.");
+            EnsureDirectChild(parent, baselineRoot, "baseline_");
+            EnsureDirectChild(source, parent, "restore_");
+            proof = Path.Combine(source, "experimental-baseline.json");
+        }
         EnsureNoLinks(source);
         string database = Path.Combine(source, "localhistory.db");
-        string manifest = Path.Combine(source, "manifest.json");
-        if (!File.Exists(database) || !File.Exists(manifest))
-            throw new InvalidDataException("Select a prepared restore folder containing localhistory.db and manifest.json.");
+        if (!File.Exists(database) || !File.Exists(proof))
+            throw new InvalidDataException("Select a prepared restore or experimental baseline folder with its database and marker.");
         EnsureNoLinks(database);
-        EnsureNoLinks(manifest);
+        EnsureNoLinks(proof);
         foreach (string suffix in new[] { "-wal", "-shm", "-journal" })
             if (File.Exists(database + suffix)) EnsureNoLinks(database + suffix);
 

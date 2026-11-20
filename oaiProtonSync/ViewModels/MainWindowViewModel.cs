@@ -40,6 +40,12 @@ public partial class MainWindowViewModel : ObservableObject
     private string _secondComparisonArchive = string.Empty;
 
     [ObservableProperty]
+    private bool _confirmIndependentHistories;
+
+    partial void OnFirstComparisonArchiveChanged(string value) => ConfirmIndependentHistories = false;
+    partial void OnSecondComparisonArchiveChanged(string value) => ConfirmIndependentHistories = false;
+
+    [ObservableProperty]
     private RemoteSnapshotFile? _selectedRemoteSnapshot;
 
     public ObservableCollection<RemoteSnapshotFile> RemoteSnapshots { get; } = [];
@@ -548,6 +554,56 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             Status = $"Snapshot comparison failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CreateInitialBaselineAsync()
+    {
+        if (IsBusy) return;
+        if (!ConfirmIndependentHistories)
+        {
+            Status = "Confirm the two histories were created independently before creating a disposable baseline.";
+            AppendActivity(Status);
+            return;
+        }
+        if (!File.Exists(FirstComparisonArchive) || !File.Exists(SecondComparisonArchive))
+        {
+            Status = "Select two existing snapshot ZIP files first.";
+            AppendActivity(Status);
+            return;
+        }
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "disposable initial baseline";
+        var token = _activeOperationCancellation.Token;
+        string first = FirstComparisonArchive, second = SecondComparisonArchive;
+        try
+        {
+            Status = "Preparing an experimental disposable baseline; live data will not be changed…";
+            AppendActivity(Status);
+            var result = await Task.Run(() => new InitialBaselineService().CreateAsync(first, second, AppendActivity, token), token);
+            Status = "Experimental baseline created. It is not ready for live restore or synchronization.";
+            AppendActivity(Status);
+            AppendActivity($"Baseline directory: {result.Directory}");
+            AppendActivity($"Combined records: {result.Sessions} sessions, {result.Messages} messages, {result.MediaReferences} media references.");
+            AppendActivity("Experimental identities are assigned only to existing sessions and messages; new changes and deletions are NOT tracked. Do not install this copy as live data.");
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Baseline preparation stopped; partial disposable files are removed when possible.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Baseline preparation failed: {ex.Message}";
             AppendActivity(Status);
         }
         finally

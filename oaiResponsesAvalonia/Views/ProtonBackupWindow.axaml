@@ -58,6 +58,11 @@
       <Button Content="Compare snapshots" HorizontalAlignment="Left" Command="{Binding CompareSnapshotsCommand}" IsEnabled="{Binding CanStart}" />
       <TextBlock FontSize="12" TextWrapping="Wrap" Text="Review candidates and sessions without candidates in Activity. Titles and long exact message matches are evidence, not identity; no match does not prove uniqueness." />
       <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Experimental initial baseline (disposable only)" />
+      <TextBlock TextWrapping="Wrap" Text="Combines the two selected snapshots as separate histories. No candidate matches does not prove independence. The result is for isolated inspection only: it cannot track later changes or deletions and must not replace live data." />
+      <CheckBox Content="I confirm these histories were created independently" IsChecked="{Binding ConfirmIndependentHistories}" IsEnabled="{Binding CanStart}" />
+      <Button Content="Create disposable baseline" HorizontalAlignment="Left" Command="{Binding CreateInitialBaselineCommand}" IsEnabled="{Binding CanStart}" />
+      <Separator />
       <TextBlock FontWeight="SemiBold" Text="Preview an isolated restore" />
       <TextBlock TextWrapping="Wrap" Text="Prepare and validate a separate copy of the downloaded snapshot, then compare its record counts with the current local database. This does not replace or merge live data. Matching counts do not prove that the data matches." />
       <Button Content="Prepare isolated restore and compare" HorizontalAlignment="Left" Command="{Binding PrepareIsolatedRestoreCommand}" IsEnabled="{Binding CanPrepareIsolatedRestore}" />

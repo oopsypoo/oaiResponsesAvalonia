@@ -207,8 +207,11 @@ public sealed class InitialBaselineTests : IDisposable
         Assert.Equal(1, result.Edited);
         Assert.Equal(1, result.Conflicts);
         Assert.Equal(0, result.RepeatedChanges);
-        Assert.Equal(6, result.Sessions);
-        Assert.Equal(6, result.Messages);
+        Assert.Equal(8, result.Sessions);
+        Assert.Equal(7, result.Messages);
+        Assert.Equal(2, result.Deletions);
+        Assert.Equal(1, result.DeleteConflicts);
+        Assert.Equal(0, result.RepeatedDeletions);
         Assert.Equal(before, await File.ReadAllBytesAsync(original));
         string visual = IsolatedVisualTestService.CreateCopy(result.ResultDirectory,
             Path.Combine(_root, "RestoreTests"), Path.Combine(_root, "VisualTests"));
@@ -221,10 +224,27 @@ public sealed class InitialBaselineTests : IDisposable
         Assert.Contains("Rehearsal: original conflicting edit", contents);
         Assert.DoesNotContain("Rehearsal: conflicting edit on A", contents);
         Assert.DoesNotContain("Rehearsal: conflicting edit on B", contents);
+        Assert.DoesNotContain("Rehearsal: delete this message", contents);
+        Assert.Contains("Rehearsal: original delete-versus-edit message", contents);
+        Assert.False(await output.Sessions.AnyAsync(s => s.Title == "[MERGE REHEARSAL] Session deletion"));
+        Assert.Equal(2L, await CountTombstonesAsync(Path.Combine(result.ResultDirectory, "localhistory.db")));
         await using var branchA = Context(Path.Combine(result.Workspace, "branch-A", "localhistory.db"), true);
         await using var branchB = Context(Path.Combine(result.Workspace, "branch-B", "localhistory.db"), true);
         Assert.True(await branchA.Messages.AnyAsync(m => m.Content == "Rehearsal: conflicting edit on A"));
         Assert.True(await branchB.Messages.AnyAsync(m => m.Content == "Rehearsal: conflicting edit on B"));
+        Assert.False(await branchA.Messages.AnyAsync(m => m.Content == "Rehearsal: original delete-versus-edit message"));
+        Assert.True(await branchB.Messages.AnyAsync(m => m.Content == "Rehearsal: edited on B while A deleted"));
+        Assert.Equal(3L, await CountTombstonesAsync(Path.Combine(result.Workspace, "branch-A", "localhistory.db")));
+        Assert.Equal(0L, await CountTombstonesAsync(Path.Combine(result.Workspace, "branch-B", "localhistory.db")));
+    }
+
+    private static async Task<long> CountTombstonesAsync(string path)
+    {
+        await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM ExperimentalRehearsalTombstone";
+        return (long)(await command.ExecuteScalarAsync())!;
     }
 
     private static Dictionary<int, string> ReadIdentities(string path, string table, string idColumn)

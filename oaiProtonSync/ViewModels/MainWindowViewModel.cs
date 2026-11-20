@@ -732,10 +732,12 @@ public partial class MainWindowViewModel : ObservableObject
             var result = await Task.Run(() => new DisposableThreeWayMergeDemoService().RunAsync(FirstBaselineDirectory, AppendActivity, token), token);
             AppendActivity($"Simulated changes applied: {result.Added} additions and {result.Edited} one-sided edit; {result.Conflicts} conflict left unresolved.");
             AppendActivity($"Repeat application: {result.RepeatedChanges} changes; the conflict remains unresolved.");
+            AppendActivity($"Deletion rehearsal: {result.Deletions} synthetic deletions applied (one message and one empty session); {result.DeleteConflicts} delete-versus-edit conflict left unresolved.");
+            AppendActivity($"Repeated deletion application: {result.RepeatedDeletions} deletions; deletion markers retained and the conflict remains unresolved.");
             AppendActivity($"Validated disposable result: {result.Sessions} sessions, {result.Messages} messages.");
             AppendActivity($"Result for isolated visual test: {result.ResultDirectory}");
             AppendActivity($"Workspace (including both conflict versions): {result.Workspace}");
-            AppendActivity("Only synthetic records were merged. Deletions, real independent changes, media changes and conversation divergence are not handled. Never install this result as live data.");
+            AppendActivity("Only synthetic records were merged or deleted. Real deletions, turns, media changes, conflict resolution and conversation divergence are not handled. Never install this result as live data.");
             Status = "Disposable merge rehearsal passed; no live data was changed.";
             AppendActivity(Status);
         }

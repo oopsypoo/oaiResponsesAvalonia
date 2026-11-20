@@ -6,7 +6,7 @@ using oaiResponsesAvalonia.Services;
 
 namespace oaiProtonSync.Services;
 
-public sealed record DisposableMergeDemoResult(string ResultDirectory, string Workspace, int Added, int Edited, int Conflicts, int RepeatedChanges, int Sessions, int Messages);
+public sealed record DisposableMergeDemoResult(string ResultDirectory, string Workspace, int Added, int Edited, int Conflicts, int RepeatedChanges, int Sessions, int Messages, int Deletions, int DeleteConflicts, int RepeatedDeletions);
 
 /// <summary>
 /// A controlled rehearsal, not a general database merge. Only the synthetic messages
@@ -53,16 +53,23 @@ public sealed class DisposableThreeWayMergeDemoService
             // Validate all pre-existing identities before creating the simulated changes.
             await new BaselineIdentityComparisonService().CompareAsync(baseDir, baseDir, token);
             var setup = await CreateScenarioAsync(baseDb, token);
+            var deletion = await DisposableDeletionRehearsal.SetupAsync(baseDb, token);
             CopyDatabase(baseDb, aDb);
             CopyDatabase(baseDb, bDb);
             CopyDatabase(baseDb, resultDb);
             report("Simulating independent additions, a one-sided edit, and conflicting edits to synthetic conversations.");
             await ChangeBranchAsync(aDb, setup, true, token);
             await ChangeBranchAsync(bDb, setup, false, token);
+            report("Simulating a message deletion, a session deletion, and a delete-versus-edit conflict on synthetic records…");
+            await DisposableDeletionRehearsal.ChangeBranchesAsync(aDb, bDb, deletion, token);
+            var deleted = await DisposableDeletionRehearsal.ApplyAsync(baseDb, aDb, bDb, resultDb, deletion, token);
+            if (deleted != (2, 1)) throw new InvalidDataException("Unexpected deletion rehearsal result.");
             var merge = await ApplyScenarioAsync(baseDb, aDb, bDb, resultDb, setup, token);
             if (merge != (2, 1, 1)) throw new InvalidDataException("Unexpected rehearsal result; the disposable result was not retained.");
             report("Reapplying the same simulated changes to check for duplicates…");
             var repeated = await ApplyScenarioAsync(baseDb, aDb, bDb, resultDb, setup, token);
+            var repeatedDeletion = await DisposableDeletionRehearsal.ApplyAsync(baseDb, aDb, bDb, resultDb, deletion, token);
+            if (repeatedDeletion != (0, 1)) throw new InvalidDataException("Repeated deletion was not idempotent.");
             if (repeated != (0, 0, 1)) throw new InvalidDataException("Repeated application was not idempotent; the disposable result was not retained.");
             token.ThrowIfCancellationRequested();
             await using (var connection = new SqliteConnection(Connection(resultDb, true)))
@@ -80,7 +87,7 @@ public sealed class DisposableThreeWayMergeDemoService
                 Path.Combine(resultDir, "images"), Path.Combine(resultDir, "files"), "experimental", 0, "ok"), token);
             await new BaselineIdentityComparisonService().CompareAsync(resultDir, resultDir, token);
             return new DisposableMergeDemoResult(resultDir, workspace, merge.Item1, merge.Item2, merge.Item3,
-                repeated.Item1 + repeated.Item2, check.Sessions, check.Messages);
+                repeated.Item1 + repeated.Item2, check.Sessions, check.Messages, deleted.Item1, deleted.Item2, repeatedDeletion.Item1);
         }
         catch
         {

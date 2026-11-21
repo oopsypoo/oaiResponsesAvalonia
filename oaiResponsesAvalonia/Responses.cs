@@ -193,6 +193,7 @@ namespace oaiResponsesAvalonia
                 !developerToolsOptions.ReadOnlyOnly &&
                 (developerToolsOptions.CreateDotNetSolutionEnabled ||
                  developerToolsOptions.BuildDotNetProjectEnabled ||
+                 developerToolsOptions.TestDotNetProjectEnabled ||
                  developerToolsOptions.RunDotNetProjectEnabled);
 
             string projectOperationInstructions = string.Empty;
@@ -235,6 +236,7 @@ namespace oaiResponsesAvalonia
         {
             return string.Equals(toolName, "create_dotnet_solution", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(toolName, "build_dotnet_project", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(toolName, "test_dotnet_project", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(toolName, "clean_dotnet_project", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(toolName, "rebuild_dotnet_project", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(toolName, "run_dotnet_project", StringComparison.OrdinalIgnoreCase) ||
@@ -450,6 +452,27 @@ namespace oaiResponsesAvalonia
                             output_directory = new { type = "string", description = "Name of one new direct child folder under the workspace root; not a path." }
                         },
                         required = new[] { "solution_name", "project_name", "template", "output_directory" },
+                        additionalProperties = false
+                    }
+                });
+            }
+
+            if (!developerToolsOptions.ReadOnlyOnly && developerToolsOptions.TestDotNetProjectEnabled)
+            {
+                tools.Add(new
+                {
+                    type = "function",
+                    name = "test_dotnet_project",
+                    description = "Run tests in an existing .csproj, .sln, or .slnx file inside the workspace with dotnet test and return bounded output. A successful command does not necessarily mean tests were discovered.",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            target_path = new { type = "string", description = "Relative .csproj, .sln, or .slnx path inside the workspace root." },
+                            configuration = new { type = "string", description = "Optional Debug or Release configuration. Defaults to Debug." }
+                        },
+                        required = new[] { "target_path" },
                         additionalProperties = false
                     }
                 });

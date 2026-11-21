@@ -19,6 +19,7 @@ namespace oaiResponsesAvalonia.Services
         public bool RunDiagnosticsEnabled { get; set; } = true;
         public bool CreateDotNetSolutionEnabled { get; set; } = true;
         public bool BuildDotNetProjectEnabled { get; set; } = true;
+        public bool TestDotNetProjectEnabled { get; set; } = true;
         public bool RunDotNetProjectEnabled { get; set; } = true;
 
         public bool WriteProjectFileEnabled { get; set; } = true;

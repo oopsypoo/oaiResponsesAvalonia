@@ -4,6 +4,10 @@ Notable changes to the project are recorded here. Release version numbers have n
 
 ## \[Unreleased]
 
+### Added
+
+* Added a Developer Tools function for running .NET project and solution tests with `dotnet test`.
+
 ### Changed
 
 * Rewrote the project README to describe the application and its current capabilities.

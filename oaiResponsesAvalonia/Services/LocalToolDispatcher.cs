@@ -74,6 +74,11 @@ namespace oaiResponsesAvalonia.Services
                         GetString(root, "target_path"),
                         GetString(root, "configuration"));
 
+                case "test_dotnet_project":
+                    return await _dotNetProjectService.TestDotNetProjectAsync(
+                        GetString(root, "target_path"),
+                        GetString(root, "configuration"));
+
                 case "clean_dotnet_project":
                     return await _dotNetProjectService.CleanDotNetProjectAsync(
                         GetString(root, "target_path"),

@@ -191,6 +191,40 @@ namespace oaiResponsesAvalonia.Services
             }
         }
 
+        public async Task<string> TestDotNetProjectAsync(string targetPath, string configuration)
+        {
+            try
+            {
+                EnsureExecutionAllowed(_options.TestDotNetProjectEnabled, "test_dotnet_project");
+                string targetFullPath = ResolveBuildTarget(targetPath, "test_dotnet_project");
+                string normalizedConfiguration = NormalizeConfiguration(configuration);
+
+                ProcessExecutionResult result = await _dotNetCli.ExecuteAsync(
+                    Path.GetDirectoryName(targetFullPath) ?? _guard.RootFullPath,
+                    TimeSpan.FromSeconds(_options.BuildTimeoutSeconds),
+                    "test", targetFullPath, "--configuration", normalizedConfiguration, "--verbosity", "minimal");
+
+                return Serialize(new
+                {
+                    ok = result.Ok,
+                    operation = "test_dotnet_project",
+                    target_path = _guard.ToRelativePath(targetFullPath),
+                    configuration = normalizedConfiguration,
+                    exit_code = result.ExitCode,
+                    timed_out = result.TimedOut,
+                    duration_ms = result.DurationMs,
+                    output_truncated = result.OutputTruncated,
+                    standard_output = result.StandardOutput,
+                    standard_error = result.StandardError,
+                    error = result.Error
+                });
+            }
+            catch (Exception ex)
+            {
+                return Failure(ex);
+            }
+        }
+
         public async Task<string> CleanDotNetProjectAsync(string targetPath, string configuration)
         {
             try
@@ -323,7 +357,7 @@ namespace oaiResponsesAvalonia.Services
                 throw new InvalidOperationException(toolName + " is not enabled.");
         }
 
-        private string ResolveBuildTarget(string targetPath)
+        private string ResolveBuildTarget(string targetPath, string toolName = "build_dotnet_project")
         {
             string fullPath = _guard.ResolveRelativeFile(targetPath);
             string extension = Path.GetExtension(fullPath);
@@ -331,11 +365,11 @@ namespace oaiResponsesAvalonia.Services
                 !string.Equals(extension, ".sln", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(extension, ".slnx", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("build_dotnet_project requires a .csproj, .sln, or .slnx path.");
+                throw new InvalidOperationException(toolName + " requires a .csproj, .sln, or .slnx path.");
             }
 
             if (!File.Exists(fullPath))
-                throw new FileNotFoundException("Build target not found.", targetPath);
+                throw new FileNotFoundException(toolName == "test_dotnet_project" ? "Test target not found." : "Build target not found.", targetPath);
 
             return fullPath;
         }

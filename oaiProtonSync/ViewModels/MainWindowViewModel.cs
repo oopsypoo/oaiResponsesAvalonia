@@ -372,7 +372,8 @@ public partial class MainWindowViewModel : ObservableObject
                 "ProtonSync",
                 "Snapshots");
             var localArchives = Directory.Exists(localSnapshotsDirectory)
-                ? Directory.EnumerateFiles(localSnapshotsDirectory, "oaiResponsesAvalonia_snapshot_*.zip", SearchOption.TopDirectoryOnly).ToList()
+                ? Directory.EnumerateFiles(localSnapshotsDirectory, "*", SearchOption.TopDirectoryOnly)
+                    .Where(path => ConversationSnapshotService.IsSnapshotFileName(Path.GetFileName(path))).ToList()
                 : [];
             if (!string.IsNullOrWhiteSpace(LastSnapshotPath) && File.Exists(LastSnapshotPath) &&
                 !localArchives.Contains(LastSnapshotPath, StringComparer.OrdinalIgnoreCase))
@@ -1069,7 +1070,7 @@ public partial class MainWindowViewModel : ObservableObject
         return $"{size:0.##} {units[unit]}";
     }
 
-    private static List<RemoteSnapshotFile> ParseRemoteSnapshots(string json, string remoteFolder)
+    internal static List<RemoteSnapshotFile> ParseRemoteSnapshots(string json, string remoteFolder)
     {
         using var document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Array)
@@ -1093,10 +1094,7 @@ public partial class MainWindowViewModel : ObservableObject
                 _ => null
             };
 
-            if (string.IsNullOrWhiteSpace(name) ||
-                !name.StartsWith("oaiResponsesAvalonia_snapshot_", StringComparison.OrdinalIgnoreCase) ||
-                !name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains('/') || name.Contains('\\'))
+            if (string.IsNullOrWhiteSpace(name) || !ConversationSnapshotService.IsSnapshotFileName(name))
             {
                 continue;
             }

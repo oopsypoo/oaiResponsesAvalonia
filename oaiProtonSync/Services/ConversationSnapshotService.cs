@@ -44,6 +44,23 @@ public sealed class ConversationSnapshotService
         return $"{timestamp}_{id:N}";
     }
 
+    internal static string CreateSnapshotFileName(string hostname, string snapshotId)
+    {
+        string safeHostname = new string(hostname.Select(c =>
+            char.IsAsciiLetterOrDigit(c) || c is '-' or '.' ? c : '-').ToArray()).Trim('-', '.');
+        if (safeHostname.Length == 0)
+            throw new InvalidOperationException("The machine hostname cannot be represented in a snapshot filename.");
+        if (safeHostname.Length > 63)
+            safeHostname = safeHostname[..63].TrimEnd('-', '.');
+        return $"snapshot_{safeHostname}_{snapshotId}.zip";
+    }
+
+    internal static bool IsSnapshotFileName(string name) =>
+        !name.Contains('/') && !name.Contains('\\') &&
+        name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
+        (name.StartsWith("snapshot_", StringComparison.OrdinalIgnoreCase) ||
+         name.StartsWith("oaiResponsesAvalonia_snapshot_", StringComparison.OrdinalIgnoreCase));
+
     private static ConversationSnapshotResult Create(string dataDirectory, Action<string> reportProgress, CancellationToken cancellationToken)
     {
         string databasePath = Path.Combine(dataDirectory, "localhistory.db");
@@ -55,7 +72,7 @@ public sealed class ConversationSnapshotService
 
         string snapshotId = CreateSnapshotId(DateTimeOffset.Now, Guid.NewGuid());
         string workingDirectory = Path.Combine(snapshotsDirectory, $".working_{snapshotId}");
-        string archivePath = Path.Combine(snapshotsDirectory, $"oaiResponsesAvalonia_snapshot_{snapshotId}.zip");
+        string archivePath = Path.Combine(snapshotsDirectory, CreateSnapshotFileName(Environment.MachineName, snapshotId));
         string temporaryArchivePath = archivePath + ".tmp";
         string snapshotDatabasePath = Path.Combine(workingDirectory, "localhistory.db");
         string mediaDirectory = Path.Combine(workingDirectory, "media");

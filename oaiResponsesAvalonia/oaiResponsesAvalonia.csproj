@@ -30,6 +30,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="ImageInspector.Tests" />
+    <InternalsVisibleTo Include="SyncBatch" />
     <!-- Compile the prototype's proven services once, in the main assembly. -->
     <Using Include="System" />
     <Using Include="System.Collections.Generic" />

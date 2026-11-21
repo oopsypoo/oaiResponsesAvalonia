@@ -1,10 +1,13 @@
 using System;
+using System.IO;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using oaiProtonSync.Services;
 using oaiProtonSync.ViewModels;
+using oaiResponsesAvalonia.Services;
 
 namespace oaiResponsesAvalonia.Views;
 
@@ -97,6 +100,41 @@ public partial class ProtonBackupWindow : Window
             _viewModel.ReportActivity($"Could not select a baseline folder: {ex.Message}");
             return null;
         }
+    }
+
+    private async void BrowseVisualTest(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var options = new FolderPickerOpenOptions { Title = "Select a prepared isolated restore folder", AllowMultiple = false };
+            if (Directory.Exists(IsolatedVisualTestService.RestoreRoot))
+                options.SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(IsolatedVisualTestService.RestoreRoot);
+            var folders = await StorageProvider.OpenFolderPickerAsync(options);
+            if (folders.Count > 0)
+                RestorePath.Text = folders[0].TryGetLocalPath() ?? string.Empty;
+        }
+        catch (Exception ex) { VisualTestStatus.Text = $"Could not select a folder: {ex.Message}"; }
+    }
+
+    private async void OpenVisualTest(object? sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(RestorePath.Text))
+        {
+            VisualTestStatus.Text = "Choose a prepared restore folder first.";
+            return;
+        }
+
+        OpenTestButton.IsEnabled = false;
+        VisualTestStatus.Text = "Creating a disposable copy and checking media references…";
+        try
+        {
+            string source = RestorePath.Text;
+            string copy = await Task.Run(() => IsolatedVisualTestService.CreateCopy(source));
+            IsolatedVisualTestService.Launch(copy);
+            VisualTestStatus.Text = $"Started the isolated test. Disposable copy: {copy}";
+        }
+        catch (Exception ex) { VisualTestStatus.Text = $"Could not start the isolated test: {ex.Message}"; }
+        finally { OpenTestButton.IsEnabled = true; }
     }
 
     private void OnAuthenticationUrlDetected(Uri authenticationUrl)

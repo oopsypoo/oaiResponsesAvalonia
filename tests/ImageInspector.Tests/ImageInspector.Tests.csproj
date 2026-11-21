@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../oaiResponsesAvalonia/oaiResponsesAvalonia.csproj" />
+    <ProjectReference Include="../SyncBatch/SyncBatch.csproj" />
     <Compile Include="../../oaiResponsesAvalonia/Views/ImageInspectorGeometry.cs" Link="ImageInspectorGeometry.cs" />
     <Using Include="Xunit" />
   </ItemGroup>

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using oaiProtonSync.Services;
+using oaiProtonSync.ViewModels;
 
 namespace ImageInspector.Tests;
 
@@ -24,6 +25,34 @@ public sealed class IsolatedSnapshotRestoreTests : IDisposable
         string snapshotId = ConversationSnapshotService.CreateSnapshotId(localTime, id);
 
         Assert.Equal($"{expectedTimestamp}_03f554b25492460ea308b22b7def840d", snapshotId);
+    }
+
+    [Theory]
+    [InlineData("linux-box", "linux-box")]
+    [InlineData("Windows PC", "Windows-PC")]
+    [InlineData("../device\\name", "device-name")]
+    public void SnapshotName_ContainsPortableHostname(string hostname, string expected)
+    {
+        string name = ConversationSnapshotService.CreateSnapshotFileName(hostname, "timestamp_id");
+        Assert.Equal($"snapshot_{expected}_timestamp_id.zip", name);
+        Assert.True(ConversationSnapshotService.IsSnapshotFileName(name));
+    }
+
+    [Fact]
+    public void SnapshotListing_AcceptsNewAndLegacyNames()
+    {
+        const string listing = """
+            [
+              {"type":"file","name":"snapshot_laptop_timestamp_id.zip"},
+              {"type":"file","name":"oaiResponsesAvalonia_snapshot_timestamp_id.zip"},
+              {"type":"file","name":"snapshot_bad/name.zip"},
+              {"type":"file","name":"other.zip"}
+            ]
+            """;
+        var snapshots = MainWindowViewModel.ParseRemoteSnapshots(listing, "/backups");
+        Assert.Equal(2, snapshots.Count);
+        Assert.Contains(snapshots, x => x.Name == "snapshot_laptop_timestamp_id.zip");
+        Assert.Contains(snapshots, x => x.Name == "oaiResponsesAvalonia_snapshot_timestamp_id.zip");
     }
 
     [Fact]
@@ -62,6 +91,7 @@ public sealed class IsolatedSnapshotRestoreTests : IDisposable
         string packagedPath = $"media/{Hash(content)}_first.txt";
         var snapshotService = new ConversationSnapshotService(dataDirectory);
         ConversationSnapshotResult snapshot = await snapshotService.CreateAsync(_ => { });
+        Assert.StartsWith("snapshot_", Path.GetFileName(snapshot.ArchivePath));
         using (var archive = ZipFile.OpenRead(snapshot.ArchivePath))
             Assert.DoesNotContain(archive.Entries, entry => entry.FullName.EndsWith("-wal") || entry.FullName.EndsWith("-shm"));
         var service = new IsolatedSnapshotRestoreService(Path.Combine(_root, "restores"));

@@ -1,0 +1,49 @@
+command: proton-drive filesystem -h
+Usage:
+    filesystem list [-t TYPE] path
+    filesystem info path
+    filesystem size path
+    filesystem create-folder parentPath name
+    filesystem upload [-f STRATEGY] [-d STRATEGY] [-t] localPath... parentPath
+    filesystem download [-f STRATEGY] [-d STRATEGY] path... localFolder
+    filesystem rename path newName
+    filesystem copy [-n NAME] sourcePath... targetParentPath
+    filesystem move sourcePath... targetParentPath
+    filesystem trash path...
+    filesystem restore path...
+    filesystem delete path...
+    filesystem empty-trash
+
+General options:
+    -h|--help: Show extended help for a command (example fs upload --help)
+    -j|--json: Output in JSON format
+    -v|--verbose: Enable verbose output
+
+Any short names are supported (as long as they are unique):
+    filesystem upload -> fs up
+    sharing invite -> s inv
+
+command: proton-drive filesystem upload -h
+Usage:
+    filesystem upload [-f STRATEGY] [-d STRATEGY] [-t] localPath... parentPath
+
+Uploads files and folders. It prompts for conflict resolution unless a strategy
+option is set. Files with the same content are automatically skipped.
+
+Options:
+    -f, --file-conflict-strategy STRATEGY
+                             Conflict strategy applied to files. Values:
+                             * create-new-revision: Create a new revision of the
+                             existing file.
+                             * rename: Add a unique suffix to the name.
+                             * replace: Trash the remote file or folder and
+                             upload the local copy.
+                             * skip: Skip the conflicting file or folder.
+    -d, --folder-conflict-strategy STRATEGY
+                             Conflict strategy applied to folders. Values:
+                             * merge: Merge folder contents.
+                             * rename: Add a unique suffix to the name.
+                             * replace: Trash the remote file or folder and
+                             upload the local copy.
+                             * skip: Skip the conflicting file or folder.
+    -t, --skip-thumbnails    Skip generating thumbnails. (default: false)

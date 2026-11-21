@@ -30,6 +30,15 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="ImageInspector.Tests" />
+    <!-- Compile the prototype's proven services once, in the main assembly. -->
+    <Using Include="System" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.IO" />
+    <Using Include="System.Linq" />
+    <Using Include="System.Threading" />
+    <Using Include="System.Threading.Tasks" />
+    <Compile Include="../oaiProtonSync/Services/*.cs" Link="DataSync/Proton/%(Filename)%(Extension)" />
+    <Compile Include="../oaiProtonSync/ViewModels/MainWindowViewModel.cs" Link="DataSync/Proton/MainWindowViewModel.cs" />
   </ItemGroup>
 
   <ItemGroup>

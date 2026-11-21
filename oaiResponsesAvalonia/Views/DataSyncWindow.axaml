@@ -1,0 +1,21 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="oaiResponsesAvalonia.Views.DataSyncWindow"
+        Title="Data Sync — experimental" Width="660" Height="430"
+        MinWidth="500" MinHeight="300" WindowStartupLocation="CenterOwner">
+    <Grid Margin="18" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" RowSpacing="12">
+        <TextBlock FontSize="19" FontWeight="SemiBold" Text="Data Sync" />
+        <TextBlock Grid.Row="1" TextWrapping="Wrap"
+                   Text="Choose a provider for experimental conversation backup and verification. Live restore and two-way sync are not available." />
+        <Button Grid.Row="2" Content="Proton Drive…" HorizontalAlignment="Left" Click="OpenProton_Click" />
+        <TextBlock Grid.Row="3" TextWrapping="Wrap"
+                   Text="Visual test: choose a prepared restore or experimental baseline folder. A separate disposable copy is opened in another application window; the live database is not replaced." />
+        <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox x:Name="RestorePath" PlaceholderText="Select a restore_... folder" IsReadOnly="True" />
+            <Button Grid.Column="1" Content="Browse…" Click="Browse_Click" />
+        </Grid>
+        <Button Grid.Row="5" x:Name="OpenTestButton" HorizontalAlignment="Left"
+                Content="Open isolated visual test" Click="OpenTest_Click" />
+        <TextBlock Grid.Row="6" x:Name="Status" TextWrapping="Wrap" />
+    </Grid>
+</Window>

@@ -1,0 +1,1165 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Text;
+using System.Text.Json;
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using oaiProtonSync.Services;
+
+namespace oaiProtonSync.ViewModels;
+
+public partial class MainWindowViewModel : ObservableObject
+{
+    private readonly ProtonDriveCliService _cliService;
+    private readonly ConversationSnapshotService _snapshotService;
+    private readonly SnapshotVerificationService _verificationService;
+    private readonly IsolatedSnapshotRestoreService _restoreService;
+    private CancellationTokenSource? _activeOperationCancellation;
+    private string _activeOperationName = "CLI operation";
+
+    [ObservableProperty]
+    private string _executable = "proton-drive";
+
+    [ObservableProperty]
+    private string _remoteFolder = "/my-files/oaiResponsesAvalonia";
+
+    [ObservableProperty]
+    private string _localFilePath = string.Empty;
+
+    [ObservableProperty]
+    private string _lastSnapshotPath = string.Empty;
+
+    [ObservableProperty]
+    private string _lastDownloadedArchivePath = string.Empty;
+
+    [ObservableProperty]
+    private string _firstComparisonArchive = string.Empty;
+
+    [ObservableProperty]
+    private string _secondComparisonArchive = string.Empty;
+
+    [ObservableProperty]
+    private string _firstBaselineDirectory = string.Empty;
+
+    [ObservableProperty]
+    private string _secondBaselineDirectory = string.Empty;
+
+    [ObservableProperty]
+    private string _sharedBaselineDirectory = string.Empty;
+
+    private string _lastRehearsalWorkspace = string.Empty;
+
+    [ObservableProperty]
+    private bool _confirmIndependentHistories;
+
+    partial void OnFirstComparisonArchiveChanged(string value) => ConfirmIndependentHistories = false;
+    partial void OnSecondComparisonArchiveChanged(string value) => ConfirmIndependentHistories = false;
+
+    [ObservableProperty]
+    private RemoteSnapshotFile? _selectedRemoteSnapshot;
+
+    public ObservableCollection<RemoteSnapshotFile> RemoteSnapshots { get; } = [];
+
+    [ObservableProperty]
+    private string _status = "Ready. CLI authentication is managed by Proton Drive.";
+
+    [ObservableProperty]
+    private string _authenticationStatus = "Not checked";
+
+    [ObservableProperty]
+    private string _activityLog = string.Empty;
+
+    [ObservableProperty]
+    private bool _isBusy;
+
+    public MainWindowViewModel(
+        ProtonDriveCliService cliService,
+        ConversationSnapshotService snapshotService,
+        SnapshotVerificationService verificationService,
+        IsolatedSnapshotRestoreService restoreService)
+    {
+        _cliService = cliService;
+        _snapshotService = snapshotService;
+        _verificationService = verificationService;
+        _restoreService = restoreService;
+        AppendActivity("Ready. Create a local snapshot before uploading conversation data.");
+    }
+
+    public bool CanStart => !IsBusy;
+
+    public bool HasSnapshot => !string.IsNullOrWhiteSpace(LastSnapshotPath);
+
+    public bool CanUploadSnapshot => !IsBusy && HasSnapshot;
+
+    public bool CanDownloadSelectedSnapshot => !IsBusy && SelectedRemoteSnapshot is not null;
+
+    public bool CanPrepareIsolatedRestore => !IsBusy && !string.IsNullOrWhiteSpace(LastDownloadedArchivePath) && File.Exists(LastDownloadedArchivePath);
+
+    partial void OnLastDownloadedArchivePathChanged(string value) =>
+        OnPropertyChanged(nameof(CanPrepareIsolatedRestore));
+
+    partial void OnSelectedRemoteSnapshotChanged(RemoteSnapshotFile? value) =>
+        OnPropertyChanged(nameof(CanDownloadSelectedSnapshot));
+
+    partial void OnLastSnapshotPathChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasSnapshot));
+        OnPropertyChanged(nameof(CanUploadSnapshot));
+        OnPropertyChanged(nameof(CanDownloadSelectedSnapshot));
+    }
+
+    public event Action? ActivityWindowRequested;
+
+    public event Action<Uri>? AuthenticationUrlDetected;
+
+    partial void OnIsBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanStart));
+        OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanUploadSnapshot));
+        OnPropertyChanged(nameof(CanDownloadSelectedSnapshot));
+        OnPropertyChanged(nameof(CanPrepareIsolatedRestore));
+    }
+
+    public bool CanStop => IsBusy;
+
+    [RelayCommand]
+    private void OpenActivityWindow() => ActivityWindowRequested?.Invoke();
+
+    [RelayCommand]
+    private Task LoginAsync() => RunCliOperationAsync(
+        "Starting Proton Drive login. Waiting for browser authentication…",
+        ["auth", "login"],
+        openAuthenticationUrl: true,
+        onCompleted: (exitCode, _, _) =>
+        {
+            if (exitCode == 0)
+            {
+                AuthenticationStatus = "Login command completed. Check status to verify remote access.";
+                Status = AuthenticationStatus;
+            }
+            else
+            {
+                AuthenticationStatus = "Login did not complete. Check status to verify remote access.";
+                Status = $"Login failed with exit code {exitCode}. See activity output.";
+            }
+            AppendActivity(Status);
+        });
+
+    [RelayCommand]
+    private Task LogoutAsync() => RunCliOperationAsync(
+        "Logging out of Proton Drive…",
+        ["auth", "logout"],
+        onCompleted: (exitCode, _, _) =>
+        {
+            if (exitCode == 0)
+            {
+                AuthenticationStatus = "Signed out (logout command completed).";
+                Status = AuthenticationStatus;
+            }
+            else
+            {
+                AuthenticationStatus = "Logout did not complete. Check status to verify remote access.";
+                Status = $"Logout failed with exit code {exitCode}. See activity output.";
+            }
+            AppendActivity(Status);
+        });
+
+    [RelayCommand]
+    private Task CheckAuthenticationStatusAsync()
+    {
+        return RunCliOperationAsync(
+            "Checking login status by listing the Proton Drive root…",
+            ["filesystem", "list", "/my-files", "-j"],
+            onCompleted: (exitCode, standardOutput, allOutput) =>
+            {
+                if (exitCode == 0 && IsJsonArray(standardOutput))
+                {
+                    AuthenticationStatus = "Signed in; Proton Drive root is accessible.";
+                    Status = AuthenticationStatus;
+                    AppendActivity(AuthenticationStatus);
+                }
+                else if (ContainsAuthenticationRequiredMessage(allOutput))
+                {
+                    AuthenticationStatus = "Signed out; Proton Drive requires login.";
+                    Status = AuthenticationStatus;
+                    AppendActivity(AuthenticationStatus);
+                }
+                else
+                {
+                    AuthenticationStatus = "Unable to determine login status. Check CLI output and folder access.";
+                    Status = AuthenticationStatus;
+                    AppendActivity(AuthenticationStatus);
+                }
+            });
+    }
+
+    [RelayCommand]
+    private void StopOperation()
+    {
+        var cancellation = _activeOperationCancellation;
+        if (cancellation is null || cancellation.IsCancellationRequested)
+        {
+            return;
+        }
+
+        Status = $"Stopping '{_activeOperationName}'…";
+        AppendActivity(Status);
+        cancellation.Cancel();
+    }
+
+    [RelayCommand]
+    private async Task CreateSnapshotAsync()
+    {
+        if (IsBusy)
+            return;
+
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "conversation snapshot creation";
+        LastSnapshotPath = string.Empty;
+        Status = "Creating a local conversation snapshot. This may take a while…";
+        AppendActivity(Status);
+        AppendActivity($"Reading the app database at {oaiResponsesAvalonia.Services.AppPaths.DatabaseFilePath}");
+
+        try
+        {
+            var result = await _snapshotService.CreateAsync(
+                AppendActivity,
+                _activeOperationCancellation.Token);
+            LastSnapshotPath = result.ArchivePath;
+            Status = $"Local snapshot ready ({result.MediaFileCount} unique media file(s), {FormatSize(result.ArchiveSize)}).";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+        {
+            Status = "Snapshot creation stopped. No upload was started.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Snapshot creation failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private Task UploadSnapshotAsync()
+    {
+        if (string.IsNullOrWhiteSpace(LastSnapshotPath) || !File.Exists(LastSnapshotPath))
+        {
+            Status = "Create a local snapshot before uploading it.";
+            AppendActivity(Status);
+            return Task.CompletedTask;
+        }
+
+        if (string.IsNullOrWhiteSpace(RemoteFolder))
+        {
+            Status = "Enter a Proton Drive destination folder.";
+            AppendActivity(Status);
+            return Task.CompletedTask;
+        }
+
+        return RunCliOperationAsync(
+            $"Uploading conversation snapshot to {RemoteFolder}. This may take a while…",
+            [
+                "filesystem", "upload",
+                "--file-conflict-strategy", "rename",
+                LastSnapshotPath,
+                RemoteFolder,
+                "-v"
+            ]);
+    }
+
+    [RelayCommand]
+    private Task ListRemoteSnapshotsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(RemoteFolder))
+        {
+            Status = "Enter a Proton Drive destination folder.";
+            AppendActivity(Status);
+            return Task.CompletedTask;
+        }
+
+        return RunCliOperationAsync(
+            $"Listing snapshots in {RemoteFolder}. Proton Drive may take a while to respond…",
+            ["filesystem", "list", RemoteFolder, "-j"],
+            onCompleted: (exitCode, standardOutput, allOutput) =>
+            {
+                if (exitCode != 0)
+                {
+                    Status = $"Remote listing failed with exit code {exitCode}. See activity output.";
+                    AppendActivity(Status);
+                    return;
+                }
+
+                try
+                {
+                    var snapshots = ParseRemoteSnapshots(standardOutput, RemoteFolder);
+                    RemoteSnapshots.Clear();
+                    foreach (var snapshot in snapshots)
+                        RemoteSnapshots.Add(snapshot);
+
+                    SelectedRemoteSnapshot = null;
+                    Status = snapshots.Count == 0
+                        ? "No conversation snapshot archives were found in the remote folder."
+                        : $"Found {snapshots.Count} conversation snapshot archive(s). Select one to download and verify.";
+                    AppendActivity(Status);
+                }
+                catch (JsonException ex)
+                {
+                    Status = $"Could not parse the remote listing: {ex.Message}";
+                    AppendActivity(Status);
+                    if (!string.IsNullOrWhiteSpace(allOutput))
+                        AppendActivity("See the CLI output above for details.");
+                }
+            });
+    }
+
+    [RelayCommand]
+    private async Task DownloadAndVerifySnapshotAsync()
+    {
+        if (IsBusy || SelectedRemoteSnapshot is null)
+            return;
+
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "snapshot download and verification";
+        LastDownloadedArchivePath = string.Empty;
+        string verificationDirectory = Path.Combine(
+            oaiResponsesAvalonia.Services.AppPaths.DataDirectory,
+            "ProtonSync",
+            "Verification",
+            $"download_{Guid.NewGuid():N}");
+
+        try
+        {
+            Directory.CreateDirectory(verificationDirectory);
+            var selectedSnapshot = SelectedRemoteSnapshot;
+            Status = $"Downloading {selectedSnapshot.Name} from Proton Drive. This may take a while…";
+            AppendActivity(Status);
+
+            var arguments = new[] { "filesystem", "download", selectedSnapshot.RemotePath, verificationDirectory, "-v" };
+            AppendActivity($"> {Executable} {string.Join(" ", arguments.Select(QuoteForDisplay))}");
+            int exitCode = await _cliService.RunAsync(
+                Executable,
+                arguments,
+                AppendActivity,
+                _activeOperationCancellation.Token);
+            if (exitCode != 0)
+                throw new InvalidOperationException($"Proton Drive download failed with exit code {exitCode}.");
+
+            _activeOperationCancellation.Token.ThrowIfCancellationRequested();
+            string expectedFileName = Path.GetFileName(selectedSnapshot.Name);
+            string[] downloadedFiles = Directory.GetFiles(verificationDirectory, "*", SearchOption.TopDirectoryOnly);
+            string downloadedArchive = downloadedFiles.FirstOrDefault(path =>
+                    string.Equals(Path.GetFileName(path), expectedFileName, StringComparison.OrdinalIgnoreCase))
+                ?? (downloadedFiles.Length == 1
+                    ? downloadedFiles[0]
+                    : throw new FileNotFoundException("Could not identify the downloaded snapshot archive in the temporary download folder."));
+
+            Status = "Download complete. Verifying the archive, database, media hashes, and SQLite integrity…";
+            AppendActivity(Status);
+            string localSnapshotsDirectory = Path.Combine(
+                oaiResponsesAvalonia.Services.AppPaths.DataDirectory,
+                "ProtonSync",
+                "Snapshots");
+            var localArchives = Directory.Exists(localSnapshotsDirectory)
+                ? Directory.EnumerateFiles(localSnapshotsDirectory, "oaiResponsesAvalonia_snapshot_*.zip", SearchOption.TopDirectoryOnly).ToList()
+                : [];
+            if (!string.IsNullOrWhiteSpace(LastSnapshotPath) && File.Exists(LastSnapshotPath) &&
+                !localArchives.Contains(LastSnapshotPath, StringComparer.OrdinalIgnoreCase))
+            {
+                localArchives.Add(LastSnapshotPath);
+            }
+
+            AppendActivity($"Checking the downloaded archive against {localArchives.Count} local snapshot archive(s)…");
+            var result = await _verificationService.VerifyAsync(
+                downloadedArchive,
+                verificationDirectory,
+                localArchives,
+                _activeOperationCancellation.Token);
+            LastDownloadedArchivePath = downloadedArchive;
+
+            Status = result.MatchesLocalArchive switch
+            {
+                true => "Download verified: it exactly matches a local snapshot archive, and all internal checks passed.",
+                false => $"Download verified internally, but its archive bytes differ from all {result.LocalArchivesCompared} local snapshot archive(s) checked.",
+                null => "Download verified internally. No local snapshot archive was available for whole-archive comparison."
+            };
+            AppendActivity(Status);
+            if (result.ComparedLocalArchivePath is not null)
+                AppendActivity($"Matching local snapshot: {result.ComparedLocalArchivePath}");
+            else if (result.LocalArchivesCompared > 0)
+                AppendActivity($"Compared against {result.LocalArchivesCompared} local snapshot archive(s).");
+            AppendActivity($"Snapshot ID: {result.SnapshotId}; media files verified: {result.MediaFileCount}; SQLite integrity_check: {result.DatabaseIntegrity}.");
+            AppendActivity($"Downloaded archive: {result.ArchivePath}");
+            AppendActivity($"Downloaded archive SHA-256: {result.ArchiveSha256}");
+            AppendActivity("The downloaded archive is retained in the local Verification folder for manual inspection; no restore was performed.");
+            foreach (string entry in result.VerifiedEntries)
+                AppendActivity(entry);
+        }
+        catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+        {
+            Status = "Snapshot download or verification was stopped.";
+            AppendActivity(Status);
+        }
+        catch (Win32Exception ex)
+        {
+            Status = $"Could not start '{Executable}'. Check that Proton Drive CLI is installed and on PATH.";
+            AppendActivity($"{Status} Details: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Status = $"Snapshot download or verification failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task PrepareIsolatedRestoreAsync()
+    {
+        if (IsBusy || string.IsNullOrWhiteSpace(LastDownloadedArchivePath) || !File.Exists(LastDownloadedArchivePath))
+        {
+            Status = "Download and verify a remote snapshot before preparing an isolated restore.";
+            AppendActivity(Status);
+            return;
+        }
+
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "isolated snapshot restore preparation";
+        Status = "Preparing an isolated restore copy. The live application database and media will not be changed…";
+        AppendActivity(Status);
+        AppendActivity($"Source archive: {LastDownloadedArchivePath}");
+
+        try
+        {
+            var result = await _restoreService.RestoreAsync(
+                LastDownloadedArchivePath,
+                AppendActivity,
+                _activeOperationCancellation.Token);
+
+            Status = "Isolated restore prepared and verified. No live application data was changed.";
+            AppendActivity(Status);
+            AppendActivity($"Restore test folder: {result.RestoreDirectory}");
+            AppendActivity($"Database: {result.DatabasePath}");
+            AppendActivity($"Media files restored: {result.MediaFileCount} (images and files folders).");
+            AppendActivity($"Snapshot ID: {result.SnapshotId}; SQLite integrity_check: {result.DatabaseIntegrity}.");
+            AppendActivity("Testing the isolated copy with the main application's data model and media resolver…");
+            try
+            {
+                var compatibility = await new RestoredAppCompatibilityService().CheckAsync(result, _activeOperationCancellation.Token);
+                Status = "Isolated restore passed the main application data compatibility check.";
+                AppendActivity(Status);
+                AppendActivity($"Read {compatibility.Sessions} sessions, {compatibility.Messages} messages, and {compatibility.MediaReferences} media references; {compatibility.UniqueMediaFiles} distinct media files were readable.");
+
+                // The comparison is informational only; neither database is replaced or merged.
+                try
+                {
+                    AppendActivity("Reading current local database counts for a restore preview…");
+                    var current = await new RestorePreflightService().ReadCountsAsync(
+                        oaiResponsesAvalonia.Data.AppDbContext.DatabaseFilePath, _activeOperationCancellation.Token);
+                    AppendActivity($"Current local database: {current.Sessions} sessions, {current.Messages} messages, {current.MediaReferences} media references.");
+                    AppendActivity($"Snapshot: {compatibility.Sessions} sessions, {compatibility.Messages} messages, {compatibility.MediaReferences} media references.");
+                    AppendActivity("Counts are informational only: matching counts do not mean the data is identical, and different counts do not identify which conversations differ. A future restore would replace, not merge, local data.");
+                }
+                catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+                {
+                    AppendActivity("Local database comparison stopped; the isolated restore remains available.");
+                }
+                catch (Exception ex)
+                {
+                    AppendActivity($"Could not read current local database counts: {ex.Message}. The isolated restore compatibility check still passed.");
+                }
+            }
+            catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+            {
+                Status = "Compatibility check stopped. The isolated restore remains available for inspection.";
+                AppendActivity(Status);
+            }
+            catch (Exception ex)
+            {
+                Status = $"Main application data compatibility check failed: {ex.Message}";
+                AppendActivity(Status);
+                AppendActivity("The isolated restore remains available for inspection; live data was not changed.");
+            }
+            AppendActivity("This checks the main app's data model and media resolver, but does not launch its UI or test sending messages.");
+        }
+        catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+        {
+            Status = "Isolated restore preparation was stopped. Any partial staging directory was removed when possible.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Isolated restore preparation failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CompareSnapshotsAsync()
+    {
+        if (IsBusy) return;
+        if (!File.Exists(FirstComparisonArchive) || !File.Exists(SecondComparisonArchive))
+        {
+            Status = "Select two existing snapshot ZIP files before comparing.";
+            AppendActivity(Status);
+            return;
+        }
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "read-only snapshot comparison";
+        Status = "Verifying and comparing both snapshots; no live data will be changed…";
+        AppendActivity(Status);
+        string first = FirstComparisonArchive, second = SecondComparisonArchive;
+        var token = _activeOperationCancellation.Token;
+        try
+        {
+            var result = await Task.Run(() => new SnapshotComparisonService().CompareAsync(first, second, AppendActivity, token), token);
+            AppendActivity($"Snapshot A: {first} (ID {result.FirstSnapshotId}); {result.FirstSessions.Count} sessions, {result.FirstSessions.Sum(s => s.MessageCount)} messages.");
+            AppendActivity($"Snapshot B: {second} (ID {result.SecondSnapshotId}); {result.SecondSessions.Count} sessions, {result.SecondSessions.Sum(s => s.MessageCount)} messages.");
+            if (string.Equals(result.FirstSnapshotId, result.SecondSnapshotId, StringComparison.Ordinal))
+                AppendActivity("Warning: both archives report the same snapshot ID. Check that you selected snapshots from the intended devices.");
+            AppendActivity("Candidates are NOT confirmed matches. Matching uses equal non-empty titles or exact role and message content of at least 40 characters; IDs, timestamps, short messages and attachments are not matched. No message content is displayed.");
+            foreach (var candidate in result.Candidates)
+            {
+                token.ThrowIfCancellationRequested();
+                AppendActivity($"Candidate{(candidate.Ambiguous ? " (multiple candidates; ambiguous)" : "")}: A #{candidate.First.Id} [{SafeTitle(candidate.First.Title)}] ({candidate.First.MessageCount} messages) ↔ B #{candidate.Second.Id} [{SafeTitle(candidate.Second.Title)}] ({candidate.Second.MessageCount} messages); {candidate.SharedEvidence} distinct exact long-message match(es){(candidate.SameTitle ? "; same title" : "")}.");
+            }
+            var matchedFirst = result.Candidates.Select(c => c.First.Id).ToHashSet();
+            var matchedSecond = result.Candidates.Select(c => c.Second.Id).ToHashSet();
+            foreach (var session in result.FirstSessions.Where(s => !matchedFirst.Contains(s.Id)))
+                AppendActivity($"A — no candidate found: #{session.Id} [{SafeTitle(session.Title)}] ({session.MessageCount} messages).");
+            foreach (var session in result.SecondSessions.Where(s => !matchedSecond.Contains(s.Id)))
+                AppendActivity($"B — no candidate found: #{session.Id} [{SafeTitle(session.Title)}] ({session.MessageCount} messages).");
+            AppendActivity($"Summary: {result.Candidates.Count} candidate pair(s); {result.FirstSessions.Count - matchedFirst.Count} A and {result.SecondSessions.Count - matchedSecond.Count} B session(s) without a candidate. No candidate does not prove uniqueness; similar but non-identical messages are not detected.");
+            Status = "Read-only snapshot comparison completed. Review the activity output; no merge was performed.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Snapshot comparison stopped. No merge was performed.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Snapshot comparison failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CreateInitialBaselineAsync()
+    {
+        if (IsBusy) return;
+        if (!ConfirmIndependentHistories)
+        {
+            Status = "Confirm the two histories were created independently before creating a disposable baseline.";
+            AppendActivity(Status);
+            return;
+        }
+        if (!File.Exists(FirstComparisonArchive) || !File.Exists(SecondComparisonArchive))
+        {
+            Status = "Select two existing snapshot ZIP files first.";
+            AppendActivity(Status);
+            return;
+        }
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "disposable initial baseline";
+        var token = _activeOperationCancellation.Token;
+        string first = FirstComparisonArchive, second = SecondComparisonArchive;
+        try
+        {
+            Status = "Preparing an experimental disposable baseline; live data will not be changed…";
+            AppendActivity(Status);
+            var result = await Task.Run(() => new InitialBaselineService().CreateAsync(first, second, AppendActivity, token), token);
+            Status = "Experimental baseline created. It is not ready for live restore or synchronization.";
+            AppendActivity(Status);
+            AppendActivity($"Baseline directory: {result.Directory}");
+            AppendActivity($"Combined records: {result.Sessions} sessions, {result.Messages} messages, {result.MediaReferences} media references.");
+            AppendActivity("Experimental identities are assigned to existing and new sessions and messages. Edits are not tracked and deletions are blocked; do not install this copy as live data.");
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Baseline preparation stopped; partial disposable files are removed when possible.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Baseline preparation failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CompareBaselineIdentitiesAsync()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "baseline identity comparison";
+        var token = _activeOperationCancellation.Token;
+        string first = FirstBaselineDirectory, second = SecondBaselineDirectory;
+        try
+        {
+            Status = "Comparing experimental baseline copies by identity; no data will be merged…";
+            AppendActivity(Status);
+            AppendActivity($"Copy A: {first}");
+            AppendActivity($"Copy B: {second}");
+            var result = await Task.Run(() => new BaselineIdentityComparisonService().CompareAsync(first, second, token), token);
+            AppendActivity($"Shared identities: {result.SharedSessions} sessions; {result.SharedMessages} messages.");
+            void Report(string label, IReadOnlyList<IdentityDifference> entries)
+            {
+                AppendActivity($"{label}: {entries.Count}");
+                foreach (var entry in entries)
+                {
+                    token.ThrowIfCancellationRequested();
+                    AppendActivity($"  {entry.SyncId:D} — {entry.Detail}");
+                }
+            }
+            Report("Sessions only in A", result.SessionsOnlyA);
+            Report("Sessions only in B", result.SessionsOnlyB);
+            Report("Messages only in A", result.MessagesOnlyA);
+            Report("Messages only in B", result.MessagesOnlyB);
+            Report("Shared sessions with different fields", result.DifferentSessions);
+            Report("Shared messages with different fields or parent", result.DifferentMessages);
+            if (result.SharedSessions == 0)
+                AppendActivity("Warning: no shared session identities. These copies may not share a baseline; identity correspondence is not established.");
+            AppendActivity("Only-in-one-side does not establish whether a record is new or deleted. Differences are not classified as conflicts; media, deletions, common ancestry and conversation order are not compared.");
+            Status = "Identity comparison completed. No merge or live-data changes were performed.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Identity comparison stopped; no merge was performed.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Identity comparison failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private void UseLastRehearsalForPreview()
+    {
+        if (IsBusy) return;
+        if (string.IsNullOrWhiteSpace(_lastRehearsalWorkspace))
+        {
+            Status = "Run a disposable merge rehearsal in this window first, or select all three folders manually.";
+            AppendActivity(Status);
+            return;
+        }
+
+        string shared = Path.Combine(_lastRehearsalWorkspace, "shared-base");
+        string a = Path.Combine(_lastRehearsalWorkspace, "branch-A");
+        string b = Path.Combine(_lastRehearsalWorkspace, "branch-B");
+        if (!Directory.Exists(shared) || !Directory.Exists(a) || !Directory.Exists(b))
+        {
+            Status = "The last rehearsal's folders are no longer available. Run a new rehearsal or select three folders manually.";
+            AppendActivity(Status);
+            return;
+        }
+
+        SharedBaselineDirectory = shared;
+        FirstBaselineDirectory = a;
+        SecondBaselineDirectory = b;
+        Status = "Selected the last rehearsal's shared base and branches for preview.";
+        AppendActivity(Status);
+        AppendActivity("Copy A now points to branch-A. To run another rehearsal, select your original baseline as copy A again.");
+    }
+
+    [RelayCommand]
+    private async Task PreviewThreeWayAsync()
+    {
+        if (IsBusy) return;
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(SharedBaselineDirectory)) missing.Add("shared starting copy");
+        if (string.IsNullOrWhiteSpace(FirstBaselineDirectory)) missing.Add("copy A");
+        if (string.IsNullOrWhiteSpace(SecondBaselineDirectory)) missing.Add("copy B");
+        if (missing.Count > 0)
+        {
+            Status = $"Three-way preview needs: {string.Join(", ", missing)}. Use the last rehearsal or select the folders manually.";
+            AppendActivity(Status);
+            return;
+        }
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "three-way preview";
+        var token = _activeOperationCancellation.Token;
+        string baseline = SharedBaselineDirectory, a = FirstBaselineDirectory, b = SecondBaselineDirectory;
+        try
+        {
+            Status = "Comparing the shared base and two experimental copies; no changes will be applied…";
+            AppendActivity(Status);
+            AppendActivity($"Shared base: {baseline}; A: {a}; B: {b}");
+            AppendActivity("Experimental preview: common ancestry is not verified; media and conversation divergence are not compared. Do not use these findings to sync live data.");
+            var result = await Task.Run(() => new BaselineIdentityComparisonService().PreviewThreeWayAsync(baseline, a, b, token), token);
+            AppendActivity("Rehearsal baseline metadata and shared-base fields match. This is not proof of ancestry.");
+            foreach (var group in result.Findings.GroupBy(f => f.Classification).OrderBy(g => g.Key))
+            {
+                AppendActivity($"{group.Key}: {group.Count()}");
+                foreach (var finding in group)
+                {
+                    token.ThrowIfCancellationRequested();
+                    AppendActivity($"  {finding.Kind} {finding.SyncId:D}");
+                }
+            }
+            if (result.Findings.Count == 0) AppendActivity("No session or message field differences detected.");
+            Status = "Three-way preview completed; no data was merged or changed.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Three-way preview stopped; no data was merged.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Three-way preview failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DemonstrateBaselineChangesAsync()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "baseline change demonstration";
+        var token = _activeOperationCancellation.Token;
+        string baseline = FirstBaselineDirectory;
+        try
+        {
+            Status = "Demonstrating changes on temporary copies; the selected baseline and live data will not be changed…";
+            AppendActivity(Status);
+            AppendActivity($"Selected experimental baseline: {baseline}");
+            var result = await Task.Run(() => new BaselineChangeDemonstrationService().RunAsync(baseline, AppendActivity, token), token);
+            AppendActivity($"Comparison: {result.SharedSessions} shared sessions; {result.SharedMessages} shared messages.");
+            AppendActivity($"New message only in A: {result.MessagesOnlyA.Count} (ID {result.MessagesOnlyA[0].SyncId:D}).");
+            AppendActivity($"New message only in B: {result.MessagesOnlyB.Count} (ID {result.MessagesOnlyB[0].SyncId:D}).");
+            AppendActivity($"Existing message with different content in B: {result.DifferentMessages.Count} (ID {result.DifferentMessages[0].SyncId:D}).");
+            AppendActivity("The two new messages have distinct IDs; the edited message keeps its shared ID. No merge, deletion detection, media comparison, or live data change was performed.");
+            Status = "Demonstration passed: the simulated additions and edit were detected.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Demonstration stopped; no merge was performed.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Demonstration failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RehearseDisposableMergeAsync()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "disposable merge rehearsal";
+        var token = _activeOperationCancellation.Token;
+        try
+        {
+            Status = "Running a controlled merge rehearsal; live data will not be changed…";
+            AppendActivity(Status);
+            var result = await Task.Run(() => new DisposableThreeWayMergeDemoService().RunAsync(FirstBaselineDirectory, AppendActivity, token), token);
+            AppendActivity($"Simulated changes applied: {result.Added} additions and {result.Edited} one-sided edit; {result.Conflicts} conflict left unresolved.");
+            AppendActivity($"Repeat application: {result.RepeatedChanges} changes; the conflict remains unresolved.");
+            AppendActivity($"Deletion rehearsal: {result.Deletions} synthetic operations applied (one message and one session with a child message); {result.DeleteConflicts} delete-versus-edit conflict left unresolved.");
+            AppendActivity($"Repeated deletion application: {result.RepeatedDeletions} deletions; deletion markers retained and the conflict remains unresolved.");
+            AppendActivity($"Validated disposable result: {result.Sessions} sessions, {result.Messages} messages.");
+            AppendActivity($"Result for isolated visual test: {result.ResultDirectory}");
+            AppendActivity($"Workspace (including both conflict versions): {result.Workspace}");
+            _lastRehearsalWorkspace = result.Workspace;
+            AppendActivity("To preview this rehearsal again, select 'Use last rehearsal for preview' in this window. Existing workspaces are retained.");
+            AppendActivity("Only synthetic records were merged or deleted. Real deletions, turns, media changes, conflict resolution and conversation divergence are not handled. Never install this result as live data.");
+            Status = "Disposable merge rehearsal passed; no live data was changed.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Disposable merge rehearsal stopped; no live data was changed.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Disposable merge rehearsal failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    private static string SafeTitle(string title) => string.IsNullOrWhiteSpace(title)
+        ? "untitled" : title.Replace('\r', ' ').Replace('\n', ' ').Trim();
+
+    [RelayCommand]
+    private async Task RehearseGuardedRestoreAsync()
+    {
+        if (!CanPrepareIsolatedRestore) return;
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "guarded restore rehearsal";
+        Status = "Rehearsing replacement in a disposable workspace; live data will not be replaced…";
+        AppendActivity(Status);
+        try
+        {
+            string archive = LastDownloadedArchivePath;
+            var token = _activeOperationCancellation.Token;
+            var result = await Task.Run(() => new GuardedRestoreRehearsalService().RunAsync(archive, AppendActivity, token));
+            Status = "Guarded restore rehearsal passed. Live data was not replaced.";
+            AppendActivity(Status);
+            AppendActivity($"Rehearsal workspace: {result.Workspace}");
+            AppendActivity($"Disposable replacement: {result.ReplacedDirectory}");
+            AppendActivity($"Recovery copy of original disposable data: {result.RecoveryDirectory}");
+            AppendActivity($"Original: {result.Original.Sessions} sessions, {result.Original.Messages} messages, {result.Original.MediaReferences} media references.");
+            AppendActivity($"Replacement: {result.Replacement.Sessions} sessions, {result.Replacement.Messages} messages, {result.Replacement.MediaReferences} media references.");
+            AppendActivity("No live restore, automatic crash recovery, or merge is implemented.");
+        }
+        catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+        {
+            Status = "Restore rehearsal stopped. See the activity log for workspace and rollback details.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Restore rehearsal failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task UploadTestFileAsync()
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(LocalFilePath) || !File.Exists(LocalFilePath))
+        {
+            Status = "Enter the full path to an existing disposable test file.";
+            AppendActivity(Status);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(RemoteFolder))
+        {
+            Status = "Enter a Proton Drive destination folder.";
+            AppendActivity(Status);
+            return;
+        }
+
+        await RunCliOperationAsync(
+            $"Uploading test file to {RemoteFolder}. This may take a while…",
+            [
+                "filesystem", "upload",
+                "--file-conflict-strategy", "rename",
+                LocalFilePath,
+                RemoteFolder,
+                "-v"
+            ]);
+    }
+
+    private async Task RunCliOperationAsync(
+        string startingStatus,
+        IReadOnlyList<string> arguments,
+        bool openAuthenticationUrl = false,
+        Action<int, string, string>? onCompleted = null)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = string.Join(" ", arguments.Take(2));
+        Status = startingStatus;
+        AppendActivity(startingStatus);
+        AppendActivity($"> {Executable} {string.Join(" ", arguments.Select(QuoteForDisplay))}");
+
+        var standardOutput = new StringBuilder();
+        var allOutput = new StringBuilder();
+        var outputLock = new object();
+        var waitingForAuthenticationUrl = 0;
+        var browserLaunchRequested = 0;
+
+        void HandleOutput(string line)
+        {
+            lock (outputLock)
+            {
+                allOutput.AppendLine(line);
+            }
+
+            AppendActivity(line);
+
+            if (!openAuthenticationUrl)
+            {
+                return;
+            }
+
+            if (line.Contains("Open following URL manually", StringComparison.OrdinalIgnoreCase))
+            {
+                Volatile.Write(ref waitingForAuthenticationUrl, 1);
+            }
+
+            if (Volatile.Read(ref waitingForAuthenticationUrl) == 0 ||
+                !TryExtractProtonAuthenticationUrl(line, out var authenticationUrl) ||
+                Interlocked.Exchange(ref browserLaunchRequested, 1) != 0)
+            {
+                return;
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                AuthenticationUrlDetected?.Invoke(authenticationUrl);
+            }
+            else
+            {
+                AppendActivity("Authentication URL detected; Proton Drive handles browser launching on this platform.");
+            }
+        }
+
+        void CaptureStandardOutput(string line)
+        {
+            lock (outputLock)
+            {
+                standardOutput.AppendLine(line);
+            }
+        }
+
+        try
+        {
+            var exitCode = await _cliService.RunAsync(
+                Executable,
+                arguments,
+                HandleOutput,
+                _activeOperationCancellation.Token,
+                CaptureStandardOutput);
+
+            string stdoutSnapshot;
+            string allOutputSnapshot;
+            lock (outputLock)
+            {
+                stdoutSnapshot = standardOutput.ToString();
+                allOutputSnapshot = allOutput.ToString();
+            }
+
+            if (onCompleted is not null)
+            {
+                onCompleted(exitCode, stdoutSnapshot, allOutputSnapshot);
+            }
+            else if (exitCode == 0)
+            {
+                Status = "Command completed successfully.";
+                AppendActivity($"Completed successfully (exit code {exitCode}).");
+            }
+            else
+            {
+                Status = $"Command failed with exit code {exitCode}. See activity output.";
+                AppendActivity(Status);
+            }
+        }
+        catch (OperationCanceledException) when (_activeOperationCancellation.IsCancellationRequested)
+        {
+            Status = $"Stopped process of '{_activeOperationName}'.";
+            AppendActivity(Status);
+        }
+        catch (Win32Exception ex)
+        {
+            Status = $"Could not start '{Executable}'. Check that Proton Drive CLI is installed and on PATH.";
+            AppendActivity($"{Status} Details: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Status = $"Command failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    public void ReportActivity(string message) => AppendActivity(message);
+
+    private static string FormatSize(long bytes)
+    {
+        string[] units = ["B", "KiB", "MiB", "GiB"];
+        double size = bytes;
+        int unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+
+        return $"{size:0.##} {units[unit]}";
+    }
+
+    private static List<RemoteSnapshotFile> ParseRemoteSnapshots(string json, string remoteFolder)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+            throw new JsonException("The Proton Drive listing was not a JSON array.");
+
+        var snapshots = new List<RemoteSnapshotFile>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object ||
+                !item.TryGetProperty("type", out var typeElement) ||
+                !string.Equals(typeElement.GetString(), "file", StringComparison.OrdinalIgnoreCase) ||
+                !item.TryGetProperty("name", out var nameElement))
+            {
+                continue;
+            }
+
+            string? name = nameElement.ValueKind switch
+            {
+                JsonValueKind.String => nameElement.GetString(),
+                JsonValueKind.Object when nameElement.TryGetProperty("value", out var valueElement) => valueElement.GetString(),
+                _ => null
+            };
+
+            if (string.IsNullOrWhiteSpace(name) ||
+                !name.StartsWith("oaiResponsesAvalonia_snapshot_", StringComparison.OrdinalIgnoreCase) ||
+                !name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains('/') || name.Contains('\\'))
+            {
+                continue;
+            }
+
+            string remotePath = $"{remoteFolder.TrimEnd('/')}/{name}";
+            snapshots.Add(new RemoteSnapshotFile(name, remotePath));
+        }
+
+        return snapshots.OrderByDescending(snapshot => snapshot.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static bool IsJsonArray(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            return document.RootElement.ValueKind == JsonValueKind.Array;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsAuthenticationRequiredMessage(string output) =>
+        output.Contains("need to login", StringComparison.OrdinalIgnoreCase) ||
+        output.Contains("login required", StringComparison.OrdinalIgnoreCase) ||
+        output.Contains("not authenticated", StringComparison.OrdinalIgnoreCase) ||
+        output.Contains("not logged in", StringComparison.OrdinalIgnoreCase) ||
+        output.Contains("authentication required", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryExtractProtonAuthenticationUrl(string line, out Uri authenticationUrl)
+    {
+        foreach (var candidate in line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var text = candidate.Trim('"', '\'', '<', '>', '[', ']', '(', ')', ',', ';', '.');
+            if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) ||
+                !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                !(string.Equals(uri.Host, "proton.me", StringComparison.OrdinalIgnoreCase) ||
+                  uri.Host.EndsWith(".proton.me", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            authenticationUrl = uri;
+            return true;
+        }
+
+        authenticationUrl = null!;
+        return false;
+    }
+
+    private void AppendActivity(string message)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var timestamp = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            ActivityLog = string.IsNullOrEmpty(ActivityLog)
+                ? $"[{timestamp}] {message}"
+                : $"{ActivityLog}{Environment.NewLine}[{timestamp}] {message}";
+        });
+    }
+
+    private static string QuoteForDisplay(string value) =>
+        value.Any(char.IsWhiteSpace) ? $"\"{value.Replace("\"", "\\\"")}\"" : value;
+}

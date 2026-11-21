@@ -6,20 +6,22 @@ namespace oaiResponsesAvalonia.Services
     public class SessionCleanupService
     {
         private readonly HistoryService _historyService;
-        private readonly MediaStorageService _mediaStorageService;
 
         public SessionCleanupService(
             HistoryService historyService,
             MediaStorageService mediaStorageService)
         {
             _historyService = historyService;
-            _mediaStorageService = mediaStorageService;
+            // Keep this constructor compatible with existing callers. Media files are
+            // retained until a safe, coordinated garbage-collection policy exists.
+            _ = mediaStorageService;
         }
 
         public async Task DeleteSessionAsync(int sessionId)
         {
-            var mediaPaths = await _historyService.GetMediaPathsForSessionAsync(sessionId);
-            _mediaStorageService.DeleteFiles(mediaPaths);
+            // A file can be shared by other messages, or become referenced by another
+            // operation. Keep files rather than risking data loss; database records are
+            // removed normally. A separate coordinated cleanup can reclaim orphans later.
             await _historyService.DeleteSessionAsync(sessionId);
         }
 
@@ -29,11 +31,10 @@ namespace oaiResponsesAvalonia.Services
             if (message == null)
                 return false;
 
-            var mediaPaths = await _historyService.GetMediaPathsForMessageAsync(messageId);
-            _mediaStorageService.DeleteFiles(mediaPaths);
-
             int sessionId = message.ChatSessionId;
 
+            // Preserve files, including files shared by other messages. Automatic
+            // deletion will require coordinated reference checking and cleanup.
             await _historyService.DeleteMessageAsync(messageId);
 
             int remainingMessages = await _historyService.GetMessageCountForSessionAsync(sessionId);

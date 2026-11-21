@@ -36,6 +36,11 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * [ ] add zoom; in, out, fit, 100% (like other previews)
 * [ ] Move/delete/cut/paste images in preview-gallery (local)
 
+## Developer Tools
+
+* [ ] Audit of dotnet project/solution listings. Seems like text-files! .txt is difficult to read, when added :D
+* [ ] Add function for AI: 'dotnet test'
+
 ## Release and documentation
 
 * \[ ] Decide whether and when to adopt release version numbers. Until then, keep the changelog useful without inventing versions.

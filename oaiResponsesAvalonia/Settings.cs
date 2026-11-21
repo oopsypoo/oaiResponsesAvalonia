@@ -61,11 +61,40 @@ namespace oaiResponsesAvalonia
             return folderName.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
         }
 
+        public void ValidateDevelopmentPaths()
+        {
+            if (!AppPaths.IsDevelopmentDataDirectory || AppPaths.IsIsolatedVisualTest)
+                return;
+
+            string root = Path.GetFullPath(AppPaths.DataDirectory);
+            if (string.IsNullOrWhiteSpace(AppRoot) || !Path.IsPathFullyQualified(AppRoot))
+                throw new InvalidOperationException("Development settings AppRoot must be an absolute path inside the development data directory.");
+            EnsureDevelopmentPath(root, AppRoot, "AppRoot");
+            string images = Path.GetFullPath(Path.Combine(AppRoot, ImagesFolder));
+            string files = Path.GetFullPath(Path.Combine(AppRoot, FilesFolder));
+            EnsureDevelopmentPath(root, images, "ImagesFolder");
+            EnsureDevelopmentPath(root, files, "FilesFolder");
+            EnsureDevelopmentPath(root, GetSavedImagesDirectory(images), "SavedImagesFolder");
+        }
+
+        private static void EnsureDevelopmentPath(string root, string path, string setting)
+        {
+            string full = Path.GetFullPath(path);
+            string relative = Path.GetRelativePath(root, full);
+            if (Path.IsPathRooted(relative) || relative == ".." ||
+                relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Development setting {setting} must point inside {root}; current path: {full}");
+        }
+
         private static string SettingsPath => AppPaths.SettingsFilePath;
 
         public static AppSettings LoadSettings()
         {
             AppPaths.EnsureDataDirectory();
+
+            // Never use device-specific or previously changed paths in a visual restore test.
+            if (AppPaths.IsIsolatedVisualTest)
+                return new AppSettings();
 
             if (!File.Exists(SettingsPath) && File.Exists(AppPaths.LegacySettingsFilePath))
             {
@@ -81,13 +110,17 @@ namespace oaiResponsesAvalonia
                 if (string.Equals(settings.SavedImagesFolder, "User Images", StringComparison.OrdinalIgnoreCase))
                     settings.SavedImagesFolder = "user";
 
+                settings.ValidateDevelopmentPaths();
                 return settings;
             }
-            return new AppSettings();
+            var defaults = new AppSettings();
+            defaults.ValidateDevelopmentPaths();
+            return defaults;
         }
 
         public static void SaveSettings(AppSettings settings)
         {
+            settings.ValidateDevelopmentPaths();
             AppPaths.EnsureDataDirectory();
             var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(SettingsPath, json);

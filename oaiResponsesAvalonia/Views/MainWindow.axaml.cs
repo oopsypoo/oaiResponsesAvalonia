@@ -68,15 +68,29 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        if (AppPaths.IsIsolatedVisualTest)
+        {
+            Title = $"ISOLATED RESTORE TEST — {AppPaths.DataDirectory}";
+            menuSettings.IsEnabled = false;
+            menuDataSync.IsEnabled = false;
+            menuTools.IsEnabled = false;
+            RequestControls.IsEnabled = false;
+            btnResponsesSendRequest.IsEnabled = false;
+        }
+        else if (AppPaths.IsDevelopmentDataDirectory)
+        {
+            Title = $"DEVELOPMENT DATA — {AppPaths.DataDirectory}";
+        }
         Opened += (_, _) => RefreshMcpSummary();
         Closed += MainWindow_Closed;
         _appStatus = new AppStatus(text => StatusText.Text = text ?? string.Empty);
 
+        // Validate the copied development settings before touching its database.
+        _settings = AppSettings.LoadSettings();
         AppDbContext.InitializeDatabase();
         _mediaStorageService = new MediaStorageService();
         _historyService = new HistoryService(_mediaStorageService);
         _sessionCleanupService = new SessionCleanupService(_historyService, _mediaStorageService);
-        _settings = AppSettings.LoadSettings();
         ResponsesState.CustomSearchContextSize = string.IsNullOrWhiteSpace(_settings.CustomSearchContextSize)
             ? "medium"
             : _settings.CustomSearchContextSize;
@@ -87,6 +101,11 @@ public partial class MainWindow : Window
 
         EnsureSavePaths();
         tabMain.SelectedItem = tpResponses;
+    }
+
+    private async void OpenDataSync_Click(object? sender, RoutedEventArgs e)
+    {
+        await new DataSyncWindow().ShowDialog(this);
     }
 
     private void OpenDeveloperActivityWindow_Click(object? sender, RoutedEventArgs e)

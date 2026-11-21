@@ -1,0 +1,105 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:oaiProtonSync.ViewModels"
+        xmlns:services="using:oaiProtonSync.Services"
+        x:Class="oaiResponsesAvalonia.Views.ProtonBackupWindow"
+        x:DataType="vm:MainWindowViewModel" x:CompileBindings="True"
+        Title="Data Sync — Proton Drive (experimental)"
+        Width="780" Height="850" MinWidth="520" MinHeight="500"
+        WindowStartupLocation="CenterOwner">
+  <ScrollViewer>
+    <StackPanel Margin="20" Spacing="12">
+      <TextBlock FontSize="22" FontWeight="SemiBold" Text="Proton Drive backup" />
+      <TextBlock TextWrapping="Wrap" Text="Experimental backup and verification only. This does not restore, merge, or delete your data. Proton Drive CLI handles authentication and its token." />
+      <TextBlock FontWeight="SemiBold" Text="CLI executable" />
+      <TextBox Text="{Binding Executable}" IsEnabled="{Binding CanStart}" />
+      <TextBlock FontWeight="SemiBold" Text="Remote destination" />
+      <TextBox Text="{Binding RemoteFolder}" IsEnabled="{Binding CanStart}" />
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <Button Content="Log in" Command="{Binding LoginCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Log out" Command="{Binding LogoutCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Check login status" Command="{Binding CheckAuthenticationStatusCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Stop process" Command="{Binding StopOperationCommand}" IsEnabled="{Binding CanStop}" />
+      </WrapPanel>
+      <TextBlock Text="{Binding AuthenticationStatus}" TextWrapping="Wrap" />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Create and upload a conversation snapshot" />
+      <TextBlock TextWrapping="Wrap" Text="A snapshot contains conversation history and referenced media. It is saved locally before upload and may contain sensitive information. No old snapshots are deleted." />
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <Button Content="Create local snapshot" Command="{Binding CreateSnapshotCommand}" IsEnabled="{Binding CanStart}" />
+        <Button Content="Upload snapshot" Command="{Binding UploadSnapshotCommand}" IsEnabled="{Binding CanUploadSnapshot}" />
+      </WrapPanel>
+      <TextBlock Text="{Binding LastSnapshotPath}" IsVisible="{Binding HasSnapshot}" TextWrapping="Wrap" />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Download and verify a snapshot" />
+      <Button Content="List remote snapshots" HorizontalAlignment="Left" Command="{Binding ListRemoteSnapshotsCommand}" IsEnabled="{Binding CanStart}" />
+      <ListBox ItemsSource="{Binding RemoteSnapshots}" SelectedItem="{Binding SelectedRemoteSnapshot}" Height="110" IsEnabled="{Binding CanStart}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="services:RemoteSnapshotFile">
+            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <Button Content="Download and verify selected snapshot" HorizontalAlignment="Left" Command="{Binding DownloadAndVerifySnapshotCommand}" IsEnabled="{Binding CanDownloadSelectedSnapshot}" />
+      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Downloads are kept in ProtonSync/Verification. Verification checks the archive, manifest and SQLite integrity; no live data is replaced." />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Compare two snapshots (read-only)" />
+      <TextBlock TextWrapping="Wrap" Text="Choose two local snapshot ZIPs, for example a Linux snapshot downloaded from Proton and a Windows snapshot created locally. Both are verified. Candidate matches are suggestions only; no merge or live-data changes occur." />
+      <TextBlock Text="Snapshot A" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding FirstComparisonArchive}" IsEnabled="{Binding CanStart}" PlaceholderText="Path to first snapshot ZIP" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseFirstSnapshot" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <TextBlock Text="Snapshot B" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding SecondComparisonArchive}" IsEnabled="{Binding CanStart}" PlaceholderText="Path to second snapshot ZIP" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseSecondSnapshot" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <Button Content="Compare snapshots" HorizontalAlignment="Left" Command="{Binding CompareSnapshotsCommand}" IsEnabled="{Binding CanStart}" />
+      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Review candidates and sessions without candidates in Activity. Titles and long exact message matches are evidence, not identity; no match does not prove uniqueness." />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Experimental initial baseline (disposable only)" />
+      <TextBlock TextWrapping="Wrap" Text="Combines the two selected snapshots as separate histories. No candidate matches does not prove independence. The result is for isolated inspection only: it cannot track later changes or deletions and must not replace live data." />
+      <CheckBox Content="I confirm these histories were created independently" IsChecked="{Binding ConfirmIndependentHistories}" IsEnabled="{Binding CanStart}" />
+      <Button Content="Create disposable baseline" HorizontalAlignment="Left" Command="{Binding CreateInitialBaselineCommand}" IsEnabled="{Binding CanStart}" />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Compare disposable baseline copies by identity" />
+      <TextBlock TextWrapping="Wrap" Text="Select two closed copies of the same experimental baseline folder, including experimental-baseline.json and localhistory.db. This only compares session and message identities and fields; it does not merge, identify deletions or compare media." />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding FirstBaselineDirectory}" IsEnabled="{Binding CanStart}" PlaceholderText="Baseline copy A folder" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseFirstBaseline" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding SecondBaselineDirectory}" IsEnabled="{Binding CanStart}" PlaceholderText="Baseline copy B folder" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseSecondBaseline" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <Button Content="Compare baseline identities" HorizontalAlignment="Left" Command="{Binding CompareBaselineIdentitiesCommand}" IsEnabled="{Binding CanStart}" />
+      <TextBlock FontWeight="SemiBold" Text="Experimental three-way preview" />
+      <TextBlock TextWrapping="Wrap" Text="After running a rehearsal, use the button below to select its shared base and both branches automatically. Or select all three folders manually: copy A and copy B above, and shared starting copy below. This replaces the copy A field; select your original baseline again before running another rehearsal. Read-only: ancestry is not proven, and media and conversation divergence are excluded." />
+      <Button Content="Use last rehearsal for preview" HorizontalAlignment="Left" Command="{Binding UseLastRehearsalForPreviewCommand}" IsEnabled="{Binding CanStart}" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding SharedBaselineDirectory}" IsEnabled="{Binding CanStart}" PlaceholderText="Shared starting copy folder" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseSharedBaseline" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <Button Content="Preview three-way changes" HorizontalAlignment="Left" Command="{Binding PreviewThreeWayCommand}" IsEnabled="{Binding CanStart}" />
+      <TextBlock TextWrapping="Wrap" Text="To demonstrate changes, select one experimental baseline folder as copy A above, then run the demonstration. Temporary database copies are changed and compared; the selected baseline and live data are not changed." />
+      <Button Content="Demonstrate changes on temporary copies" HorizontalAlignment="Left" Command="{Binding DemonstrateBaselineChangesCommand}" IsEnabled="{Binding CanStart}" />
+      <TextBlock TextWrapping="Wrap" Text="Rehearse a three-way merge using synthetic conversations and the selected baseline. Conflicting edits are not merged; the disposable result and branch copies are retained for inspection. No live data is changed." />
+      <Button Content="Run disposable merge rehearsal" HorizontalAlignment="Left" Command="{Binding RehearseDisposableMergeCommand}" IsEnabled="{Binding CanStart}" />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Preview an isolated restore" />
+      <TextBlock TextWrapping="Wrap" Text="Prepare and validate a separate copy of the downloaded snapshot, then compare its record counts with the current local database. This does not replace or merge live data. Matching counts do not prove that the data matches." />
+      <Button Content="Prepare isolated restore and compare" HorizontalAlignment="Left" Command="{Binding PrepareIsolatedRestoreCommand}" IsEnabled="{Binding CanPrepareIsolatedRestore}" />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Guarded restore rehearsal (disposable data only)" />
+      <TextBlock TextWrapping="Wrap" Text="Creates a fresh local snapshot and rehearses replacing a disposable copy with the downloaded snapshot. Both copies are retained. This does not restore or merge live data; it needs additional local disk space." />
+      <Button Content="Run guarded restore rehearsal" HorizontalAlignment="Left" Command="{Binding RehearseGuardedRestoreCommand}" IsEnabled="{Binding CanPrepareIsolatedRestore}" />
+      <Separator />
+      <TextBlock FontWeight="SemiBold" Text="Operation status" />
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+      <TextBlock FontWeight="SemiBold" Text="Activity" />
+      <TextBox Text="{Binding ActivityLog, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" Height="200" />
+    </StackPanel>
+  </ScrollViewer>
+</Window>

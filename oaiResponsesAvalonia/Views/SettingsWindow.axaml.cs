@@ -143,6 +143,7 @@ namespace oaiResponsesAvalonia.Views
 
             try
             {
+                Settings.ValidateDevelopmentPaths();
                 string imagesDirectory = Path.Combine(Settings.AppRoot, Settings.ImagesFolder);
                 string savedImagesDirectory = Settings.GetSavedImagesDirectory(imagesDirectory);
                 Directory.CreateDirectory(savedImagesDirectory);

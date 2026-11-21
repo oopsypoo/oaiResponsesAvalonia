@@ -11,13 +11,21 @@ namespace oaiResponsesAvalonia.Services
     public class HistoryService
     {
         private readonly MediaStorageService _mediaStorageService;
+        private readonly Func<AppDbContext> _createDbContext;
 
         public HistoryService(MediaStorageService? mediaStorageService = null)
+            : this(mediaStorageService, () => new AppDbContext())
         {
-            _mediaStorageService = mediaStorageService ?? new MediaStorageService();
         }
 
-        private AppDbContext CreateDbContext() => new AppDbContext();
+        // Allows tests to exercise the real history workflows on disposable databases.
+        internal HistoryService(MediaStorageService? mediaStorageService, Func<AppDbContext> createDbContext)
+        {
+            _mediaStorageService = mediaStorageService ?? new MediaStorageService();
+            _createDbContext = createDbContext ?? throw new ArgumentNullException(nameof(createDbContext));
+        }
+
+        private AppDbContext CreateDbContext() => _createDbContext();
 
         public async Task<int> StartNewSessionAsync(string initialTitle, EndpointType endpoint)
         {

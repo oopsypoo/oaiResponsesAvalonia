@@ -76,6 +76,12 @@ public partial class ProtonBackupWindow : Window
         if (path is not null) _viewModel.SecondBaselineDirectory = path;
     }
 
+    private async void BrowseSharedBaseline(object? sender, RoutedEventArgs e)
+    {
+        var path = await PickBaselineAsync();
+        if (path is not null) _viewModel.SharedBaselineDirectory = path;
+    }
+
     private async System.Threading.Tasks.Task<string?> PickBaselineAsync()
     {
         try

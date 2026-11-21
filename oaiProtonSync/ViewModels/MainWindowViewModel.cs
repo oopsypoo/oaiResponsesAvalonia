@@ -46,6 +46,11 @@ public partial class MainWindowViewModel : ObservableObject
     private string _secondBaselineDirectory = string.Empty;
 
     [ObservableProperty]
+    private string _sharedBaselineDirectory = string.Empty;
+
+    private string _lastRehearsalWorkspace = string.Empty;
+
+    [ObservableProperty]
     private bool _confirmIndependentHistories;
 
     partial void OnFirstComparisonArchiveChanged(string value) => ConfirmIndependentHistories = false;
@@ -677,6 +682,93 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void UseLastRehearsalForPreview()
+    {
+        if (IsBusy) return;
+        if (string.IsNullOrWhiteSpace(_lastRehearsalWorkspace))
+        {
+            Status = "Run a disposable merge rehearsal in this window first, or select all three folders manually.";
+            AppendActivity(Status);
+            return;
+        }
+
+        string shared = Path.Combine(_lastRehearsalWorkspace, "shared-base");
+        string a = Path.Combine(_lastRehearsalWorkspace, "branch-A");
+        string b = Path.Combine(_lastRehearsalWorkspace, "branch-B");
+        if (!Directory.Exists(shared) || !Directory.Exists(a) || !Directory.Exists(b))
+        {
+            Status = "The last rehearsal's folders are no longer available. Run a new rehearsal or select three folders manually.";
+            AppendActivity(Status);
+            return;
+        }
+
+        SharedBaselineDirectory = shared;
+        FirstBaselineDirectory = a;
+        SecondBaselineDirectory = b;
+        Status = "Selected the last rehearsal's shared base and branches for preview.";
+        AppendActivity(Status);
+        AppendActivity("Copy A now points to branch-A. To run another rehearsal, select your original baseline as copy A again.");
+    }
+
+    [RelayCommand]
+    private async Task PreviewThreeWayAsync()
+    {
+        if (IsBusy) return;
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(SharedBaselineDirectory)) missing.Add("shared starting copy");
+        if (string.IsNullOrWhiteSpace(FirstBaselineDirectory)) missing.Add("copy A");
+        if (string.IsNullOrWhiteSpace(SecondBaselineDirectory)) missing.Add("copy B");
+        if (missing.Count > 0)
+        {
+            Status = $"Three-way preview needs: {string.Join(", ", missing)}. Use the last rehearsal or select the folders manually.";
+            AppendActivity(Status);
+            return;
+        }
+        IsBusy = true;
+        _activeOperationCancellation = new CancellationTokenSource();
+        _activeOperationName = "three-way preview";
+        var token = _activeOperationCancellation.Token;
+        string baseline = SharedBaselineDirectory, a = FirstBaselineDirectory, b = SecondBaselineDirectory;
+        try
+        {
+            Status = "Comparing the shared base and two experimental copies; no changes will be applied…";
+            AppendActivity(Status);
+            AppendActivity($"Shared base: {baseline}; A: {a}; B: {b}");
+            AppendActivity("Experimental preview: common ancestry is not verified; media and conversation divergence are not compared. Do not use these findings to sync live data.");
+            var result = await Task.Run(() => new BaselineIdentityComparisonService().PreviewThreeWayAsync(baseline, a, b, token), token);
+            AppendActivity("Rehearsal baseline metadata and shared-base fields match. This is not proof of ancestry.");
+            foreach (var group in result.Findings.GroupBy(f => f.Classification).OrderBy(g => g.Key))
+            {
+                AppendActivity($"{group.Key}: {group.Count()}");
+                foreach (var finding in group)
+                {
+                    token.ThrowIfCancellationRequested();
+                    AppendActivity($"  {finding.Kind} {finding.SyncId:D}");
+                }
+            }
+            if (result.Findings.Count == 0) AppendActivity("No session or message field differences detected.");
+            Status = "Three-way preview completed; no data was merged or changed.";
+            AppendActivity(Status);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Three-way preview stopped; no data was merged.";
+            AppendActivity(Status);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Three-way preview failed: {ex.Message}";
+            AppendActivity(Status);
+        }
+        finally
+        {
+            _activeOperationCancellation.Dispose();
+            _activeOperationCancellation = null;
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task DemonstrateBaselineChangesAsync()
     {
         if (IsBusy) return;
@@ -732,11 +824,13 @@ public partial class MainWindowViewModel : ObservableObject
             var result = await Task.Run(() => new DisposableThreeWayMergeDemoService().RunAsync(FirstBaselineDirectory, AppendActivity, token), token);
             AppendActivity($"Simulated changes applied: {result.Added} additions and {result.Edited} one-sided edit; {result.Conflicts} conflict left unresolved.");
             AppendActivity($"Repeat application: {result.RepeatedChanges} changes; the conflict remains unresolved.");
-            AppendActivity($"Deletion rehearsal: {result.Deletions} synthetic deletions applied (one message and one empty session); {result.DeleteConflicts} delete-versus-edit conflict left unresolved.");
+            AppendActivity($"Deletion rehearsal: {result.Deletions} synthetic operations applied (one message and one session with a child message); {result.DeleteConflicts} delete-versus-edit conflict left unresolved.");
             AppendActivity($"Repeated deletion application: {result.RepeatedDeletions} deletions; deletion markers retained and the conflict remains unresolved.");
             AppendActivity($"Validated disposable result: {result.Sessions} sessions, {result.Messages} messages.");
             AppendActivity($"Result for isolated visual test: {result.ResultDirectory}");
             AppendActivity($"Workspace (including both conflict versions): {result.Workspace}");
+            _lastRehearsalWorkspace = result.Workspace;
+            AppendActivity("To preview this rehearsal again, select 'Use last rehearsal for preview' in this window. Existing workspaces are retained.");
             AppendActivity("Only synthetic records were merged or deleted. Real deletions, turns, media changes, conflict resolution and conversation divergence are not handled. Never install this result as live data.");
             Status = "Disposable merge rehearsal passed; no live data was changed.";
             AppendActivity(Status);

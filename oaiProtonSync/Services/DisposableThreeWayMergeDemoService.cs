@@ -54,14 +54,23 @@ public sealed class DisposableThreeWayMergeDemoService
             await new BaselineIdentityComparisonService().CompareAsync(baseDir, baseDir, token);
             var setup = await CreateScenarioAsync(baseDb, token);
             var deletion = await DisposableDeletionRehearsal.SetupAsync(baseDb, token);
+            string syntheticMedia = Path.Combine(resultDir, "files", Path.GetFileName(deletion.SharedMediaPath));
+            await File.WriteAllTextAsync(syntheticMedia, "Synthetic shared media for deletion rehearsal.", token);
+            await new BaselineIdentityComparisonService().StampRehearsalBaseAsync(baseDir, token);
             CopyDatabase(baseDb, aDb);
             CopyDatabase(baseDb, bDb);
             CopyDatabase(baseDb, resultDb);
             report("Simulating independent additions, a one-sided edit, and conflicting edits to synthetic conversations.");
             await ChangeBranchAsync(aDb, setup, true, token);
             await ChangeBranchAsync(bDb, setup, false, token);
-            report("Simulating a message deletion, a session deletion, and a delete-versus-edit conflict on synthetic records…");
+            report("Simulating deletion of a message and a session with a message and shared media, plus a delete-versus-edit conflict…");
             await DisposableDeletionRehearsal.ChangeBranchesAsync(aDb, bDb, deletion, token);
+            var preview = await new BaselineIdentityComparisonService()
+                .PreviewThreeWayAsync(baseDir, aDir, bDir, token);
+            report("Read-only three-way preview (synthetic records only):");
+            foreach (var finding in preview.Findings)
+                report($"  {finding.Kind} {finding.SyncId:D}: {finding.Classification}.");
+            report("Rehearsal baseline metadata and shared-base fields match. This is not proof of ancestry; media is excluded. No decisions were applied by the preview.");
             var deleted = await DisposableDeletionRehearsal.ApplyAsync(baseDb, aDb, bDb, resultDb, deletion, token);
             if (deleted != (2, 1)) throw new InvalidDataException("Unexpected deletion rehearsal result.");
             var merge = await ApplyScenarioAsync(baseDb, aDb, bDb, resultDb, setup, token);
@@ -71,6 +80,9 @@ public sealed class DisposableThreeWayMergeDemoService
             var repeatedDeletion = await DisposableDeletionRehearsal.ApplyAsync(baseDb, aDb, bDb, resultDb, deletion, token);
             if (repeatedDeletion != (0, 1)) throw new InvalidDataException("Repeated deletion was not idempotent.");
             if (repeated != (0, 0, 1)) throw new InvalidDataException("Repeated application was not idempotent; the disposable result was not retained.");
+            report("Checking shared media and attempting to replay the deleted synthetic session from the unchanged offline branch…");
+            await DisposableDeletionRehearsal.VerifyStaleReplayAsync(bDb, resultDb, resultDir, deletion, token);
+            report("Stale synthetic session replay blocked by its deletion marker; its child marker and the shared media reference and file remain intact.");
             token.ThrowIfCancellationRequested();
             await using (var connection = new SqliteConnection(Connection(resultDb, true)))
             {

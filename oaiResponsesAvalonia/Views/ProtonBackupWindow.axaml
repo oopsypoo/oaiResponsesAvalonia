@@ -74,6 +74,14 @@
         <Button Grid.Column="1" Content="Browse…" Click="BrowseSecondBaseline" IsEnabled="{Binding CanStart}" />
       </Grid>
       <Button Content="Compare baseline identities" HorizontalAlignment="Left" Command="{Binding CompareBaselineIdentitiesCommand}" IsEnabled="{Binding CanStart}" />
+      <TextBlock FontWeight="SemiBold" Text="Experimental three-way preview" />
+      <TextBlock TextWrapping="Wrap" Text="After running a rehearsal, use the button below to select its shared base and both branches automatically. Or select all three folders manually: copy A and copy B above, and shared starting copy below. This replaces the copy A field; select your original baseline again before running another rehearsal. Read-only: ancestry is not proven, and media and conversation divergence are excluded." />
+      <Button Content="Use last rehearsal for preview" HorizontalAlignment="Left" Command="{Binding UseLastRehearsalForPreviewCommand}" IsEnabled="{Binding CanStart}" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding SharedBaselineDirectory}" IsEnabled="{Binding CanStart}" PlaceholderText="Shared starting copy folder" />
+        <Button Grid.Column="1" Content="Browse…" Click="BrowseSharedBaseline" IsEnabled="{Binding CanStart}" />
+      </Grid>
+      <Button Content="Preview three-way changes" HorizontalAlignment="Left" Command="{Binding PreviewThreeWayCommand}" IsEnabled="{Binding CanStart}" />
       <TextBlock TextWrapping="Wrap" Text="To demonstrate changes, select one experimental baseline folder as copy A above, then run the demonstration. Temporary database copies are changed and compared; the selected baseline and live data are not changed." />
       <Button Content="Demonstrate changes on temporary copies" HorizontalAlignment="Left" Command="{Binding DemonstrateBaselineChangesCommand}" IsEnabled="{Binding CanStart}" />
       <TextBlock TextWrapping="Wrap" Text="Rehearse a three-way merge using synthetic conversations and the selected baseline. Conflicting edits are not merged; the disposable result and branch copies are retained for inspection. No live data is changed." />

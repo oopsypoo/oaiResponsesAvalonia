@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using oaiResponsesAvalonia;
 using oaiResponsesAvalonia.Services;
 using System;
@@ -34,6 +35,8 @@ public partial class ImageGalleryWindow : Window
     private byte[]? _editorPreviewPng;
     private Bitmap? _previewBitmap;
     private Bitmap? _editorBitmap;
+    private readonly DispatcherTimer _animationTimer = new();
+    private int _animationFrameIndex;
     // Keep true before InitializeComponent: AXAML can raise selection events while controls are
     // still being constructed, before later x:Name fields are assigned. Initialization-time
     // handlers must check this flag before accessing other named controls or updating the UI.
@@ -69,6 +72,7 @@ public partial class ImageGalleryWindow : Window
     {
         _initializing = true;
         InitializeComponent();
+        _animationTimer.Tick += AnimationTimer_Tick;
         InitializeCropOverlay();
         _imageService = new ImageLibraryService(applicationImagesDirectory, userImagesDirectory);
         _currentDirectory = _imageService.GetRoot(_location);
@@ -95,6 +99,8 @@ public partial class ImageGalleryWindow : Window
 
     private async Task RefreshEntriesAsync()
     {
+        StopAnimation();
+        AnimationControls.IsVisible = false;
         try
         {
             string currentPath = _imageService.GetSafeCurrentDirectory(_location, _currentDirectory);
@@ -230,6 +236,7 @@ public partial class ImageGalleryWindow : Window
     private async void EntriesList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         UpdateMenuAvailability();
+        StopAnimation();
         if (EditorPanel.IsVisible)
             return;
 
@@ -238,6 +245,7 @@ public partial class ImageGalleryWindow : Window
             _selectedImagePath = null;
             _selectedPreview = null;
             EditButton.IsEnabled = false;
+            AnimationControls.IsVisible = false;
             PreviewImage.Source = null;
             PreviewDetailsText.Text = EntriesList.SelectedItem is ImageGalleryItem folder
                 ? $"Folder: {folder.Name}. Open the selected folder to browse it."
@@ -246,6 +254,7 @@ public partial class ImageGalleryWindow : Window
         }
 
         _selectedImagePath = item.FullPath;
+        AnimationControls.IsVisible = false;
         EditButton.IsEnabled = true;
         PreviewDetailsText.Text = "Loading preview…";
         try
@@ -254,13 +263,82 @@ public partial class ImageGalleryWindow : Window
             if (!string.Equals(_selectedImagePath, item.FullPath, StringComparison.Ordinal))
                 return;
             _selectedPreview = result;
+            _animationFrameIndex = 0;
+            // Show controls from file metadata so animated files are not silently presented as stills.
+            bool isAnimated = result.FrameCount > 1;
+            AnimationControls.IsVisible = isAnimated;
+            bool hasDecodedAnimation = result.AnimationFrames.Count > 1;
+            PreviousFrameButton.IsEnabled = hasDecodedAnimation;
+            AnimationPlayButton.IsEnabled = hasDecodedAnimation;
+            NextFrameButton.IsEnabled = hasDecodedAnimation;
             SetPreviewBitmap(result.PngBytes, PreviewImage, ref _previewBitmap);
-            PreviewDetailsText.Text = $"{item.Name}\n{result.Width} × {result.Height} · {result.Format} · {result.FrameCount} frame(s)\nTransparency: {(result.HasTransparency ? "present" : "not detected")}";
+            if (result.AnimationFrames.Count > 1)
+                UpdateAnimationFrameDisplay();
+            string extractionNote = isAnimated && result.AnimationFrames.Count != result.FrameCount
+                ? $"\nPreview frames decoded: {result.AnimationFrames.Count} of {result.FrameCount}"
+                : string.Empty;
+            PreviewDetailsText.Text = $"{item.Name}\n{result.Width} × {result.Height} · {result.Format} · {result.FrameCount} frame(s){extractionNote}\nTransparency: {(result.HasTransparency ? "present" : "not detected")}";
         }
         catch (Exception ex)
         {
             PreviewDetailsText.Text = $"Could not preview image: {ex.Message}";
         }
+    }
+
+    private void AnimationPlayButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedPreview?.AnimationFrames.Count is not > 1)
+            return;
+
+        if (_animationTimer.IsEnabled)
+        {
+            StopAnimation();
+            return;
+        }
+
+        AnimationPlayButton.Content = "Pause";
+        _animationTimer.Interval = GetAnimationFrameDuration();
+        _animationTimer.Start();
+    }
+
+    private void PreviousFrameButton_Click(object? sender, RoutedEventArgs e) => MoveAnimationFrame(-1);
+
+    private void NextFrameButton_Click(object? sender, RoutedEventArgs e) => MoveAnimationFrame(1);
+
+    private void MoveAnimationFrame(int offset)
+    {
+        if (_selectedPreview?.AnimationFrames.Count is not > 1)
+            return;
+
+        _animationFrameIndex = (_animationFrameIndex + offset + _selectedPreview.AnimationFrames.Count) % _selectedPreview.AnimationFrames.Count;
+        UpdateAnimationFrameDisplay();
+        if (_animationTimer.IsEnabled)
+            _animationTimer.Interval = GetAnimationFrameDuration();
+    }
+
+    private void AnimationTimer_Tick(object? sender, EventArgs e) => MoveAnimationFrame(1);
+
+    private void UpdateAnimationFrameDisplay()
+    {
+        if (_selectedPreview is not { AnimationFrames.Count: > 1 } preview)
+            return;
+
+        ImageAssetPreviewFrame frame = preview.AnimationFrames[_animationFrameIndex];
+        SetPreviewBitmap(frame.PngBytes, PreviewImage, ref _previewBitmap);
+        AnimationFrameText.Text = $"{_animationFrameIndex + 1} / {preview.AnimationFrames.Count}";
+    }
+
+    private TimeSpan GetAnimationFrameDuration()
+    {
+        int delay = _selectedPreview?.AnimationFrames[_animationFrameIndex].DurationMilliseconds ?? 100;
+        return TimeSpan.FromMilliseconds(Math.Clamp(delay <= 0 ? 100 : delay, 20, 10000));
+    }
+
+    private void StopAnimation()
+    {
+        _animationTimer.Stop();
+        if (AnimationPlayButton is not null)
+            AnimationPlayButton.Content = "Play";
     }
 
     private void EntriesList_DoubleTapped(object? sender, TappedEventArgs e) => OpenSelected();
@@ -905,10 +983,13 @@ public partial class ImageGalleryWindow : Window
 
     private void ShowEditor(ImageGalleryItem item)
     {
+        StopAnimation();
+        AnimationControls.IsVisible = false;
         _saveDirectory = _location == ImageBrowserLocation.UserImages
             ? _imageService.GetSafeCurrentDirectory(_location, _currentDirectory)
             : _imageService.GetRoot(ImageBrowserLocation.UserImages);
-        EditorImageTitle.Text = $"{item.Name} · {_selectedPreview!.Width} × {_selectedPreview.Height}";
+        bool animatedWebp = _selectedPreview!.AnimationFrames.Count > 1;
+        EditorImageTitle.Text = $"{item.Name} · {_selectedPreview.Width} × {_selectedPreview.Height}" + (animatedWebp ? " · first frame only" : string.Empty);
         CropToolCheckBox.IsChecked = false;
         ResizeToolCheckBox.IsChecked = false;
         RotationToolCheckBox.IsChecked = false;
@@ -936,6 +1017,8 @@ public partial class ImageGalleryWindow : Window
         _editorPreviewPng = _selectedPreview.PngBytes;
         SetPreviewBitmap(_editorPreviewPng, EditorPreviewImage, ref _editorBitmap);
         UpdateCropOverlay();
+        if (animatedWebp)
+            StatusText.Text = "The current editor edits only the first frame; saving creates a still image. Animated WebP editing is not included in this phase.";
     }
 
     private void BackButton_Click(object? sender, RoutedEventArgs e)
@@ -1047,6 +1130,7 @@ public partial class ImageGalleryWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        StopAnimation();
         DisposeThumbnails();
         _previewBitmap?.Dispose();
         _editorBitmap?.Dispose();

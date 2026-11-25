@@ -25,7 +25,12 @@ public enum ImageBrowserLocation
 
 public sealed record ImageAssetEntry(string FullPath, string Name, bool IsDirectory, string Details);
 
-public sealed record ImageAssetPreview(byte[] PngBytes, int Width, int Height, string Format, int FrameCount, bool HasTransparency);
+public sealed record ImageAssetPreview(byte[] PngBytes, int Width, int Height, string Format, int FrameCount, bool HasTransparency)
+{
+    public IReadOnlyList<ImageAssetPreviewFrame> AnimationFrames { get; init; } = Array.Empty<ImageAssetPreviewFrame>();
+}
+
+public sealed record ImageAssetPreviewFrame(byte[] PngBytes, int DurationMilliseconds);
 
 public sealed record ImageFilterStep(string Filter, float? Amount = null);
 
@@ -128,21 +133,48 @@ public sealed class ImageLibraryService
     public ImageAssetPreview CreatePreview(string imagePath, int maxSize = 1200)
     {
         ValidateManagedImagePath(imagePath);
-        int frameCount = SharpImage.Identify(imagePath).FrameCount;
-        using Image<Rgba32> image = SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = 1 }, imagePath);
+        var imageInfo = SharpImage.Identify(imagePath);
+        int frameCount = imageInfo.FrameCount;
+        bool isAnimatedWebp = string.Equals(Path.GetExtension(imagePath), ".webp", StringComparison.OrdinalIgnoreCase) && frameCount > 1;
+        using Image<Rgba32> image = SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = isAnimatedWebp ? checked((uint)frameCount) : 1u }, imagePath);
         string format = image.Metadata.DecodedImageFormat?.Name ?? Path.GetExtension(imagePath).TrimStart('.').ToUpperInvariant();
         image.Mutate(context => context.AutoOrient());
         int width = image.Width;
         int height = image.Height;
         bool hasTransparency = ContainsTransparency(image);
-        image.Mutate(context => context.Resize(new ResizeOptions
+        byte[] firstFrame = CreatePngPreview(image, 0, maxSize);
+        var preview = new ImageAssetPreview(firstFrame, width, height, format, frameCount, hasTransparency);
+        if (!isAnimatedWebp)
+            return preview;
+
+        var frames = new List<ImageAssetPreviewFrame>(image.Frames.Count);
+        for (int frameIndex = 0; frameIndex < image.Frames.Count; frameIndex++)
+        {
+            uint frameDelay = image.Frames[frameIndex].Metadata.GetWebpMetadata().FrameDelay;
+            int duration = (int)Math.Min(frameDelay, 10000u);
+            frames.Add(new ImageAssetPreviewFrame(CreatePngPreview(image, frameIndex, maxSize), duration));
+        }
+
+        return preview with { AnimationFrames = frames };
+    }
+
+    private static byte[] CreatePngPreview(Image<Rgba32> source, int frameIndex, int maxSize)
+    {
+        using Image<Rgba32> frame = source.Clone();
+        for (int i = frame.Frames.Count - 1; i >= 0; i--)
+        {
+            if (i != frameIndex)
+                frame.Frames.RemoveFrame(i);
+        }
+
+        frame.Mutate(context => context.Resize(new ResizeOptions
         {
             Size = new Size(maxSize, maxSize),
             Mode = ResizeMode.Max
         }));
         using var output = new MemoryStream();
-        image.SaveAsPng(output);
-        return new ImageAssetPreview(output.ToArray(), width, height, format, frameCount, hasTransparency);
+        frame.SaveAsPng(output);
+        return output.ToArray();
     }
 
     internal Image<Rgba32> LoadInspectorImage(string imagePath)

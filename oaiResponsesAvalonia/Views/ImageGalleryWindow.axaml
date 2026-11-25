@@ -61,7 +61,17 @@
             <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />
             <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto" Margin="12,0,0,0" RowSpacing="8">
                 <Border Grid.Row="0" Background="#181818" CornerRadius="4" Padding="8">
-                    <Image x:Name="PreviewImage" Stretch="Uniform" />
+                    <Grid RowDefinitions="*,Auto" RowSpacing="6">
+                        <Image x:Name="PreviewImage" Stretch="Uniform" />
+                        <Border x:Name="AnimationControls" Grid.Row="1" HorizontalAlignment="Center" Background="#F0F0F0" Padding="8" CornerRadius="4" IsVisible="False">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="PreviousFrameButton" Content="◀" ToolTip.Tip="Previous frame" Click="PreviousFrameButton_Click" Background="White" Foreground="#111111" BorderBrush="#666666" BorderThickness="1" />
+                                <Button x:Name="AnimationPlayButton" Content="Play" Click="AnimationPlayButton_Click" Background="White" Foreground="#111111" BorderBrush="#666666" BorderThickness="1" />
+                                <Button x:Name="NextFrameButton" Content="▶|" ToolTip.Tip="Next frame" Click="NextFrameButton_Click" Background="White" Foreground="#111111" BorderBrush="#666666" BorderThickness="1" />
+                                <TextBlock x:Name="AnimationFrameText" VerticalAlignment="Center" Foreground="#111111" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
                 </Border>
                 <TextBlock x:Name="PreviewDetailsText" Grid.Row="1" Text="Select an image to preview it." TextWrapping="Wrap" />
                 <Grid Grid.Row="2">

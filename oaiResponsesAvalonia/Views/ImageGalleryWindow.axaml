@@ -14,6 +14,7 @@
                 <MenuItem Header="_File">
                     <MenuItem x:Name="SaveAsMenuItem" Header="Save As…" IsEnabled="False" Click="SaveAsMenuItem_Click" />
                     <MenuItem Header="Import…" Click="ImportButton_Click" />
+                    <MenuItem x:Name="CreateAnimationMenuItem" Header="Create animated WebP…" Click="CreateAnimationMenuItem_Click" />
                     <MenuItem Header="Images Folder" ToolTip.Tip="Open in File manager" Click="OpenUserImagesFolderMenuItem_Click" />
                     <MenuItem Header="Refresh" Click="RefreshMenuItem_Click" />
                     <Separator />
@@ -61,11 +62,22 @@
             <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />
             <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto" Margin="12,0,0,0" RowSpacing="8">
                 <Border Grid.Row="0" Background="#181818" CornerRadius="4" Padding="8">
-                    <Image x:Name="PreviewImage" Stretch="Uniform" />
+                    <Grid RowDefinitions="*,Auto" RowSpacing="6">
+                        <Image x:Name="PreviewImage" Stretch="Uniform" />
+                        <Border x:Name="AnimationControls" Grid.Row="1" HorizontalAlignment="Center" Background="#F0F0F0" Padding="8" CornerRadius="4" IsVisible="False">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="PreviousFrameButton" Content="◀" ToolTip.Tip="Previous frame" Click="PreviousFrameButton_Click" Background="White" Foreground="#111111" BorderBrush="#666666" BorderThickness="1" />
+                                <Button x:Name="AnimationPlayButton" Content="Play" Click="AnimationPlayButton_Click" Background="White" Foreground="#111111" BorderBrush="#666666" BorderThickness="1" />
+                                <Button x:Name="NextFrameButton" Content="▶|" ToolTip.Tip="Next frame" Click="NextFrameButton_Click" Background="White" Foreground="#111111" BorderBrush="#666666" BorderThickness="1" />
+                                <TextBlock x:Name="AnimationFrameText" VerticalAlignment="Center" Foreground="#111111" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
                 </Border>
                 <TextBlock x:Name="PreviewDetailsText" Grid.Row="1" Text="Select an image to preview it." TextWrapping="Wrap" />
-                <Grid Grid.Row="2">
-                    <Button x:Name="EditButton" HorizontalAlignment="Right" Content="Edit…" IsEnabled="False" Click="EditButton_Click" />
+                <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <Button x:Name="EditFramesButton" Grid.Column="1" Content="Edit frames…" IsVisible="False" IsEnabled="False" Click="EditFramesButton_Click" />
+                    <Button x:Name="EditButton" Grid.Column="2" HorizontalAlignment="Right" Content="Edit…" IsEnabled="False" Click="EditButton_Click" />
                 </Grid>
             </Grid>
         </Grid>

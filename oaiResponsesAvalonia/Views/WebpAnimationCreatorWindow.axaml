@@ -1,0 +1,83 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:oaiResponsesAvalonia.Views"
+        x:Class="oaiResponsesAvalonia.Views.WebpAnimationCreatorWindow"
+        Title="Create animated WebP"
+        Width="980" Height="700" MinWidth="760" MinHeight="540"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="14" RowSpacing="10">
+        <TextBlock x:Name="IntroText" Grid.Row="0" Text="Create an animated WebP from still images. Each source file becomes one frame." TextWrapping="Wrap" />
+        <Grid Grid.Row="1" ColumnDefinitions="*,5,1.2*" ColumnSpacing="10">
+            <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" RowSpacing="8">
+                <TextBlock Grid.Row="0" Text="Frames (top to bottom is playback order)" FontWeight="SemiBold" />
+                <ListBox x:Name="SourcesList" Grid.Row="1" SelectionChanged="SourcesList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:WebpAnimationSourceItem">
+                            <Grid ColumnDefinitions="64,*" ColumnSpacing="10" MinHeight="58" Margin="3">
+                                <Image Grid.Column="0" Source="{Binding Thumbnail}" Width="56" Height="50" Stretch="Uniform" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Dimensions}" FontSize="11" Opacity="0.7" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <Grid Grid.Row="2" ColumnDefinitions="*,*,*,*,*" ColumnSpacing="6">
+                    <Button x:Name="AddFilesButton" Grid.Column="0" Content="Add files…" Click="AddFiles_Click" />
+                    <Button x:Name="AddFolderButton" Grid.Column="1" Content="Add folder…" Click="AddFolder_Click" />
+                    <Button x:Name="MoveUpButton" Grid.Column="2" Content="Move up" Click="MoveUp_Click" />
+                    <Button x:Name="MoveDownButton" Grid.Column="3" Content="Move down" Click="MoveDown_Click" />
+                    <Button x:Name="RemoveButton" Grid.Column="4" Content="Remove" Click="RemoveSelected_Click" />
+                </Grid>
+            </Grid>
+            <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" />
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Output options" FontWeight="Bold" FontSize="16" />
+                    <TextBlock Text="Canvas size (pixels). The first image sets the canvas aspect ratio; its longest side starts at 480 px. Other images are contained and centered on the transparent canvas." TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="3">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Width (pixels)" />
+                        <TextBox x:Name="WidthBox" Grid.Row="1" Grid.Column="0" Text="480" TextChanged="SizeBox_TextChanged" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Height (pixels)" />
+                        <TextBox x:Name="HeightBox" Grid.Row="1" Grid.Column="1" Text="480" TextChanged="SizeBox_TextChanged" />
+                    </Grid>
+                    <CheckBox x:Name="KeepAspectRatioCheckBox" Content="Keep first image's canvas aspect ratio when changing size" IsChecked="False" IsCheckedChanged="KeepAspectRatioCheckBox_Changed" />
+                    <TextBlock Text="Shared frame duration: milliseconds each image is shown" TextWrapping="Wrap" />
+                    <TextBox x:Name="FrameDurationBox" PlaceholderText="Duration in milliseconds" Text="100" />
+                    <Border x:Name="EditModeNotice" IsVisible="False" Background="#FFF4D6" Padding="8" CornerRadius="4">
+                        <TextBlock Text="Existing frame durations are preserved individually. Added still images use the shared duration above. Saving re-encodes the frames as lossy WebP; the source file is left unchanged." TextWrapping="Wrap" />
+                    </Border>
+                    <CheckBox x:Name="LoopForeverCheckBox" Content="Loop forever" IsChecked="True" IsCheckedChanged="LoopForeverCheckBox_Changed" />
+                    <TextBox x:Name="LoopCountBox" PlaceholderText="Finite repeat count" Text="1" IsEnabled="False" />
+                    <TextBlock Text="Finite count is the number of repeats after the initial play." FontSize="11" Opacity="0.75" TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <TextBox x:Name="MethodBox" Grid.Column="0" PlaceholderText="Method (0–6)" Text="4" />
+                        <TextBox x:Name="QualityBox" Grid.Column="1" PlaceholderText="Quality (1–100)" Text="80" />
+                    </Grid>
+                    <TextBlock Text="Method 0 is fastest; 6 spends more time encoding. Quality is a separate lossy-quality setting." FontSize="11" Opacity="0.75" TextWrapping="Wrap" />
+                    <TextBox x:Name="OutputNameBox" PlaceholderText="Output filename" Text="animation.webp" />
+                    <Button x:Name="BuildPreviewButton" Content="Build preview" Click="BuildPreview_Click" HorizontalAlignment="Left" />
+                    <Border Background="#181818" CornerRadius="4" Padding="6" MinHeight="150">
+                        <Grid RowDefinitions="*,Auto" RowSpacing="5">
+                            <Image x:Name="AnimationPreviewImage" Grid.Row="0" Stretch="Uniform" />
+                            <Border Grid.Row="1" HorizontalAlignment="Center" Background="#F0F0F0" Padding="5" CornerRadius="3" IsVisible="False" x:Name="PreviewControls">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Content="◀" Click="PreviousPreviewFrame_Click" Background="White" Foreground="#111111" />
+                                    <Button x:Name="PreviewPlayButton" Content="Play" Click="PreviewPlayButton_Click" Background="White" Foreground="#111111" />
+                                    <Button Content="▶|" Click="NextPreviewFrame_Click" Background="White" Foreground="#111111" />
+                                    <TextBlock x:Name="PreviewFrameText" VerticalAlignment="Center" Foreground="#111111" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock x:Name="StatusText" Grid.Column="0" VerticalAlignment="Center" Text="Add at least two images." TextWrapping="Wrap" />
+            <Button Grid.Column="1" Content="Cancel" IsCancel="True" Click="Cancel_Click" />
+            <Button x:Name="CreateButton" Grid.Column="2" Content="Create WebP" IsDefault="True" Click="CreateButton_Click" />
+        </Grid>
+    </Grid>
+</Window>

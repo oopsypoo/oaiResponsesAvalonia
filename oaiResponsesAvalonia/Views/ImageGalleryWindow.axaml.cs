@@ -137,6 +137,8 @@ public partial class ImageGalleryWindow : Window
             _previewBitmap = null;
             PreviewDetailsText.Text = _entries.Count == 0 ? "This folder contains no supported images or subfolders." : "Select an image to preview it.";
             EditButton.IsEnabled = false;
+            EditFramesButton.IsVisible = false;
+            EditFramesButton.IsEnabled = false;
             StatusText.Text = $"{_entries.Count} item(s). Supported formats: PNG, WebP, JPEG, BMP, ICO.";
         }
         catch (Exception ex)
@@ -246,6 +248,8 @@ public partial class ImageGalleryWindow : Window
             _selectedImagePath = null;
             _selectedPreview = null;
             EditButton.IsEnabled = false;
+            EditFramesButton.IsVisible = false;
+            EditFramesButton.IsEnabled = false;
             AnimationControls.IsVisible = false;
             PreviewImage.Source = null;
             PreviewDetailsText.Text = EntriesList.SelectedItem is ImageGalleryItem folder
@@ -257,6 +261,8 @@ public partial class ImageGalleryWindow : Window
         _selectedImagePath = item.FullPath;
         AnimationControls.IsVisible = false;
         EditButton.IsEnabled = true;
+        EditFramesButton.IsVisible = false;
+        EditFramesButton.IsEnabled = false;
         PreviewDetailsText.Text = "Loading preview…";
         try
         {
@@ -267,6 +273,10 @@ public partial class ImageGalleryWindow : Window
             _animationFrameIndex = 0;
             // Show controls from file metadata so animated files are not silently presented as stills.
             bool isAnimated = result.FrameCount > 1;
+            bool isAnimatedWebpInUserImages = _location == ImageBrowserLocation.UserImages &&
+                string.Equals(Path.GetExtension(item.FullPath), ".webp", StringComparison.OrdinalIgnoreCase) && isAnimated;
+            EditFramesButton.IsVisible = isAnimatedWebpInUserImages;
+            EditFramesButton.IsEnabled = isAnimatedWebpInUserImages && result.AnimationFrames.Count > 1;
             AnimationControls.IsVisible = isAnimated;
             bool hasDecodedAnimation = result.AnimationFrames.Count > 1;
             PreviousFrameButton.IsEnabled = hasDecodedAnimation;
@@ -365,6 +375,37 @@ public partial class ImageGalleryWindow : Window
     {
         if (EntriesList.SelectedItem is ImageGalleryItem item && !item.IsDirectory)
             OpenEditor(item);
+    }
+
+    private async void EditFramesButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_location != ImageBrowserLocation.UserImages ||
+            EntriesList.SelectedItem is not ImageGalleryItem item || item.IsDirectory)
+            return;
+
+        EditFramesButton.IsEnabled = false;
+        StatusText.Text = $"Reading frames from {item.Name}…";
+        try
+        {
+            WebpAnimationEditDocument document = await Task.Run(() => _imageService.ReadWebpAnimationForEditing(item.FullPath));
+            string targetDirectory = _imageService.GetSafeCurrentDirectory(ImageBrowserLocation.UserImages, _currentDirectory);
+            var editor = WebpAnimationCreatorWindow.CreateForEditing(_imageService, targetDirectory, item.FullPath, document);
+            bool saved = await editor.ShowDialog<bool>(this);
+            if (saved)
+            {
+                await RefreshEntriesAsync();
+                StatusText.Text = $"Saved edited animation as {Path.GetFileName(editor.CreatedFilePath ?? "edited-animation.webp")}. The original was unchanged.";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Could not open animation frames: {ex.Message}";
+        }
+        finally
+        {
+            EditFramesButton.IsEnabled = _location == ImageBrowserLocation.UserImages &&
+                _selectedPreview is { FrameCount: > 1, AnimationFrames.Count: > 1 };
+        }
     }
 
     private async void CreateAnimationMenuItem_Click(object? sender, RoutedEventArgs e)

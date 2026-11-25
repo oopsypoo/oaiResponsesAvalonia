@@ -16,17 +16,31 @@ namespace oaiResponsesAvalonia.Views;
 
 public sealed class WebpAnimationSourceItem : IDisposable
 {
-    public string FullPath { get; }
-    public string Name => Path.GetFileName(FullPath);
+    public string? FullPath { get; }
+    public string Name { get; }
     public string Dimensions { get; }
     public Bitmap Thumbnail { get; }
+    public byte[]? ImageBytes { get; }
+    public int? DurationMilliseconds { get; }
 
     public WebpAnimationSourceItem(string fullPath, Bitmap thumbnail, string dimensions)
     {
         FullPath = fullPath;
+        Name = Path.GetFileName(fullPath);
         Thumbnail = thumbnail;
         Dimensions = dimensions;
     }
+
+    public WebpAnimationSourceItem(string name, byte[] imageBytes, Bitmap thumbnail, string dimensions, int durationMilliseconds)
+    {
+        Name = name;
+        ImageBytes = imageBytes;
+        Thumbnail = thumbnail;
+        Dimensions = dimensions;
+        DurationMilliseconds = durationMilliseconds;
+    }
+
+    public WebpAnimationFrameInput ToFrameInput() => new(FullPath, ImageBytes, DurationMilliseconds);
 
     public void Dispose() => Thumbnail.Dispose();
 }
@@ -49,6 +63,8 @@ public partial class WebpAnimationCreatorWindow : Window
     private int _previewCompletedPlays;
     private int? _previewTotalPlays;
     private bool _updatingAspectRatio;
+    private bool _isEditingAnimation;
+
     private double _lockedAspectRatio = 1d;
 
     public string? CreatedFilePath { get; private set; }
@@ -80,6 +96,50 @@ public partial class WebpAnimationCreatorWindow : Window
             foreach (var source in _sources)
                 source.Dispose();
         };
+    }
+
+    public static WebpAnimationCreatorWindow CreateForEditing(
+        ImageLibraryService imageService, string targetDirectory, string sourcePath, WebpAnimationEditDocument document)
+    {
+        var window = new WebpAnimationCreatorWindow(imageService, targetDirectory);
+        window.InitializeForEditing(sourcePath, document);
+        return window;
+    }
+
+    private void InitializeForEditing(string sourcePath, WebpAnimationEditDocument document)
+    {
+        Title = "Edit animated WebP frames";
+        IntroText.Text = $"Edit the frame sequence from {Path.GetFileName(sourcePath)}. Existing frame timings are preserved; new images use the shared duration below.";
+        EditModeNotice.IsVisible = true;
+        _isEditingAnimation = true;
+        FrameDurationBox.IsEnabled = false;
+
+        _lockedAspectRatio = (double)document.Width / document.Height;
+        WidthBox.Text = document.Width.ToString();
+        HeightBox.Text = document.Height.ToString();
+        KeepAspectRatioCheckBox.IsChecked = true;
+        LoopForeverCheckBox.IsChecked = document.RepeatCount == 0;
+        LoopCountBox.Text = Math.Max(1, (int)document.RepeatCount).ToString();
+        LoopCountBox.IsEnabled = document.RepeatCount != 0;
+        FrameDurationBox.Text = "100";
+        MethodBox.Text = "4";
+        QualityBox.Text = "100";
+        OutputNameBox.Text = Path.GetFileNameWithoutExtension(sourcePath) + "-edited.webp";
+        CreateButton.Content = "Save edited copy";
+
+        for (int i = 0; i < document.Frames.Count; i++)
+        {
+            WebpAnimationEditFrame frame = document.Frames[i];
+            using var stream = new MemoryStream(frame.PngBytes);
+            var thumbnail = new Bitmap(stream);
+            _sources.Add(new WebpAnimationSourceItem(
+                $"{Path.GetFileName(sourcePath)} — Frame {i + 1} ({frame.DurationMilliseconds} ms)",
+                frame.PngBytes, thumbnail, $"{document.Width} × {document.Height}", frame.DurationMilliseconds));
+        }
+
+        if (_sources.Count > 0)
+            SourcesList.SelectedIndex = 0;
+        StatusText.Text = $"Loaded {document.Frames.Count} frame(s). Saving creates a new WebP and leaves the source unchanged.";
     }
 
     private async Task<IStorageFolder?> GetInitialPickerFolderAsync()
@@ -282,8 +342,8 @@ public partial class WebpAnimationCreatorWindow : Window
         SetBusy(true);
         try
         {
-            byte[] encoded = await Task.Run(() => _imageService.CreateWebpAnimationBytes(
-                _sources.Select(source => source.FullPath).ToArray(), settings.Width, settings.Height,
+            byte[] encoded = await Task.Run(() => _imageService.CreateWebpAnimationFromFrames(
+                _sources.Select(source => source.ToFrameInput()).ToArray(), settings.Width, settings.Height,
                 settings.LoopForever, settings.LoopCount, settings.Method, settings.Quality, settings.Duration));
             ImageAssetPreview preview = await Task.Run(() => _imageService.CreateWebpAnimationPreview(encoded));
             SetPreview(preview, settings.LoopForever, settings.LoopCount);
@@ -316,8 +376,8 @@ public partial class WebpAnimationCreatorWindow : Window
         SetBusy(true);
         try
         {
-            byte[] bytes = await Task.Run(() => _imageService.CreateWebpAnimationBytes(
-                _sources.Select(source => source.FullPath).ToArray(), settings.Width, settings.Height,
+            byte[] bytes = await Task.Run(() => _imageService.CreateWebpAnimationFromFrames(
+                _sources.Select(source => source.ToFrameInput()).ToArray(), settings.Width, settings.Height,
                 settings.LoopForever, settings.LoopCount, settings.Method, settings.Quality, settings.Duration));
             string savedPath = await Task.Run(() => _imageService.SaveToUserImages(_targetDirectory, fileName, bytes));
             CreatedFilePath = savedPath;
@@ -464,11 +524,12 @@ public partial class WebpAnimationCreatorWindow : Window
         foreach (Control control in new Control[]
         {
             SourcesList, AddFilesButton, AddFolderButton, MoveUpButton, MoveDownButton, RemoveButton,
-            WidthBox, HeightBox, KeepAspectRatioCheckBox, FrameDurationBox, LoopForeverCheckBox, MethodBox, QualityBox,
+            WidthBox, HeightBox, KeepAspectRatioCheckBox, LoopForeverCheckBox, MethodBox, QualityBox,
             OutputNameBox, BuildPreviewButton, CreateButton
         })
             control.IsEnabled = !busy;
         LoopCountBox.IsEnabled = !busy && LoopForeverCheckBox.IsChecked != true;
+        FrameDurationBox.IsEnabled = !busy && !_isEditingAnimation;
         StatusText.Text = busy ? "Working…" : StatusText.Text;
     }
 

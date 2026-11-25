@@ -6,7 +6,7 @@
         Width="980" Height="700" MinWidth="760" MinHeight="540"
         WindowStartupLocation="CenterOwner">
     <Grid RowDefinitions="Auto,*,Auto" Margin="14" RowSpacing="10">
-        <TextBlock Grid.Row="0" Text="Create an animated WebP from still images. Each source file becomes one frame." TextWrapping="Wrap" />
+        <TextBlock x:Name="IntroText" Grid.Row="0" Text="Create an animated WebP from still images. Each source file becomes one frame." TextWrapping="Wrap" />
         <Grid Grid.Row="1" ColumnDefinitions="*,5,1.2*" ColumnSpacing="10">
             <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" RowSpacing="8">
                 <TextBlock Grid.Row="0" Text="Frames (top to bottom is playback order)" FontWeight="SemiBold" />
@@ -43,8 +43,11 @@
                         <TextBox x:Name="HeightBox" Grid.Row="1" Grid.Column="1" Text="480" TextChanged="SizeBox_TextChanged" />
                     </Grid>
                     <CheckBox x:Name="KeepAspectRatioCheckBox" Content="Keep first image's canvas aspect ratio when changing size" IsChecked="False" IsCheckedChanged="KeepAspectRatioCheckBox_Changed" />
-                    <TextBlock Text="Frame duration: milliseconds each image is shown" TextWrapping="Wrap" />
+                    <TextBlock Text="Shared frame duration: milliseconds each image is shown" TextWrapping="Wrap" />
                     <TextBox x:Name="FrameDurationBox" PlaceholderText="Duration in milliseconds" Text="100" />
+                    <Border x:Name="EditModeNotice" IsVisible="False" Background="#FFF4D6" Padding="8" CornerRadius="4">
+                        <TextBlock Text="Existing frame durations are preserved individually. Added still images use the shared duration above. Saving re-encodes the frames as lossy WebP; the source file is left unchanged." TextWrapping="Wrap" />
+                    </Border>
                     <CheckBox x:Name="LoopForeverCheckBox" Content="Loop forever" IsChecked="True" IsCheckedChanged="LoopForeverCheckBox_Changed" />
                     <TextBox x:Name="LoopCountBox" PlaceholderText="Finite repeat count" Text="1" IsEnabled="False" />
                     <TextBlock Text="Finite count is the number of repeats after the initial play." FontSize="11" Opacity="0.75" TextWrapping="Wrap" />

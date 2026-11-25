@@ -17,6 +17,10 @@ Notable changes to the project are recorded here. Release version numbers have n
 
 ### 
 
+### 2026-11-25
+
+* Added wepb- animation support. Simple preview, create and edit
+
 ### 2026-11-13
 
 * Improved the terminal `preview -o` image inspector with faster viewport-sized rendering, responsive loading, and detailed zoom.

@@ -237,6 +237,82 @@ public sealed class ImageLibraryService
         return output.ToArray();
     }
 
+    public byte[] CreateExternalThumbnail(string imagePath, int maxSize = 88)
+    {
+        var size = new Size(maxSize, maxSize);
+        using Image<Rgba32> image = SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = 1, TargetSize = size }, imagePath);
+        image.Mutate(context => context.AutoOrient().Resize(new ResizeOptions { Size = size, Mode = ResizeMode.Max }));
+        using var output = new MemoryStream();
+        image.SaveAsPng(output, new PngEncoder { CompressionLevel = PngCompressionLevel.BestSpeed });
+        return output.ToArray();
+    }
+
+    public byte[] CreateWebpAnimationBytes(
+        IReadOnlyList<string> sourcePaths, int width, int height, bool loopForever,
+        int loopCount, int method, int quality, int frameDurationMilliseconds)
+    {
+        if (sourcePaths.Count < 2 || sourcePaths.Count > 300)
+            throw new ArgumentException("Choose between 2 and 300 still images for an animation.", nameof(sourcePaths));
+        if (width is < 1 or > 8192 || height is < 1 or > 8192 || (long)width * height * sourcePaths.Count > 50_000_000)
+            throw new ArgumentOutOfRangeException(nameof(width), "The output dimensions are invalid or the animation would exceed the 50-million total frame-pixel processing limit.");
+        if (!loopForever && loopCount is < 1 or > 10000)
+            throw new ArgumentOutOfRangeException(nameof(loopCount), "Finite loop count must be between 1 and 10,000 repeats.");
+        if (method is < 0 or > 6)
+            throw new ArgumentOutOfRangeException(nameof(method), "WebP encoding method must be between 0 and 6.");
+        if (quality is < 1 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(quality), "WebP quality must be between 1 and 100.");
+        if (frameDurationMilliseconds is < 1 or > 60000)
+            throw new ArgumentOutOfRangeException(nameof(frameDurationMilliseconds), "Frame duration must be between 1 and 60,000 milliseconds.");
+
+        using Image<Rgba32> animation = CreateAnimationCanvas(sourcePaths[0], width, height);
+        for (int i = 1; i < sourcePaths.Count; i++)
+        {
+            using Image<Rgba32> frame = CreateAnimationCanvas(sourcePaths[i], width, height);
+            animation.Frames.AddFrame(frame.Frames.RootFrame);
+        }
+
+        var animationMetadata = animation.Metadata.GetWebpMetadata();
+        animationMetadata.RepeatCount = loopForever ? (ushort)0 : (ushort)loopCount;
+        animationMetadata.BackgroundColor = SixLabors.ImageSharp.Color.Transparent;
+        foreach (var frame in animation.Frames)
+        {
+            var frameMetadata = frame.Metadata.GetWebpMetadata();
+            frameMetadata.FrameDelay = (uint)frameDurationMilliseconds;
+            frameMetadata.DisposalMode = FrameDisposalMode.DoNotDispose;
+            frameMetadata.BlendMode = FrameBlendMode.Source;
+        }
+
+        using var output = new MemoryStream();
+        animation.Save(output, new WebpEncoder { Quality = quality, Method = (WebpEncodingMethod)method });
+        return output.ToArray();
+    }
+
+    public ImageAssetPreview CreateWebpAnimationPreview(byte[] webpBytes, int maxSize = 1200)
+    {
+        int frameCount = SharpImage.Identify(webpBytes).FrameCount;
+        using Image<Rgba32> image = SharpImage.Load<Rgba32>(
+            new DecoderOptions { MaxFrames = checked((uint)frameCount) }, webpBytes);
+        var frames = new List<ImageAssetPreviewFrame>(image.Frames.Count);
+        for (int i = 0; i < image.Frames.Count; i++)
+        {
+            int duration = (int)Math.Min(image.Frames[i].Metadata.GetWebpMetadata().FrameDelay, 60000u);
+            frames.Add(new ImageAssetPreviewFrame(CreatePngPreview(image, i, maxSize), duration));
+        }
+        return new ImageAssetPreview(frames[0].PngBytes, image.Width, image.Height, "WEBP", frameCount,
+            ContainsTransparency(image)) { AnimationFrames = frames };
+    }
+
+    private static Image<Rgba32> CreateAnimationCanvas(string imagePath, int width, int height)
+    {
+        var targetSize = new Size(width, height);
+        using Image<Rgba32> source = SharpImage.Load<Rgba32>(
+            new DecoderOptions { MaxFrames = 1, TargetSize = targetSize }, imagePath);
+        source.Mutate(context => context.AutoOrient().Resize(new ResizeOptions { Size = targetSize, Mode = ResizeMode.Max }));
+        var canvas = new Image<Rgba32>(width, height, new Rgba32(0, 0, 0, 0));
+        canvas.Mutate(context => context.DrawImage(source, new Point((width - source.Width) / 2, (height - source.Height) / 2), 1f));
+        return canvas;
+    }
+
     public string SaveToUserImages(string targetDirectory, string fileName, byte[] bytes)
     {
         string directory = RequireDirectoryWithinRoot(_userImagesRoot, targetDirectory);

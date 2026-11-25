@@ -165,6 +165,7 @@ public partial class ImageGalleryWindow : Window
         bool inUserImages = _location == ImageBrowserLocation.UserImages;
         SaveAsMenuItem.IsEnabled = EditorPanel.IsVisible && _selectedImagePath is not null;
         NewFolderMenuItem.IsEnabled = inUserImages;
+        CreateAnimationMenuItem.IsEnabled = inUserImages;
         DeleteFileMenuItem.IsEnabled = inUserImages && EntriesList.SelectedItem is ImageGalleryItem file && !file.IsDirectory;
         DeleteFolderMenuItem.IsEnabled = inUserImages && EntriesList.SelectedItem is ImageGalleryItem folder && folder.IsDirectory;
     }
@@ -364,6 +365,29 @@ public partial class ImageGalleryWindow : Window
     {
         if (EntriesList.SelectedItem is ImageGalleryItem item && !item.IsDirectory)
             OpenEditor(item);
+    }
+
+    private async void CreateAnimationMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_location != ImageBrowserLocation.UserImages)
+            return;
+
+        try
+        {
+            var creator = new WebpAnimationCreatorWindow(
+                _imageService,
+                _imageService.GetSafeCurrentDirectory(ImageBrowserLocation.UserImages, _currentDirectory));
+            bool created = await creator.ShowDialog<bool>(this);
+            if (created)
+            {
+                RefreshEntries();
+                StatusText.Text = $"Created {Path.GetFileName(creator.CreatedFilePath ?? "animation.webp")} in the current User Images folder.";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Could not create animated WebP: {ex.Message}";
+        }
     }
 
     private async void ImportButton_Click(object? sender, RoutedEventArgs e)

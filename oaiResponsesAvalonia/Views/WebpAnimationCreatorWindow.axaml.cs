@@ -80,6 +80,7 @@ public partial class WebpAnimationCreatorWindow : Window
     };
 
     private readonly ImageLibraryService _imageService;
+    private readonly IDialogService _dialogs = new AvaloniaDialogService();
     private readonly string _targetDirectory;
     private readonly ObservableCollection<WebpAnimationSourceItem> _sources = new();
     private readonly DispatcherTimer _previewTimer = new();
@@ -171,23 +172,22 @@ public partial class WebpAnimationCreatorWindow : Window
 
     private async Task<IStorageFolder?> GetInitialPickerFolderAsync()
     {
+        string userImagesDirectory = _imageService.GetRoot(ImageBrowserLocation.UserImages);
+
         try
         {
-            if (Directory.Exists(_targetDirectory))
+            if (Directory.Exists(userImagesDirectory))
             {
-                IStorageFolder? userImages = await StorageProvider.TryGetFolderFromPathAsync(_targetDirectory);
+                IStorageFolder? userImages = await StorageProvider.TryGetFolderFromPathAsync(userImagesDirectory);
                 if (userImages is not null)
                     return userImages;
             }
-
-
-
-
         }
         catch
         {
             // Fall back to Pictures if the configured User Images folder cannot be opened.
         }
+
         try
         {
             return await StorageProvider.TryGetWellKnownFolderAsync(WellKnownFolder.Pictures);
@@ -213,13 +213,8 @@ public partial class WebpAnimationCreatorWindow : Window
 
     private async void AddFolder_Click(object? sender, RoutedEventArgs e)
     {
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = "Add images from folder",
-            SuggestedStartLocation = await GetInitialPickerFolderAsync(),
-            AllowMultiple = false
-        });
-        string? folder = folders.FirstOrDefault()?.TryGetLocalPath();
+        string initialDirectory = _imageService.GetRoot(ImageBrowserLocation.UserImages);
+        string? folder = await _dialogs.PickFolderAsync(this, "Select image folder", initialDirectory);
         if (string.IsNullOrWhiteSpace(folder))
             return;
 

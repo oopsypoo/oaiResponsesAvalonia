@@ -1,6 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
 using oaiResponsesAvalonia.Services;
 using System;
 using System.IO;
@@ -26,7 +25,7 @@ namespace oaiResponsesAvalonia.Views
 
         private async void BrowseAppRoot_Click(object sender, RoutedEventArgs e)
         {
-            var selectedPath = await PickFolderAsync("Select Application Root Directory", AppRootTextBox.Text);
+            var selectedPath = await _dialogs.PickFolderAsync(this, "Select Application Root Directory", AppRootTextBox.Text);
             if (string.IsNullOrWhiteSpace(selectedPath))
                 return;
 
@@ -85,7 +84,7 @@ namespace oaiResponsesAvalonia.Views
 
         private async Task BrowseFolderAsync(TextBox textBox)
         {
-            var folder = await PickFolderAsync("Select the save location", textBox.Text);
+            var folder = await _dialogs.PickFolderAsync(this, "Select the save location", GetInitialFolderPath(textBox));
             if (string.IsNullOrWhiteSpace(folder))
                 return;
 
@@ -103,19 +102,40 @@ namespace oaiResponsesAvalonia.Views
             }
         }
 
-        private async Task<string?> PickFolderAsync(string title, string? currentPath)
+        private string? GetInitialFolderPath(TextBox textBox)
         {
-            var options = new FolderPickerOpenOptions
+            try
             {
-                Title = title,
-                AllowMultiple = false
-            };
+                string appRoot = AppRootTextBox.Text?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(appRoot))
+                    return null;
 
-            if (!string.IsNullOrWhiteSpace(currentPath) && Directory.Exists(currentPath))
-                options.SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(currentPath);
+                appRoot = Path.GetFullPath(appRoot);
 
-            var folders = await StorageProvider.OpenFolderPickerAsync(options);
-            return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+                if (ReferenceEquals(textBox, SavedImagesFolderTextBox))
+                {
+                    string savedImagesLocation = SavedImagesFolderTextBox.Text?.Trim() ?? string.Empty;
+                    if (Path.IsPathFullyQualified(savedImagesLocation))
+                        return Path.GetFullPath(savedImagesLocation);
+
+                    string imagesDirectory = ResolveConfiguredPath(appRoot, ImagesTextBox.Text);
+                    return string.IsNullOrWhiteSpace(savedImagesLocation)
+                        ? imagesDirectory
+                        : Path.GetFullPath(Path.Combine(imagesDirectory, savedImagesLocation));
+                }
+
+                return ResolveConfiguredPath(appRoot, textBox.Text);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+            {
+                return null;
+            }
+        }
+
+        private static string ResolveConfiguredPath(string basePath, string? configuredPath)
+        {
+            string path = configuredPath?.Trim() ?? string.Empty;
+            return Path.GetFullPath(Path.IsPathFullyQualified(path) ? path : Path.Combine(basePath, path));
         }
 
         private void UpdateSubPathsFromAppRoot()

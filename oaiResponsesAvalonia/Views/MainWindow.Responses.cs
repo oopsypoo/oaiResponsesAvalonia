@@ -1726,13 +1726,12 @@ namespace oaiResponsesAvalonia.Views
 
         private async void btnDeveloperBrowseRoot_Click(object? sender, RoutedEventArgs e)
         {
-            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-            {
-                Title = "Select workspace root",
-                AllowMultiple = false
-            });
+            var folderPath = await _dialogs.PickFolderAsync(
+                this,
+                "Select workspace root",
+                ResponsesState.DeveloperRepositoryRoot);
 
-            if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } folderPath)
+            if (!string.IsNullOrWhiteSpace(folderPath))
                 ResponsesState.DeveloperRepositoryRoot = folderPath;
         }
         private DeveloperToolsOptions BuildDeveloperToolsOptionsFromState()

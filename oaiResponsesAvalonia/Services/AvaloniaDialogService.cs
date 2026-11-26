@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using oaiResponsesAvalonia.Views;
 
 namespace oaiResponsesAvalonia.Services
 {
@@ -20,6 +21,15 @@ namespace oaiResponsesAvalonia.Services
             var dialog = new PromptDialogWindow(title, message, DialogSeverity.Question, showConfirmationButtons: true);
             var ownerWindow = GetOwnerWindow(owner, dialog);
             return ownerWindow is not null && await dialog.ShowDialog<bool>(ownerWindow);
+        }
+
+        public async Task<string?> PickFolderAsync(object owner, string title, string? currentPath = null)
+        {
+            var dialog = new FolderPickerWindow(title, currentPath);
+            var ownerWindow = GetOwnerWindow(owner, dialog);
+            return ownerWindow is not null
+                ? await dialog.ShowDialog<string?>(ownerWindow)
+                : null;
         }
 
         public async Task ShowModalAsync(object owner, object dialogWindow)

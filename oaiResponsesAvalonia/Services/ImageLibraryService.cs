@@ -32,7 +32,8 @@ public sealed record ImageAssetPreview(byte[] PngBytes, int Width, int Height, s
 
 public sealed record ImageAssetPreviewFrame(byte[] PngBytes, int DurationMilliseconds);
 
-public sealed record WebpAnimationEditFrame(byte[] PngBytes, int DurationMilliseconds);
+public sealed record WebpAnimationEditFrame(
+    byte[] PngBytes, int DurationMilliseconds, bool AlphaBlend = false, bool DisposeAfterFrame = true);
 
 public sealed record WebpAnimationEditDocument(
     int Width,
@@ -40,7 +41,16 @@ public sealed record WebpAnimationEditDocument(
     ushort RepeatCount,
     IReadOnlyList<WebpAnimationEditFrame> Frames);
 
-public sealed record WebpAnimationFrameInput(string? SourcePath, byte[]? ImageBytes, int? DurationMilliseconds);
+public sealed record WebpAnimationFrameInput(
+    string? SourcePath,
+    byte[]? ImageBytes,
+    int? DurationMilliseconds,
+    int? Width = null,
+    int? Height = null,
+    int XOffset = 0,
+    int YOffset = 0,
+    bool AlphaBlend = false,
+    bool DisposeAfterFrame = true);
 
 public sealed record ImageFilterStep(string Filter, float? Amount = null);
 
@@ -303,8 +313,10 @@ public sealed class ImageLibraryService
                 throw new ArgumentOutOfRangeException(nameof(sourceFrames), "Each frame duration must be between 1 and 60,000 milliseconds.");
             var frameMetadata = animation.Frames[i].Metadata.GetWebpMetadata();
             frameMetadata.FrameDelay = (uint)duration;
-            frameMetadata.DisposalMode = FrameDisposalMode.DoNotDispose;
-            frameMetadata.BlendMode = FrameBlendMode.Source;
+            frameMetadata.DisposalMode = input.DisposeAfterFrame
+                ? FrameDisposalMode.RestoreToBackground
+                : FrameDisposalMode.DoNotDispose;
+            frameMetadata.BlendMode = input.AlphaBlend ? FrameBlendMode.Over : FrameBlendMode.Source;
         }
 
         using var output = new MemoryStream();
@@ -329,9 +341,12 @@ public sealed class ImageLibraryService
         var frames = new List<WebpAnimationEditFrame>(image.Frames.Count);
         for (int i = 0; i < image.Frames.Count; i++)
         {
-            uint delay = image.Frames[i].Metadata.GetWebpMetadata().FrameDelay;
-            int duration = (int)Math.Clamp(delay, 1u, 60000u);
-            frames.Add(new WebpAnimationEditFrame(EncodeSingleFramePng(image, i), duration));
+            var metadata = image.Frames[i].Metadata.GetWebpMetadata();
+            int duration = (int)Math.Clamp(metadata.FrameDelay, 1u, 60000u);
+            frames.Add(new WebpAnimationEditFrame(
+                EncodeSingleFramePng(image, i), duration,
+                metadata.BlendMode == FrameBlendMode.Over,
+                metadata.DisposalMode != FrameDisposalMode.DoNotDispose));
         }
 
         return new WebpAnimationEditDocument(
@@ -366,14 +381,38 @@ public sealed class ImageLibraryService
         if (string.IsNullOrWhiteSpace(input.SourcePath) == (input.ImageBytes is null))
             throw new ArgumentException("Each animation frame must contain either a source path or encoded image bytes.", nameof(input));
 
-        var targetSize = new Size(width, height);
         using Image<Rgba32> source = input.ImageBytes is not null
-            ? SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = 1, TargetSize = targetSize }, input.ImageBytes)
-            : SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = 1, TargetSize = targetSize }, input.SourcePath!);
-        source.Mutate(context => context.AutoOrient().Resize(new ResizeOptions { Size = targetSize, Mode = ResizeMode.Max }));
+            ? SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = 1 }, input.ImageBytes)
+            : SharpImage.Load<Rgba32>(new DecoderOptions { MaxFrames = 1 }, input.SourcePath!);
+        source.Mutate(context => context.AutoOrient());
+
+        int frameWidth = input.Width ?? source.Width;
+        int frameHeight = input.Height ?? source.Height;
+        if (input.Width is null || input.Height is null)
+        {
+            double scale = Math.Min((double)width / source.Width, (double)height / source.Height);
+            frameWidth = Math.Max(1, (int)Math.Round(source.Width * scale));
+            frameHeight = Math.Max(1, (int)Math.Round(source.Height * scale));
+        }
+        int xOffset = input.Width is null ? (width - frameWidth) / 2 : input.XOffset;
+        int yOffset = input.Height is null ? (height - frameHeight) / 2 : input.YOffset;
+        if (frameWidth < 1 || frameHeight < 1 || frameWidth > width || frameHeight > height ||
+            xOffset < 0 || yOffset < 0 || xOffset + frameWidth > width || yOffset + frameHeight > height)
+            throw new ArgumentOutOfRangeException(nameof(input), "Frame size and offsets must fit inside the animation canvas.");
+
+        source.Mutate(context => context.Resize(frameWidth, frameHeight));
         var canvas = new Image<Rgba32>(width, height, new Rgba32(0, 0, 0, 0));
-        canvas.Mutate(context => context.DrawImage(source, new Point((width - source.Width) / 2, (height - source.Height) / 2), 1f));
+        canvas.Mutate(context => context.DrawImage(source, new Point(xOffset, yOffset), 1f));
         return canvas;
+    }
+
+    public byte[] CreateWebpAnimationFramePreview(
+        WebpAnimationFrameInput input, int canvasWidth, int canvasHeight)
+    {
+        using Image<Rgba32> canvas = CreateAnimationCanvas(input, canvasWidth, canvasHeight);
+        using var output = new MemoryStream();
+        canvas.SaveAsPng(output);
+        return output.ToArray();
     }
 
     public string SaveToUserImages(string targetDirectory, string fileName, byte[] bytes)

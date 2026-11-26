@@ -415,9 +415,8 @@ public partial class ImageGalleryWindow : Window
 
         try
         {
-            var creator = new WebpAnimationCreatorWindow(
-                _imageService,
-                _imageService.GetSafeCurrentDirectory(ImageBrowserLocation.UserImages, _currentDirectory));
+            string targetDirectory = _imageService.GetSafeCurrentDirectory(ImageBrowserLocation.UserImages, _currentDirectory);
+            var creator = new WebpAnimationCreatorWindow(_imageService, targetDirectory);
             bool created = await creator.ShowDialog<bool>(this);
             if (created)
             {

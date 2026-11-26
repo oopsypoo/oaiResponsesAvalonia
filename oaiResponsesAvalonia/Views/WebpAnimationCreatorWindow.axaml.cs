@@ -14,33 +14,59 @@ using SharpImage = SixLabors.ImageSharp.Image;
 
 namespace oaiResponsesAvalonia.Views;
 
-public sealed class WebpAnimationSourceItem : IDisposable
+public sealed class WebpAnimationSourceItem : IDisposable, System.ComponentModel.INotifyPropertyChanged
 {
+    private int _durationMilliseconds = 100;
+    private int _frameWidth;
+    private int _frameHeight;
+    private int _xOffset;
+    private int _yOffset;
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     public string? FullPath { get; }
     public string Name { get; }
     public string Dimensions { get; }
     public Bitmap Thumbnail { get; }
     public byte[]? ImageBytes { get; }
-    public int? DurationMilliseconds { get; }
+    public int DurationMilliseconds { get => _durationMilliseconds; set { _durationMilliseconds = value; NotifyFrameSummary(); } }
+    public int FrameWidth { get => _frameWidth; set { _frameWidth = value; NotifyFrameSummary(); } }
+    public int FrameHeight { get => _frameHeight; set { _frameHeight = value; NotifyFrameSummary(); } }
+    public int XOffset { get => _xOffset; set { _xOffset = value; NotifyFrameSummary(); } }
+    public int YOffset { get => _yOffset; set { _yOffset = value; NotifyFrameSummary(); } }
+    public bool AlphaBlend { get; set; }
+    public bool DisposeAfterFrame { get; set; } = true;
+    public string FrameSummary => $"{FrameWidth} × {FrameHeight} at {XOffset}, {YOffset} · {DurationMilliseconds} ms";
 
-    public WebpAnimationSourceItem(string fullPath, Bitmap thumbnail, string dimensions)
+    public WebpAnimationSourceItem(string fullPath, Bitmap thumbnail, string dimensions, int frameWidth, int frameHeight)
     {
         FullPath = fullPath;
         Name = Path.GetFileName(fullPath);
         Thumbnail = thumbnail;
         Dimensions = dimensions;
+        FrameWidth = frameWidth;
+        FrameHeight = frameHeight;
     }
 
-    public WebpAnimationSourceItem(string name, byte[] imageBytes, Bitmap thumbnail, string dimensions, int durationMilliseconds)
+    public WebpAnimationSourceItem(string name, byte[] imageBytes, Bitmap thumbnail, string dimensions,
+        int frameWidth, int frameHeight, int durationMilliseconds, bool alphaBlend, bool disposeAfterFrame)
     {
         Name = name;
         ImageBytes = imageBytes;
         Thumbnail = thumbnail;
         Dimensions = dimensions;
+        FrameWidth = frameWidth;
+        FrameHeight = frameHeight;
         DurationMilliseconds = durationMilliseconds;
+        AlphaBlend = alphaBlend;
+        DisposeAfterFrame = disposeAfterFrame;
     }
 
-    public WebpAnimationFrameInput ToFrameInput() => new(FullPath, ImageBytes, DurationMilliseconds);
+    public WebpAnimationFrameInput ToFrameInput() => new(
+        FullPath, ImageBytes, DurationMilliseconds, FrameWidth, FrameHeight,
+        XOffset, YOffset, AlphaBlend, DisposeAfterFrame);
+
+    private void NotifyFrameSummary() => PropertyChanged?.Invoke(this,
+        new System.ComponentModel.PropertyChangedEventArgs(nameof(FrameSummary)));
 
     public void Dispose() => Thumbnail.Dispose();
 }
@@ -61,11 +87,11 @@ public partial class WebpAnimationCreatorWindow : Window
     private Bitmap? _previewBitmap;
     private int _previewFrameIndex;
     private int _previewCompletedPlays;
+    private int _previewRepeatCount = 1;
     private int? _previewTotalPlays;
-    private bool _updatingAspectRatio;
-    private bool _isEditingAnimation;
-
-    private double _lockedAspectRatio = 1d;
+    private bool _updatingFrameEditor;
+    private bool _isInitializingXaml = true;
+    private double _lockedFrameAspectRatio = 1d;
 
     public string? CreatedFilePath { get; private set; }
 
@@ -84,15 +110,21 @@ public partial class WebpAnimationCreatorWindow : Window
 
     public WebpAnimationCreatorWindow(ImageLibraryService imageService, string targetDirectory)
     {
-        InitializeComponent();
         _imageService = imageService;
         _targetDirectory = targetDirectory;
+
+        
+        InitializeComponent();
+        _isInitializingXaml = false;
         SourcesList.ItemsSource = _sources;
         _previewTimer.Tick += PreviewTimer_Tick;
         Closed += (_, _) =>
         {
             _previewTimer.Stop();
             ClearPreview();
+            var canvasBitmap = CanvasPreviewImage.Source as Bitmap;
+            CanvasPreviewImage.Source = null;
+            canvasBitmap?.Dispose();
             foreach (var source in _sources)
                 source.Dispose();
         };
@@ -109,19 +141,13 @@ public partial class WebpAnimationCreatorWindow : Window
     private void InitializeForEditing(string sourcePath, WebpAnimationEditDocument document)
     {
         Title = "Edit animated WebP frames";
-        IntroText.Text = $"Edit the frame sequence from {Path.GetFileName(sourcePath)}. Existing frame timings are preserved; new images use the shared duration below.";
+        IntroText.Text = $"Edit each frame from {Path.GetFileName(sourcePath)}. Saving creates a new WebP and leaves the source unchanged.";
         EditModeNotice.IsVisible = true;
-        _isEditingAnimation = true;
-        FrameDurationBox.IsEnabled = false;
-
-        _lockedAspectRatio = (double)document.Width / document.Height;
         WidthBox.Text = document.Width.ToString();
         HeightBox.Text = document.Height.ToString();
-        KeepAspectRatioCheckBox.IsChecked = true;
         LoopForeverCheckBox.IsChecked = document.RepeatCount == 0;
         LoopCountBox.Text = Math.Max(1, (int)document.RepeatCount).ToString();
         LoopCountBox.IsEnabled = document.RepeatCount != 0;
-        FrameDurationBox.Text = "100";
         MethodBox.Text = "4";
         QualityBox.Text = "100";
         OutputNameBox.Text = Path.GetFileNameWithoutExtension(sourcePath) + "-edited.webp";
@@ -133,13 +159,14 @@ public partial class WebpAnimationCreatorWindow : Window
             using var stream = new MemoryStream(frame.PngBytes);
             var thumbnail = new Bitmap(stream);
             _sources.Add(new WebpAnimationSourceItem(
-                $"{Path.GetFileName(sourcePath)} — Frame {i + 1} ({frame.DurationMilliseconds} ms)",
-                frame.PngBytes, thumbnail, $"{document.Width} × {document.Height}", frame.DurationMilliseconds));
+                $"{Path.GetFileName(sourcePath)} — Frame {i + 1}", frame.PngBytes, thumbnail,
+                $"{document.Width} × {document.Height}", document.Width, document.Height,
+                frame.DurationMilliseconds, frame.AlphaBlend, frame.DisposeAfterFrame));
         }
 
         if (_sources.Count > 0)
             SourcesList.SelectedIndex = 0;
-        StatusText.Text = $"Loaded {document.Frames.Count} frame(s). Saving creates a new WebP and leaves the source unchanged.";
+        StatusText.Text = $"Loaded {document.Frames.Count} frame(s).";
     }
 
     private async Task<IStorageFolder?> GetInitialPickerFolderAsync()
@@ -233,7 +260,12 @@ public partial class WebpAnimationCreatorWindow : Window
                 using var stream = new MemoryStream(png);
                 if (_sources.Count == 0)
                     InitializeCanvasForFirstImage(imageInfo.Width, imageInfo.Height);
-                _sources.Add(new WebpAnimationSourceItem(path, new Bitmap(stream), $"{imageInfo.Width} × {imageInfo.Height}"));
+                var size = GetInitialFrameSize(imageInfo.Width, imageInfo.Height);
+                var item = new WebpAnimationSourceItem(path, new Bitmap(stream),
+                    $"{imageInfo.Width} × {imageInfo.Height}", size.Width, size.Height);
+                if (int.TryParse(DefaultDurationBox.Text, out int defaultDuration) && defaultDuration is >= 1 and <= 60000)
+                    item.DurationMilliseconds = defaultDuration;
+                _sources.Add(item);
                 added++;
             }
             catch
@@ -248,6 +280,27 @@ public partial class WebpAnimationCreatorWindow : Window
         StatusText.Text = skipped > 0
             ? $"Added {added} image(s); skipped {skipped} unsupported, unreadable, or excess file(s)."
             : $"Added {added} image(s). Sequence order is shown in the list.";
+    }
+
+    private void DuplicateSelected_Click(object? sender, RoutedEventArgs e)
+    {
+        var selected = SelectedSource;
+        if (selected is null || _sources.Count >= 300)
+            return;
+        using var thumbnailStream = new MemoryStream();
+        selected.Thumbnail.Save(thumbnailStream, new PngBitmapEncoderOptions());
+        using var cloneStream = new MemoryStream(thumbnailStream.ToArray());
+        var clone = new WebpAnimationSourceItem(
+            selected.Name + " (copy)", selected.ImageBytes ?? (selected.FullPath is { } path ? File.ReadAllBytes(path) : Array.Empty<byte>()),
+            new Bitmap(cloneStream), selected.Dimensions, selected.FrameWidth, selected.FrameHeight,
+            selected.DurationMilliseconds, selected.AlphaBlend, selected.DisposeAfterFrame)
+        {
+            XOffset = selected.XOffset,
+            YOffset = selected.YOffset
+        };
+        _sources.Insert(SourcesList.SelectedIndex + 1, clone);
+        SourcesList.SelectedIndex++;
+        StatusText.Text = "Duplicated the selected frame and its settings.";
     }
 
     private void MoveUp_Click(object? sender, RoutedEventArgs e) => MoveSelected(-1);
@@ -281,59 +334,149 @@ public partial class WebpAnimationCreatorWindow : Window
     private void InitializeCanvasForFirstImage(int imageWidth, int imageHeight)
     {
         double scale = 480d / Math.Max(imageWidth, imageHeight);
-        int canvasWidth = Math.Max(1, (int)Math.Round(imageWidth * scale));
-        int canvasHeight = Math.Max(1, (int)Math.Round(imageHeight * scale));
-
-        _lockedAspectRatio = (double)imageWidth / imageHeight;
-        _updatingAspectRatio = true;
-        try
-        {
-            WidthBox.Text = canvasWidth.ToString();
-            HeightBox.Text = canvasHeight.ToString();
-            KeepAspectRatioCheckBox.IsChecked = true;
-        }
-        finally
-        {
-            _updatingAspectRatio = false;
-        }
+        WidthBox.Text = Math.Max(1, (int)Math.Round(imageWidth * scale)).ToString();
+        HeightBox.Text = Math.Max(1, (int)Math.Round(imageHeight * scale)).ToString();
     }
 
-    private void KeepAspectRatioCheckBox_Changed(object? sender, RoutedEventArgs e)
+    private (int Width, int Height) GetInitialFrameSize(int imageWidth, int imageHeight)
     {
-        if (!_updatingAspectRatio && KeepAspectRatioCheckBox.IsChecked == true &&
-            int.TryParse(WidthBox.Text, out int width) && width > 0 &&
-            int.TryParse(HeightBox.Text, out int height) && height > 0)
-        {
-            _lockedAspectRatio = (double)width / height;
-        }
+        int canvasWidth = int.TryParse(WidthBox.Text, out int parsedWidth) ? Math.Clamp(parsedWidth, 1, 8192) : 480;
+        int canvasHeight = int.TryParse(HeightBox.Text, out int parsedHeight) ? Math.Clamp(parsedHeight, 1, 8192) : 480;
+        double scale = FitNewImagesCheckBox.IsChecked == true
+            ? Math.Min((double)canvasWidth / imageWidth, (double)canvasHeight / imageHeight)
+            : Math.Min(1d, Math.Min((double)canvasWidth / imageWidth, (double)canvasHeight / imageHeight));
+        return (Math.Max(1, (int)Math.Round(imageWidth * scale)), Math.Max(1, (int)Math.Round(imageHeight * scale)));
     }
 
-    private void SizeBox_TextChanged(object? sender, TextChangedEventArgs e)
+    private void CanvasSize_TextChanged(object? sender, TextChangedEventArgs e)
     {
-        if (_updatingAspectRatio || KeepAspectRatioCheckBox?.IsChecked != true ||
-            !double.IsFinite(_lockedAspectRatio) || _lockedAspectRatio <= 0)
+        if (_isInitializingXaml)
+            return;
+        RefreshCanvasPreview();
+    }
+
+    private void KeepFrameAspectCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_isInitializingXaml)
+            return;
+        if (KeepFrameAspectCheckBox.IsChecked == true &&
+            int.TryParse(FrameWidthBox.Text, out int width) && width > 0 &&
+            int.TryParse(FrameHeightBox.Text, out int height) && height > 0)
+            _lockedFrameAspectRatio = (double)width / height;
+    }
+
+    private void FrameGeometry_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isInitializingXaml || _updatingFrameEditor)
+            return;
+        var selected = SelectedSource;
+        if (selected is null)
             return;
 
-        if (!int.TryParse(WidthBox.Text, out int width) || width <= 0 ||
-            !int.TryParse(HeightBox.Text, out int height) || height <= 0)
-            return;
+        if (ReferenceEquals(sender, FrameWidthBox) && KeepFrameAspectCheckBox.IsChecked == true &&
+            int.TryParse(FrameWidthBox.Text, out int width) && width > 0 && _lockedFrameAspectRatio > 0)
+        {
+            _updatingFrameEditor = true;
+            FrameHeightBox.Text = Math.Max(1, (int)Math.Round(width / _lockedFrameAspectRatio)).ToString();
+            _updatingFrameEditor = false;
+        }
+        else if (ReferenceEquals(sender, FrameHeightBox) && KeepFrameAspectCheckBox.IsChecked == true &&
+                 int.TryParse(FrameHeightBox.Text, out int height) && height > 0 && _lockedFrameAspectRatio > 0)
+        {
+            _updatingFrameEditor = true;
+            FrameWidthBox.Text = Math.Max(1, (int)Math.Round(height * _lockedFrameAspectRatio)).ToString();
+            _updatingFrameEditor = false;
+        }
 
-        _updatingAspectRatio = true;
+        if (int.TryParse(FrameWidthBox.Text, out int fw)) selected.FrameWidth = fw;
+        if (int.TryParse(FrameHeightBox.Text, out int fh)) selected.FrameHeight = fh;
+        if (int.TryParse(FrameXBox.Text, out int x)) selected.XOffset = x;
+        if (int.TryParse(FrameYBox.Text, out int y)) selected.YOffset = y;
+        RefreshCanvasPreview();
+    }
+
+    private WebpAnimationSourceItem? SelectedSource => SourcesList.SelectedItem as WebpAnimationSourceItem;
+
+    private void FrameSettings_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isInitializingXaml || _updatingFrameEditor || SelectedSource is not { } selected)
+            return;
+        if (int.TryParse(FrameDurationBox.Text, out int duration))
+            selected.DurationMilliseconds = duration;
+    }
+
+    private void FrameSettings_SelectionChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_isInitializingXaml || _updatingFrameEditor || SelectedSource is not { } selected)
+            return;
+        selected.AlphaBlend = BlendModeBox.SelectedIndex == 1;
+        selected.DisposeAfterFrame = DisposeAfterFrameCheckBox.IsChecked == true;
+    }
+
+    private void SourcesList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_isInitializingXaml)
+            return;
+        LoadSelectedFrameIntoEditor();
+    }
+
+    private void LoadSelectedFrameIntoEditor()
+    {
+        var selected = SelectedSource;
+        bool enabled = selected is not null;
+        FrameWidthBox.IsEnabled = FrameHeightBox.IsEnabled = FrameXBox.IsEnabled = FrameYBox.IsEnabled = enabled;
+        FrameDurationBox.IsEnabled = BlendModeBox.IsEnabled = DisposeAfterFrameCheckBox.IsEnabled = enabled;
+        if (selected is null)
+        {
+            var previous = CanvasPreviewImage.Source as Bitmap;
+            CanvasPreviewImage.Source = null;
+            previous?.Dispose();
+            CanvasPreviewInfo.Text = "Select a frame to preview its canvas placement.";
+            return;
+        }
+
+        _updatingFrameEditor = true;
+        FrameWidthBox.Text = selected.FrameWidth.ToString();
+        FrameHeightBox.Text = selected.FrameHeight.ToString();
+        FrameXBox.Text = selected.XOffset.ToString();
+        FrameYBox.Text = selected.YOffset.ToString();
+        FrameDurationBox.Text = selected.DurationMilliseconds.ToString();
+        BlendModeBox.SelectedIndex = selected.AlphaBlend ? 1 : 0;
+        DisposeAfterFrameCheckBox.IsChecked = selected.DisposeAfterFrame;
+        _lockedFrameAspectRatio = selected.FrameHeight == 0 ? 1 : (double)selected.FrameWidth / selected.FrameHeight;
+        _updatingFrameEditor = false;
+        RefreshCanvasPreview();
+    }
+
+    private void RefreshCanvasPreview()
+    {
+        var selected = SelectedSource;
+        if (selected is null || !int.TryParse(WidthBox.Text, out int canvasWidth) ||
+            !int.TryParse(HeightBox.Text, out int canvasHeight) || canvasWidth < 1 || canvasHeight < 1)
+            return;
         try
         {
-            if (ReferenceEquals(sender, WidthBox))
-                HeightBox.Text = Math.Clamp((int)Math.Round(width / _lockedAspectRatio), 1, 8192).ToString();
-            else if (ReferenceEquals(sender, HeightBox))
-                WidthBox.Text = Math.Clamp((int)Math.Round(height * _lockedAspectRatio), 1, 8192).ToString();
+            byte[] png = _imageService.CreateWebpAnimationFramePreview(selected.ToFrameInput(), canvasWidth, canvasHeight);
+            using var stream = new MemoryStream(png);
+            var bitmap = new Bitmap(stream);
+            var previous = CanvasPreviewImage.Source as Bitmap;
+            CanvasPreviewImage.Source = bitmap;
+            if (!ReferenceEquals(previous, _previewBitmap))
+                previous?.Dispose();
+            CanvasPreviewInfo.Text = $"Canvas {canvasWidth} × {canvasHeight} · frame at {selected.XOffset}, {selected.YOffset}";
         }
-        finally
+        catch
         {
-            _updatingAspectRatio = false;
+            CanvasPreviewInfo.Text = "Frame size and offset must fit inside the canvas.";
         }
     }
 
-    private void LoopForeverCheckBox_Changed(object? sender, RoutedEventArgs e) =>
+    private void LoopForeverCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_isInitializingXaml)
+            return;
         LoopCountBox.IsEnabled = LoopForeverCheckBox.IsChecked != true;
+    }
 
     private async void BuildPreview_Click(object? sender, RoutedEventArgs e)
     {
@@ -346,7 +489,7 @@ public partial class WebpAnimationCreatorWindow : Window
                 _sources.Select(source => source.ToFrameInput()).ToArray(), settings.Width, settings.Height,
                 settings.LoopForever, settings.LoopCount, settings.Method, settings.Quality, settings.Duration));
             ImageAssetPreview preview = await Task.Run(() => _imageService.CreateWebpAnimationPreview(encoded));
-            SetPreview(preview, settings.LoopForever, settings.LoopCount);
+            SetPreview(preview, settings.LoopCount);
             StatusText.Text = $"Preview ready: {preview.FrameCount} frames at {preview.Width} × {preview.Height}.";
         }
         catch (Exception ex)
@@ -402,12 +545,27 @@ public partial class WebpAnimationCreatorWindow : Window
             StatusText.Text = "Add at least two readable image files.";
             return false;
         }
-        if (!TryParse(WidthBox.Text, 1, 8192, "Width", out int width) ||
-            !TryParse(HeightBox.Text, 1, 8192, "Height", out int height) ||
-            !TryParse(FrameDurationBox.Text, 1, 60000, "Frame duration", out int duration) ||
+        if (!TryParse(WidthBox.Text, 1, 8192, "Canvas width", out int width) ||
+            !TryParse(HeightBox.Text, 1, 8192, "Canvas height", out int height) ||
+            !TryParse(DefaultDurationBox.Text, 1, 60000, "Default frame duration", out int duration) ||
             !TryParse(MethodBox.Text, 0, 6, "Method", out int method) ||
             !TryParse(QualityBox.Text, 1, 100, "Quality", out int quality))
             return false;
+
+        foreach (var frame in _sources)
+        {
+            if (frame.FrameWidth is < 1 || frame.FrameHeight is < 1 || frame.FrameWidth > width || frame.FrameHeight > height ||
+                frame.XOffset < 0 || frame.YOffset < 0 || frame.XOffset + frame.FrameWidth > width || frame.YOffset + frame.FrameHeight > height)
+            {
+                StatusText.Text = $"Frame '{frame.Name}' must have a positive size and fit within the canvas at its current offset.";
+                return false;
+            }
+            if (frame.DurationMilliseconds is < 1 or > 60000)
+            {
+                StatusText.Text = $"Frame '{frame.Name}' duration must be between 1 and 60,000 milliseconds.";
+                return false;
+            }
+        }
 
         bool loopForever = LoopForeverCheckBox.IsChecked == true;
         int loopCount = 1;
@@ -431,15 +589,34 @@ public partial class WebpAnimationCreatorWindow : Window
         return false;
     }
 
-    private void SetPreview(ImageAssetPreview preview, bool loopForever, int loopCount)
+    private void SetPreview(ImageAssetPreview preview, int loopCount)
     {
         StopPreview();
         _preview = preview;
+        _previewRepeatCount = loopCount;
         _previewFrameIndex = 0;
         _previewCompletedPlays = 0;
-        _previewTotalPlays = loopForever ? null : loopCount + 1;
+        UpdatePreviewLoopMode();
         PreviewControls.IsVisible = preview.AnimationFrames.Count > 1;
         ShowPreviewFrame();
+    }
+
+    private void PreviewLoopForeverCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_isInitializingXaml)
+            return;
+
+        _previewCompletedPlays = 0;
+        _previewFrameIndex = 0;
+        UpdatePreviewLoopMode();
+        ShowPreviewFrame();
+    }
+
+    private void UpdatePreviewLoopMode()
+    {
+        _previewTotalPlays = PreviewLoopForeverCheckBox.IsChecked == true
+            ? null
+            : _previewRepeatCount + 1;
     }
 
     private void ShowPreviewFrame()
@@ -517,19 +694,19 @@ public partial class WebpAnimationCreatorWindow : Window
         _previewBitmap = null;
     }
 
-    private void SourcesList_SelectionChanged(object? sender, SelectionChangedEventArgs e) { }
-
     private void SetBusy(bool busy)
     {
         foreach (Control control in new Control[]
         {
-            SourcesList, AddFilesButton, AddFolderButton, MoveUpButton, MoveDownButton, RemoveButton,
-            WidthBox, HeightBox, KeepAspectRatioCheckBox, LoopForeverCheckBox, MethodBox, QualityBox,
-            OutputNameBox, BuildPreviewButton, CreateButton
+            SourcesList, AddFilesButton, AddFolderButton, DuplicateButton, MoveUpButton, MoveDownButton, RemoveButton,
+            WidthBox, HeightBox, FitNewImagesCheckBox, DefaultDurationBox, LoopForeverCheckBox, LoopCountBox,
+            MethodBox, QualityBox, OutputNameBox, BuildPreviewButton, CreateButton
         })
             control.IsEnabled = !busy;
+        bool hasFrame = SelectedSource is not null;
+        FrameWidthBox.IsEnabled = FrameHeightBox.IsEnabled = FrameXBox.IsEnabled = FrameYBox.IsEnabled = !busy && hasFrame;
+        FrameDurationBox.IsEnabled = BlendModeBox.IsEnabled = DisposeAfterFrameCheckBox.IsEnabled = !busy && hasFrame;
         LoopCountBox.IsEnabled = !busy && LoopForeverCheckBox.IsChecked != true;
-        FrameDurationBox.IsEnabled = !busy && !_isEditingAnimation;
         StatusText.Text = busy ? "Working…" : StatusText.Text;
     }
 

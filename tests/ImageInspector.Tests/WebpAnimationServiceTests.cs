@@ -1,6 +1,8 @@
 using oaiResponsesAvalonia.Services;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
 
 namespace ImageInspector.Tests;
@@ -103,6 +105,88 @@ public sealed class WebpAnimationServiceTests
             Assert.Equal((ushort)4, decoded.Metadata.GetWebpMetadata().RepeatCount);
             Assert.Equal((uint)240, decoded.Frames[0].Metadata.GetWebpMetadata().FrameDelay);
             Assert.Equal((uint)80, decoded.Frames[1].Metadata.GetWebpMetadata().FrameDelay);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CreateWebpAnimationFromFrames_UsesPerFrameGeometryAndMetadata()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ImageInspector.WebpAnimationTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string redPath = WriteSolidPng(root, "red.png", new Rgba32(255, 0, 0, 255));
+            string bluePath = WriteSolidPng(root, "blue.png", new Rgba32(0, 0, 255, 255));
+            var service = new ImageLibraryService(Path.Combine(root, "application"), Path.Combine(root, "user"));
+            var frames = new[]
+            {
+                new WebpAnimationFrameInput(redPath, null, 80, 2, 2, 1, 1, AlphaBlend: false, DisposeAfterFrame: true),
+                new WebpAnimationFrameInput(bluePath, null, 170, 2, 2, 0, 0, AlphaBlend: true, DisposeAfterFrame: false)
+            };
+
+            byte[] firstFramePreview = service.CreateWebpAnimationFramePreview(frames[0], 4, 4);
+            using (Image<Rgba32> preview = Image.Load<Rgba32>(firstFramePreview))
+            {
+                Assert.Equal(new Rgba32(0, 0, 0, 0), preview[0, 0]);
+                Assert.Equal(new Rgba32(255, 0, 0, 255), preview[1, 1]);
+                Assert.Equal(new Rgba32(0, 0, 0, 0), preview[3, 3]);
+            }
+
+            byte[] encoded = service.CreateWebpAnimationFromFrames(
+                frames, 4, 4, loopForever: true, loopCount: 1,
+                method: 0, quality: 100, defaultFrameDurationMilliseconds: 100);
+            using Image<Rgba32> decoded = Image.Load<Rgba32>(encoded);
+
+            Assert.Equal((uint)80, decoded.Frames[0].Metadata.GetWebpMetadata().FrameDelay);
+            Assert.Equal((uint)170, decoded.Frames[1].Metadata.GetWebpMetadata().FrameDelay);
+            Assert.Equal((byte)0, decoded.Frames[0][0, 0].A);
+            Assert.True(decoded.Frames[0][1, 1].R > 200);
+            Assert.Equal(FrameBlendMode.Source, decoded.Frames[0].Metadata.GetWebpMetadata().BlendMode);
+            Assert.Equal(FrameBlendMode.Over, decoded.Frames[1].Metadata.GetWebpMetadata().BlendMode);
+            Assert.Equal(FrameDisposalMode.RestoreToBackground, decoded.Frames[0].Metadata.GetWebpMetadata().DisposalMode);
+            Assert.Equal(FrameDisposalMode.DoNotDispose, decoded.Frames[1].Metadata.GetWebpMetadata().DisposalMode);
+
+            string encodedPath = service.SaveToUserImages(Path.Combine(root, "user"), "metadata.webp", encoded);
+            WebpAnimationEditDocument editDocument = service.ReadWebpAnimationForEditing(encodedPath);
+            Assert.Equal(new[] { false, true }, editDocument.Frames.Select(frame => frame.AlphaBlend));
+            Assert.Equal(new[] { true, false }, editDocument.Frames.Select(frame => frame.DisposeAfterFrame));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CreateWebpAnimationFromFrames_OddCanvasDimensionsRoundTrip()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ImageInspector.WebpAnimationTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string redPath = WriteSolidPng(root, "red.png", new Rgba32(255, 0, 0, 255));
+            string bluePath = WriteSolidPng(root, "blue.png", new Rgba32(0, 0, 255, 255));
+            var service = new ImageLibraryService(Path.Combine(root, "application"), Path.Combine(root, "user"));
+            var frames = new[]
+            {
+                new WebpAnimationFrameInput(redPath, null, 90, 3, 2, 1, 0),
+                new WebpAnimationFrameInput(bluePath, null, 130, 2, 3, 3, 0)
+            };
+
+            byte[] encoded = service.CreateWebpAnimationFromFrames(
+                frames, 5, 3, loopForever: true, loopCount: 1,
+                method: 0, quality: 100, defaultFrameDurationMilliseconds: 100);
+            using Image<Rgba32> decoded = Image.Load<Rgba32>(encoded);
+
+            Assert.Equal(5, decoded.Width);
+            Assert.Equal(3, decoded.Height);
+            Assert.Equal(2, decoded.Frames.Count);
+            Assert.Equal((uint)90, decoded.Frames[0].Metadata.GetWebpMetadata().FrameDelay);
+            Assert.Equal((uint)130, decoded.Frames[1].Metadata.GetWebpMetadata().FrameDelay);
         }
         finally
         {

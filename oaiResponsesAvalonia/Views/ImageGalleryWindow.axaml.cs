@@ -112,6 +112,7 @@ public partial class ImageGalleryWindow : Window
 
             string category = SelectedTag(CategoryPicker, "responses");
             var loaded = await Task.Run(() => _imageService.ListEntries(_location, currentPath)
+                .Where(entry => !entry.Name.StartsWith(".", StringComparison.Ordinal))
                 .Where(entry => entry.IsDirectory || MatchesCategory(entry.Name, category))
                 .Select(entry => new LoadedImageGalleryItem(entry,
                     entry.IsDirectory ? null : TryCreateThumbnail(entry.FullPath)))

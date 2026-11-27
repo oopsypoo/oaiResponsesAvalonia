@@ -13,6 +13,9 @@ namespace oaiResponsesAvalonia
         public string ImagesFolder { get; set; } = "images";
         // A simple folder name stays under ImagesFolder for compatibility; an absolute path selects any location.
         public string SavedImagesFolder { get; set; } = "user";
+        public bool ProtonDriveSyncEnabled { get; set; } = true;
+        public string ProtonDriveCliPath { get; set; } = "proton-drive";
+        public string ProtonDriveRemoteRoot { get; set; } = "/my-files/oaiResponsesAvalonia";
         public string ResponsesMarkdownTheme { get; set; } = "github.min.css";
         public string ResponsesPageTheme { get; set; } = "github-light-page.css";
         public string CustomSearchProvider { get; set; } = "brave";

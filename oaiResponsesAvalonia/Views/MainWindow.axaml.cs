@@ -596,6 +596,11 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void menuProtonSync_Click(object? sender, RoutedEventArgs e)
+    {
+        await new ProtonSyncWindow(_settings).ShowDialog(this);
+    }
+
     private void AvailableModelsWindow_ModelsApplied(List<string> models)
     {
         _activeModelsForResponses = models.ToList();

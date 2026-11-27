@@ -1,0 +1,64 @@
+<Window x:Class="oaiResponsesAvalonia.Views.ProtonSyncWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:DataType="x:Object"
+        x:CompileBindings="True"
+        Title="Proton Sync"
+        Width="780"
+        Height="650"
+        MinWidth="580"
+        MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="18" RowSpacing="12">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <TextBlock Text="Proton Drive connection and sync configuration"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center" />
+            <CheckBox Grid.Column="1"
+                      x:Name="SyncEnabledCheckBox"
+                      Content="Enable Proton Sync"
+                      VerticalAlignment="Center" />
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="8">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="CLI executable" VerticalAlignment="Center" />
+            <TextBox Grid.Row="0" Grid.Column="1" x:Name="CliExecutableTextBox" PlaceholderText="proton-drive" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Remote app root" VerticalAlignment="Center" />
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="RemoteRootTextBox" PlaceholderText="/my-files/oaiResponsesAvalonia" />
+        </Grid>
+
+        <Border Grid.Row="2" Padding="12" CornerRadius="6" BorderThickness="1" BorderBrush="Gray">
+            <StackPanel Spacing="5">
+                <TextBlock Text="Local locations" FontWeight="SemiBold" />
+                <TextBlock x:Name="DatabasePathText" TextWrapping="Wrap" />
+                <TextBlock x:Name="ImagesPathText" TextWrapping="Wrap" />
+                <TextBlock x:Name="FilesPathText" TextWrapping="Wrap" />
+                <TextBlock x:Name="UserPathText" TextWrapping="Wrap" />
+                <TextBlock x:Name="DeviceIdText" TextWrapping="Wrap" />
+                <TextBlock x:Name="ManifestPathText" TextWrapping="Wrap" />
+                <TextBlock Text="The local manifest tracks the user area only. Confirmed deletions are moved to Proton Drive trash or local backups; changed files are never discarded." TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+            <TextBox x:Name="CommandOutputTextBox"
+                     IsReadOnly="True"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     VerticalContentAlignment="Top"
+                     PlaceholderText="Command output will appear here"
+                     FontFamily="Cascadia Mono, Consolas, monospace" />
+        </ScrollViewer>
+
+        <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="Credentials are handled by proton-drive; this app does not save them." TextWrapping="Wrap" />
+            <Button Grid.Column="1" x:Name="LoginButton" Content="Log in" Click="LoginButton_Click" />
+            <Button Grid.Column="2" x:Name="LogoutButton" Content="Log out" Click="LogoutButton_Click" />
+            <Button Grid.Column="3" x:Name="PullFilesButton" Content="Pull files" Click="PullFilesButton_Click" />
+            <Button Grid.Column="4" x:Name="PushFilesButton" Content="Push files" Click="PushFilesButton_Click" />
+            <Button Grid.Column="5" Content="Save settings" Click="SaveButton_Click" />
+            <Button Grid.Column="6" Content="Close" Click="CloseButton_Click" />
+        </Grid>
+    </Grid>
+</Window>

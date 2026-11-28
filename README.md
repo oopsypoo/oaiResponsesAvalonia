@@ -20,7 +20,7 @@ File changes and execution capabilities are separately controlled. Depending on 
 
 The application is cross-platform and is regularly tested on:
 
-- Ubuntu 26.04.1 LTS
+- Ubuntu 26.04.1 LTS (Kubuntu 26.04.01 LTS)
 - Windows 11
 
 ## Run from source

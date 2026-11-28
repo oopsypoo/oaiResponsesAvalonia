@@ -41,3 +41,6 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * \[ ] Decide whether and when to adopt release version numbers. Until then, keep the changelog useful without inventing versions.
 * \[ ] Keep the README focused on the application and its current capabilities; record major changes in the changelog.
 
+## Proton sync
+* \[ ] Windows 11: proton sync does not open a browser-window for authentication 
+* \[ ] Authentication: output does not show authentication link

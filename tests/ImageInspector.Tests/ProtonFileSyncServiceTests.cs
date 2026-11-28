@@ -187,7 +187,7 @@ public sealed class ProtonFileSyncServiceTests
     }
 
     [Fact]
-    public async Task ChangedUserFileKeepsPriorManifestBaselineUntilContentMatchesAgain()
+    public async Task LocalOnlyUserEditReplacesRemoteAndAdvancesManifest()
     {
         string root = CreateTempDirectory();
         try
@@ -204,11 +204,12 @@ public sealed class ProtonFileSyncServiceTests
 
             ProtonFileSyncResult changedResult = await service.PushAsync(_ => { });
 
-            Assert.Equal(ProtonFileSyncStatus.Conflict, changedResult.Status);
-            Assert.Equal("baseline", remote.Read("/my-files/app/user", "note.txt"));
+            Assert.Equal(ProtonFileSyncStatus.Ok, changedResult.Status);
+            Assert.Equal("edited locally", remote.Read("/my-files/app/user", "note.txt"));
+            Assert.Contains(ProtonFileConflictStrategy.Replace, remote.UploadStrategies);
             using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, "sync-state.json")));
             string? storedBase = document.RootElement.GetProperty("files").GetProperty("note.txt").GetProperty("baseSha1").GetString();
-            Assert.Equal(Sha(Encoding.UTF8.GetBytes("baseline")), storedBase);
+            Assert.Equal(Sha(Encoding.UTF8.GetBytes("edited locally")), storedBase);
         }
         finally
         {
@@ -217,6 +218,67 @@ public sealed class ProtonFileSyncServiceTests
     }
 
     private static string Sha(byte[] bytes) => Convert.ToHexString(SHA1.HashData(bytes)).ToLowerInvariant();
+
+    [Fact]
+    public async Task RemoteOnlyUserEditDownloadsAndAdvancesManifest()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            var settings = CreateSettings(root);
+            string localPath = Path.Combine(root, "images", "user", "note.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+            await File.WriteAllTextAsync(localPath, "baseline");
+            var remote = new FakeRemoteStore("/my-files/app");
+            var service = new ProtonFileSyncService(settings, remote);
+            Assert.Equal(ProtonFileSyncStatus.Ok, (await service.PushAsync(_ => { })).Status);
+            remote.Seed("/my-files/app/user", "note.txt", "edited remotely");
+
+            ProtonFileSyncResult result = await service.PullAsync(_ => { });
+
+            Assert.Equal(ProtonFileSyncStatus.Ok, result.Status);
+            Assert.Equal("edited remotely", await File.ReadAllTextAsync(localPath));
+            using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, "sync-state.json")));
+            Assert.Equal(Sha(Encoding.UTF8.GetBytes("edited remotely")), document.RootElement.GetProperty("files").GetProperty("note.txt").GetProperty("baseSha1").GetString());
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task DivergentUserEditsPreserveBothVersionsAsConflictCopy()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            var settings = CreateSettings(root);
+            string userDirectory = Path.Combine(root, "images", "user");
+            Directory.CreateDirectory(userDirectory);
+            string localPath = Path.Combine(userDirectory, "note.txt");
+            await File.WriteAllTextAsync(localPath, "baseline");
+            var remote = new FakeRemoteStore("/my-files/app");
+            var service = new ProtonFileSyncService(settings, remote);
+            Assert.Equal(ProtonFileSyncStatus.Ok, (await service.PushAsync(_ => { })).Status);
+            await File.WriteAllTextAsync(localPath, "local edit");
+            remote.Seed("/my-files/app/user", "note.txt", "remote edit");
+
+            ProtonFileSyncResult result = await service.PushAsync(_ => { });
+
+            Assert.Equal(ProtonFileSyncStatus.Conflict, result.Status);
+            Assert.Equal("remote edit", await File.ReadAllTextAsync(localPath));
+            string[] conflictFiles = Directory.GetFiles(userDirectory, "*.conflict-*.txt");
+            Assert.Single(conflictFiles);
+            Assert.Equal("local edit", await File.ReadAllTextAsync(conflictFiles[0]));
+            string relativeConflict = Path.GetFileName(conflictFiles[0]);
+            Assert.Equal("local edit", remote.Read("/my-files/app/user", relativeConflict));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
 
     private static AppSettings CreateSettings(string root) => new()
     {
@@ -285,14 +347,20 @@ public sealed class ProtonFileSyncServiceTests
             return Task.FromResult<IReadOnlyList<RemoteFileEntry>>(entries);
         }
 
-        public Task<ProtonCommandResult> UploadAsync(IReadOnlyList<string> localPaths, string remoteFolder, Action<string> log, CancellationToken cancellationToken = default)
+        public List<ProtonFileConflictStrategy> UploadStrategies { get; } = new();
+
+        public Task<ProtonCommandResult> UploadAsync(IReadOnlyList<string> localPaths, string remoteFolder, Action<string> log, CancellationToken cancellationToken = default, ProtonFileConflictStrategy fileConflictStrategy = ProtonFileConflictStrategy.Skip)
         {
+            UploadStrategies.Add(fileConflictStrategy);
             foreach (string localPath in localPaths)
             {
                 if (File.Exists(localPath))
                 {
                     string path = remoteFolder.TrimEnd('/') + "/" + Path.GetFileName(localPath);
-                    _files.TryAdd(path, File.ReadAllBytes(localPath));
+                    if (fileConflictStrategy == ProtonFileConflictStrategy.Replace)
+                        _files[path] = File.ReadAllBytes(localPath);
+                    else
+                        _files.TryAdd(path, File.ReadAllBytes(localPath));
                     AddParentDirectories(Parent(path));
                 }
                 else if (Directory.Exists(localPath))

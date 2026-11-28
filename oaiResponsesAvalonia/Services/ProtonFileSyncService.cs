@@ -21,11 +21,17 @@ public enum ProtonFileSyncStatus
 
 public sealed record ProtonFileSyncResult(ProtonFileSyncStatus Status, string Summary);
 
+public enum ProtonFileConflictStrategy
+{
+    Skip,
+    Replace
+}
+
 public interface IRemoteStore
 {
     Task EnsureFolderAsync(string parentFolder, string name, Action<string> log, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RemoteFileEntry>> ListTreeAsync(string remoteFolder, Action<string> log, CancellationToken cancellationToken = default);
-    Task<ProtonCommandResult> UploadAsync(IReadOnlyList<string> localPaths, string remoteFolder, Action<string> log, CancellationToken cancellationToken = default);
+    Task<ProtonCommandResult> UploadAsync(IReadOnlyList<string> localPaths, string remoteFolder, Action<string> log, CancellationToken cancellationToken = default, ProtonFileConflictStrategy fileConflictStrategy = ProtonFileConflictStrategy.Skip);
     Task<ProtonCommandResult> DownloadAsync(IReadOnlyList<string> remotePaths, string localFolder, Action<string> log, CancellationToken cancellationToken = default);
     Task<ProtonCommandResult> TrashAsync(string remotePath, Action<string> log, CancellationToken cancellationToken = default);
 }
@@ -163,11 +169,12 @@ public sealed class ProtonDriveRemoteStore(string executable) : IRemoteStore
         return allEntries.Values.ToArray();
     }
 
-    public Task<ProtonCommandResult> UploadAsync(IReadOnlyList<string> localPaths, string remoteFolder, Action<string> log, CancellationToken cancellationToken = default)
+    public Task<ProtonCommandResult> UploadAsync(IReadOnlyList<string> localPaths, string remoteFolder, Action<string> log, CancellationToken cancellationToken = default, ProtonFileConflictStrategy fileConflictStrategy = ProtonFileConflictStrategy.Skip)
     {
         if (localPaths.Count == 0)
             throw new ArgumentException("At least one local path is required.", nameof(localPaths));
-        var args = new List<string> { "filesystem", "upload", "-f", "skip", "-d", "merge" };
+        string strategy = fileConflictStrategy == ProtonFileConflictStrategy.Replace ? "replace" : "skip";
+        var args = new List<string> { "filesystem", "upload", "-f", strategy, "-d", "merge" };
         args.AddRange(localPaths);
         args.Add(remoteFolder);
         return RunAsync(args, log, cancellationToken);
@@ -334,8 +341,7 @@ public sealed class ProtonDriveRemoteStore(string executable) : IRemoteStore
 }
 
 /// <summary>
-/// Non-destructive file sync. The immutable images/files areas are set unions;
-/// the user area records a local baseline manifest while edits and deletions remain conservative conflicts.
+/// Syncs immutable file areas additively and reconciles mutable user files against a local manifest baseline.
 /// </summary>
 public sealed class ProtonFileSyncService
 {
@@ -416,6 +422,8 @@ public sealed class ProtonFileSyncService
             conflicts += await ReconcileUserDeletionsAsync(area, localTree, remoteTree, manifest, log, cancellationToken);
             remoteTree = FilterPortableRemoteEntries(await _remote.ListTreeAsync(remoteRoot, log, cancellationToken), log);
             localTree = ScanLocal(area, log);
+            conflicts += await ReconcileUserFilesAsync(area, remoteRoot, localTree, remoteTree, push, manifest, log, cancellationToken);
+            return conflicts;
         }
 
         // Pull only absent files. Every transfer uses a fresh empty temporary folder and verification.
@@ -520,6 +528,224 @@ public sealed class ProtonFileSyncService
             await RefreshUserManifestAsync(area, manifest, log, cancellationToken);
 
         return conflicts;
+    }
+
+    private async Task<int> ReconcileUserFilesAsync(
+        SyncArea area,
+        string remoteRoot,
+        LocalScan local,
+        IReadOnlyList<RemoteFileEntry> remoteEntries,
+        bool push,
+        ProtonSyncManifest manifest,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        var remoteFiles = remoteEntries.Where(entry => !entry.IsDirectory)
+            .ToDictionary(entry => entry.RelativePath, StringComparer.Ordinal);
+        var paths = local.Files.Keys.Concat(remoteFiles.Keys).Distinct(StringComparer.Ordinal).OrderBy(path => path, StringComparer.Ordinal).ToArray();
+        int conflicts = 0;
+
+        foreach (string relativePath in paths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            bool hasLocal = local.Files.TryGetValue(relativePath, out string? localPath);
+            bool hasRemote = remoteFiles.TryGetValue(relativePath, out RemoteFileEntry? remoteFile);
+            bool hasBaseline = manifest.Files.TryGetValue(relativePath, out ProtonSyncManifestEntry? baseline);
+
+            // Deletion decisions are handled separately and conservatively above.
+            if (!hasLocal || !hasRemote)
+            {
+                if (hasLocal && push && !hasBaseline)
+                {
+                    string localHash = await Sha1Async(localPath!);
+                    await UploadNewUserFileAsync(area, remoteRoot, relativePath, localPath!, localHash, manifest, log, cancellationToken);
+                }
+                else if (hasRemote && !push && !hasBaseline)
+                {
+                    await DownloadVerifiedAsync(area, remoteFile!, log, cancellationToken);
+                    string destination = ResolveLocal(area.LocalRoot, relativePath);
+                    if (!File.Exists(destination) || !string.Equals(await Sha1Async(destination), remoteFile!.Sha1, StringComparison.OrdinalIgnoreCase))
+                    {
+                        conflicts++;
+                        log($"Could not establish a verified local copy of user file '{relativePath}'.{Environment.NewLine}");
+                        continue;
+                    }
+                    manifest.Files[relativePath] = NewManifestEntry(remoteFile.Sha1!, remoteFile.Size!.Value, destination);
+                }
+                continue;
+            }
+
+            if (remoteFile!.Sha1 is null || remoteFile.Size is null)
+            {
+                log($"Skipped user file '{relativePath}' because remote metadata cannot be verified.{Environment.NewLine}");
+                continue;
+            }
+
+            FileInfo localInfo = new(localPath!);
+            if (!localInfo.Exists)
+                continue;
+            string localSha = await Sha1Async(localPath!);
+            string remoteSha = remoteFile.Sha1;
+
+            if (!hasBaseline)
+            {
+                if (string.Equals(localSha, remoteSha, StringComparison.OrdinalIgnoreCase))
+                    manifest.Files[relativePath] = NewManifestEntry(remoteSha, localInfo.Length, localPath!);
+                else
+                {
+                    conflicts++;
+                    log($"Untracked user-file conflict at '{relativePath}': local and remote content differs; neither copy was changed.{Environment.NewLine}");
+                }
+                continue;
+            }
+
+            bool localChanged = !string.Equals(localSha, baseline!.BaseSha1, StringComparison.OrdinalIgnoreCase);
+            bool remoteChanged = !string.Equals(remoteSha, baseline.BaseSha1, StringComparison.OrdinalIgnoreCase);
+            if (string.Equals(localSha, remoteSha, StringComparison.OrdinalIgnoreCase))
+            {
+                manifest.Files[relativePath] = NewManifestEntry(remoteSha, localInfo.Length, localPath!);
+                continue;
+            }
+
+            if (!localChanged && !remoteChanged)
+            {
+                // Bytes are still the baseline on both sides; refresh local metadata only.
+                manifest.Files[relativePath] = NewManifestEntry(baseline.BaseSha1, localInfo.Length, localPath!);
+                continue;
+            }
+
+            if (localChanged && !remoteChanged)
+            {
+                IReadOnlyList<RemoteFileEntry> secondListing = await _remote.ListTreeAsync(remoteRoot, log, cancellationToken);
+                RemoteFileEntry? currentRemote = secondListing.FirstOrDefault(entry => !entry.IsDirectory && entry.RelativePath == relativePath);
+                if (currentRemote is null || !string.Equals(currentRemote.Sha1, baseline.BaseSha1, StringComparison.OrdinalIgnoreCase))
+                {
+                    conflicts++;
+                    log($"Local edit was not uploaded because remote '{relativePath}' changed during reconciliation.{Environment.NewLine}");
+                    continue;
+                }
+
+                string remoteParent = JoinRemote(remoteRoot, ParentRelative(relativePath));
+                ProtonCommandResult upload = await _remote.UploadAsync([localPath!], remoteParent, log, cancellationToken, ProtonFileConflictStrategy.Replace);
+                EnsureSucceeded(upload);
+                IReadOnlyList<RemoteFileEntry> afterUpload = await _remote.ListTreeAsync(remoteRoot, log, cancellationToken);
+                RemoteFileEntry? confirmed = afterUpload.FirstOrDefault(entry => !entry.IsDirectory && entry.RelativePath == relativePath);
+                if (confirmed is null || !string.Equals(confirmed.Sha1, localSha, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException($"Replacement verification failed for user file '{relativePath}'. The baseline was not advanced.");
+                manifest.Files[relativePath] = NewManifestEntry(confirmed.Sha1!, confirmed.Size!.Value, localPath!);
+                log($"Replaced remote user file after a local-only edit: '{relativePath}'.{Environment.NewLine}");
+                continue;
+            }
+
+            if (!localChanged && remoteChanged)
+            {
+                if (!File.Exists(localPath) || !string.Equals(await Sha1Async(localPath!), baseline.BaseSha1, StringComparison.OrdinalIgnoreCase))
+                {
+                    conflicts++;
+                    log($"Remote edit was not downloaded because local '{relativePath}' changed during reconciliation.{Environment.NewLine}");
+                    continue;
+                }
+                await DownloadVerifiedAsync(area, remoteFile, log, cancellationToken, overwriteExisting: true, expectedLocalSha1: baseline.BaseSha1);
+                if (!File.Exists(localPath) || !string.Equals(await Sha1Async(localPath!), remoteSha, StringComparison.OrdinalIgnoreCase))
+                {
+                    conflicts++;
+                    log($"Remote edit was not installed because local '{relativePath}' changed during download.{Environment.NewLine}");
+                    continue;
+                }
+                manifest.Files[relativePath] = NewManifestEntry(remoteSha, remoteFile.Size.Value, localPath!);
+                log($"Downloaded remote-only user edit: '{relativePath}'.{Environment.NewLine}");
+                continue;
+            }
+
+            // Both sides changed to different content. Preserve the local copy under a unique
+            // conflict name, install the verified remote copy at the original path, and sync
+            // the conflict copy as a separate new file.
+            string conflictRelative = MakeConflictRelativePath(relativePath, manifest.DeviceId);
+            string conflictLocalPath = ResolveLocal(area.LocalRoot, conflictRelative);
+            Directory.CreateDirectory(Path.GetDirectoryName(conflictLocalPath)!);
+            File.Move(localPath!, conflictLocalPath);
+            await DownloadVerifiedAsync(area, remoteFile, log, cancellationToken);
+            string originalLocalPath = ResolveLocal(area.LocalRoot, relativePath);
+            if (!File.Exists(originalLocalPath) || !string.Equals(await Sha1Async(originalLocalPath), remoteSha, StringComparison.OrdinalIgnoreCase))
+            {
+                conflicts++;
+                log($"Conflict copy was preserved as '{conflictRelative}', but remote content could not be installed at '{relativePath}'.{Environment.NewLine}");
+                continue;
+            }
+
+            IReadOnlyList<RemoteFileEntry> beforeConflictUpload = await _remote.ListTreeAsync(remoteRoot, log, cancellationToken);
+            if (!beforeConflictUpload.Any(entry => !entry.IsDirectory && entry.RelativePath == conflictRelative))
+            {
+                await EnsureRemoteParentExistsAsync(remoteRoot, conflictRelative, log, cancellationToken);
+                string parent = JoinRemote(remoteRoot, ParentRelative(conflictRelative));
+                ProtonCommandResult conflictUpload = await _remote.UploadAsync([conflictLocalPath], parent, log, cancellationToken);
+                EnsureSucceeded(conflictUpload);
+            }
+            IReadOnlyList<RemoteFileEntry> afterConflictUpload = await _remote.ListTreeAsync(remoteRoot, log, cancellationToken);
+            RemoteFileEntry? remoteConflict = afterConflictUpload.FirstOrDefault(entry => !entry.IsDirectory && entry.RelativePath == conflictRelative);
+            if (remoteConflict is null || !string.Equals(remoteConflict.Sha1, localSha, StringComparison.OrdinalIgnoreCase))
+                throw new IOException($"Could not verify preserved conflict copy '{conflictRelative}'.");
+
+            manifest.Files[relativePath] = NewManifestEntry(remoteSha, remoteFile.Size.Value, originalLocalPath);
+            manifest.Files[conflictRelative] = NewManifestEntry(remoteConflict.Sha1!, remoteConflict.Size!.Value, conflictLocalPath);
+            conflicts++;
+            log($"Both sides changed '{relativePath}'. Preserved local content as '{conflictRelative}' and kept remote content at the original path.{Environment.NewLine}");
+        }
+
+        return conflicts;
+    }
+
+    private async Task UploadNewUserFileAsync(
+        SyncArea area,
+        string remoteRoot,
+        string relativePath,
+        string localPath,
+        string localSha,
+        ProtonSyncManifest manifest,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRemoteParentExistsAsync(remoteRoot, relativePath, log, cancellationToken);
+        string remoteParent = JoinRemote(remoteRoot, ParentRelative(relativePath));
+        ProtonCommandResult upload = await _remote.UploadAsync([localPath], remoteParent, log, cancellationToken);
+        EnsureSucceeded(upload);
+        IReadOnlyList<RemoteFileEntry> listing = await _remote.ListTreeAsync(remoteRoot, log, cancellationToken);
+        RemoteFileEntry? confirmed = listing.FirstOrDefault(entry => !entry.IsDirectory && entry.RelativePath == relativePath);
+        if (confirmed is null || !string.Equals(confirmed.Sha1, localSha, StringComparison.OrdinalIgnoreCase))
+            throw new IOException($"Upload verification failed for user file '{relativePath}'.");
+        manifest.Files[relativePath] = NewManifestEntry(confirmed.Sha1!, confirmed.Size!.Value, localPath);
+    }
+
+    private async Task EnsureRemoteParentExistsAsync(string remoteRoot, string relativePath, Action<string> log, CancellationToken cancellationToken)
+    {
+        string[] components = ParentRelative(relativePath).Split('/', StringSplitOptions.RemoveEmptyEntries);
+        string current = remoteRoot;
+        foreach (string component in components)
+        {
+            IReadOnlyList<RemoteFileEntry> children = await _remote.ListTreeAsync(current, log, cancellationToken);
+            if (!children.Any(entry => entry.IsDirectory && string.Equals(entry.RelativePath, component, StringComparison.Ordinal)))
+                await _remote.EnsureFolderAsync(current, component, log, cancellationToken);
+            current = JoinRemote(current, component);
+        }
+    }
+
+    private static ProtonSyncManifestEntry NewManifestEntry(string sha1, long size, string localPath) => new()
+    {
+        BaseSha1 = sha1,
+        Size = size,
+        LocalMtimeTicks = File.GetLastWriteTimeUtc(localPath).Ticks
+    };
+
+    private static string MakeConflictRelativePath(string relativePath, string deviceId)
+    {
+        string directory = ParentRelative(relativePath);
+        string fileName = Path.GetFileName(relativePath);
+        string extension = Path.GetExtension(fileName);
+        string stem = fileName[..^extension.Length];
+        string safeDevice = string.Concat(deviceId.Select(character => char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '-'));
+        string suffix = $".conflict-{safeDevice}-{DateTime.UtcNow:yyyyMMdd-HHmmssfff}";
+        string conflictName = stem + suffix + extension;
+        return directory.Length == 0 ? conflictName : directory + "/" + conflictName;
     }
 
     private async Task<int> ReconcileUserDeletionsAsync(
@@ -691,7 +917,7 @@ public sealed class ProtonFileSyncService
         }
     }
 
-    private async Task DownloadVerifiedAsync(SyncArea area, RemoteFileEntry remote, Action<string> log, CancellationToken cancellationToken)
+    private async Task DownloadVerifiedAsync(SyncArea area, RemoteFileEntry remote, Action<string> log, CancellationToken cancellationToken, bool overwriteExisting = false, string? expectedLocalSha1 = null)
     {
         if (remote.Size is null || remote.Sha1 is null)
             throw new InvalidDataException($"Remote file '{remote.RemotePath}' has no verifiable metadata.");
@@ -718,10 +944,14 @@ public sealed class ProtonFileSyncService
                 throw new InvalidDataException($"Downloaded file '{remote.RemotePath}' failed size/SHA-1 verification.");
             if (File.Exists(destination))
             {
-                log($"Skipped placing '{remote.RelativePath}' because a local file appeared during download.{Environment.NewLine}");
-                return;
+                if (!overwriteExisting || expectedLocalSha1 is null ||
+                    !string.Equals(await Sha1Async(destination), expectedLocalSha1, StringComparison.OrdinalIgnoreCase))
+                {
+                    log($"Skipped placing '{remote.RelativePath}' because the local destination exists or changed during download.{Environment.NewLine}");
+                    return;
+                }
             }
-            File.Move(downloadedPath, destination);
+            File.Move(downloadedPath, destination, overwrite: overwriteExisting);
             if (area.RemoteName == "user" && remote.ModifiedUtc is { } modifiedUtc)
                 File.SetLastWriteTimeUtc(destination, modifiedUtc.UtcDateTime);
             log($"Downloaded and verified '{area.RemoteName}/{remote.RelativePath}'.{Environment.NewLine}");

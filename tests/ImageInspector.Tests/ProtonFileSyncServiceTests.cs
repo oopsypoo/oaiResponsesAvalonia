@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using oaiResponsesAvalonia;
 using oaiResponsesAvalonia.Services;
 
@@ -280,6 +281,79 @@ public sealed class ProtonFileSyncServiceTests
         }
     }
 
+    [Fact]
+    public async Task DatabasePushUploadsNumberedSnapshotAndStoresBaseline()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            var settings = CreateSettings(root);
+            string databasePath = Path.Combine(root, "localhistory.db");
+            CreateSqliteDatabase(databasePath, "local value");
+            var remote = new FakeRemoteStore("/my-files/app");
+
+            ProtonFileSyncResult result = await new ProtonDatabaseSyncService(settings, remote, databasePath).PushAsync(_ => { });
+
+            Assert.Equal(ProtonFileSyncStatus.Ok, result.Status);
+            IReadOnlyList<RemoteFileEntry> snapshots = await remote.ListTreeAsync("/my-files/app/db", _ => { });
+            RemoteFileEntry uploaded = Assert.Single(snapshots, entry => !entry.IsDirectory);
+            Assert.StartsWith("db-000001-", uploaded.RelativePath, StringComparison.Ordinal);
+            using JsonDocument state = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, "sync-state.json")));
+            Assert.Equal(1, state.RootElement.GetProperty("dbSnapshotNumber").GetInt32());
+            Assert.Equal(uploaded.Sha1, state.RootElement.GetProperty("dbSha1").GetString());
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task DatabasePullVerifiesInstallsRemoteAndBacksUpExistingDatabase()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            var settings = CreateSettings(root);
+            string localPath = Path.Combine(root, "localhistory.db");
+            string remoteSnapshotPath = Path.Combine(root, "remote-source.db");
+            CreateSqliteDatabase(localPath, "old local value");
+            CreateSqliteDatabase(remoteSnapshotPath, "remote value");
+            var remote = new FakeRemoteStore("/my-files/app");
+            remote.SeedBytes("/my-files/app/db", "db-000001-kubuntu.db", await File.ReadAllBytesAsync(remoteSnapshotPath));
+
+            ProtonFileSyncResult result = await new ProtonDatabaseSyncService(settings, remote, localPath).PullAsync(_ => { });
+
+            Assert.Equal(ProtonFileSyncStatus.Ok, result.Status);
+            Assert.Contains("pulled and installed", result.Summary, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("remote value", ReadSqliteValue(localPath));
+            Assert.Single(Directory.GetFiles(Path.Combine(root, "backups", "proton-sync", "database"), "*.db"));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static void CreateSqliteDatabase(string path, string value)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "CREATE TABLE sample(value TEXT); INSERT INTO sample(value) VALUES ($value);";
+        command.Parameters.AddWithValue("$value", value);
+        command.ExecuteNonQuery();
+    }
+
+    private static string ReadSqliteValue(string path)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly }.ToString());
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT value FROM sample;";
+        return (string)command.ExecuteScalar()!;
+    }
+
     private static AppSettings CreateSettings(string root) => new()
     {
         AppRoot = root,
@@ -328,6 +402,13 @@ public sealed class ProtonFileSyncServiceTests
         }
 
         public string Read(string areaRoot, string relativePath) => Encoding.UTF8.GetString(_files[areaRoot.TrimEnd('/') + "/" + relativePath]);
+
+        public void SeedBytes(string areaRoot, string relativePath, byte[] content)
+        {
+            string fullPath = areaRoot.TrimEnd('/') + "/" + relativePath;
+            AddParentDirectories(Parent(fullPath));
+            _files[fullPath] = content;
+        }
 
         public Task<IReadOnlyList<RemoteFileEntry>> ListTreeAsync(string remoteFolder, Action<string> log, CancellationToken cancellationToken = default)
         {

@@ -19,6 +19,8 @@ internal sealed class ProtonSyncManifest
     public int Schema { get; set; } = 1;
     public string DeviceId { get; set; } = $"{Environment.UserName}@{Environment.MachineName}";
     public Dictionary<string, ProtonSyncManifestEntry> Files { get; set; } = new(StringComparer.Ordinal);
+    public int? DbSnapshotNumber { get; set; }
+    public string? DbSha1 { get; set; }
 
     public static async Task<ProtonSyncManifest> LoadAsync(string path)
     {

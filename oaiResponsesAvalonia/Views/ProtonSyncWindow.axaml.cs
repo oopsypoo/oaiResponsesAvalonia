@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using oaiResponsesAvalonia.Services;
+using oaiResponsesAvalonia.Data;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -37,7 +38,7 @@ public partial class ProtonSyncWindow : Window
             userPath = $"(invalid Saved Images setting: {ex.Message})";
         }
 
-        DatabasePathText.Text = $"Database: {AppPaths.DatabaseFilePath}";
+        DatabasePathText.Text = $"Database: {AppDbContext.DatabaseFilePath}";
         ImagesPathText.Text = $"Images area: {imagesPath}";
         FilesPathText.Text = $"Files area: {filesPath}";
         UserPathText.Text = $"User images area: {userPath}";
@@ -109,6 +110,59 @@ public partial class ProtonSyncWindow : Window
 
     private async void PushFilesButton_Click(object? sender, RoutedEventArgs e) => await RunFileSyncAsync(push: true);
 
+    private async void PullDatabaseButton_Click(object? sender, RoutedEventArgs e) => await RunDatabaseSyncAsync(push: false);
+
+    private async void PushDatabaseButton_Click(object? sender, RoutedEventArgs e) => await RunDatabaseSyncAsync(push: true);
+
+    private async Task RunDatabaseSyncAsync(bool push)
+    {
+        if (_commandRunning)
+            return;
+        if (!SaveSettingsFromUi())
+            return;
+        if (!_settings.ProtonDriveSyncEnabled)
+        {
+            StatusText.Text = "Enable Proton Sync before running a database sync.";
+            return;
+        }
+
+        _commandRunning = true;
+        SetCommandButtonsEnabled(false);
+        StatusText.Text = push ? "Syncing regular files, then pushing the database snapshot…" : "Syncing regular files, then pulling the database snapshot…";
+        AppendOutput($"{Environment.NewLine}--- {(push ? "Push" : "Pull")} files and database started ---{Environment.NewLine}");
+        try
+        {
+            var store = new ProtonDriveRemoteStore(_settings.ProtonDriveCliPath);
+            var fileSync = new ProtonFileSyncService(_settings, store);
+            ProtonFileSyncResult files = push
+                ? await fileSync.PushAsync(AppendOutput)
+                : await fileSync.PullAsync(AppendOutput);
+            AppendOutput($"Regular files: {files.Status}: {files.Summary}{Environment.NewLine}");
+            if (files.Status != ProtonFileSyncStatus.Ok)
+            {
+                StatusText.Text = $"Database operation stopped because regular-file sync returned {files.Status}: {files.Summary}";
+                return;
+            }
+
+            var databaseSync = new ProtonDatabaseSyncService(_settings, store);
+            ProtonFileSyncResult database = push
+                ? await databaseSync.PushAsync(AppendOutput)
+                : await databaseSync.PullAsync(AppendOutput);
+            StatusText.Text = database.Summary;
+            AppendOutput($"Database: {database.Status}: {database.Summary}{Environment.NewLine}");
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Database sync failed: {ex.Message}";
+            AppendOutput($"Database sync failed: {ex}{Environment.NewLine}");
+        }
+        finally
+        {
+            _commandRunning = false;
+            SetCommandButtonsEnabled(true);
+        }
+    }
+
     private async Task RunFileSyncAsync(bool push)
     {
         if (_commandRunning)
@@ -153,6 +207,8 @@ public partial class ProtonSyncWindow : Window
         LogoutButton.IsEnabled = enabled;
         PullFilesButton.IsEnabled = enabled;
         PushFilesButton.IsEnabled = enabled;
+        PullDatabaseButton.IsEnabled = enabled;
+        PushDatabaseButton.IsEnabled = enabled;
     }
 
     private void CloseButton_Click(object? sender, RoutedEventArgs e) => Close();

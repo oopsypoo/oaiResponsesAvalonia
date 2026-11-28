@@ -42,5 +42,5 @@ This file tracks planned and unfinished work. Completed, notable changes belong 
 * \[ ] Keep the README focused on the application and its current capabilities; record major changes in the changelog.
 
 ## Proton sync
-* \[ ] Windows 11: proton sync does not open a browser-window for authentication 
-* \[ ] Authentication: output does not show authentication link
+* \[x] Windows 11: proton sync does not open a browser-window for authentication 
+* \[x] Authentication: output does not show authentication link

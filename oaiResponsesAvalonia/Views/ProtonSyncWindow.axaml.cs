@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using oaiResponsesAvalonia.Services;
 using oaiResponsesAvalonia.Data;
 using System;
@@ -61,8 +62,18 @@ public partial class ProtonSyncWindow : Window
         AppendOutput($"> {CliExecutableTextBox.Text?.Trim() ?? "proton-drive"} auth {action}{Environment.NewLine}");
         try
         {
-            ProtonCommandResult result = await _cliRunner.RunAuthCommandAsync(CliExecutableTextBox.Text ?? "proton-drive", action);
-            AppendOutput(result.Output);
+            ProtonCommandResult result = await _cliRunner.RunAuthCommandAsync(
+                CliExecutableTextBox.Text ?? "proton-drive",
+                action,
+                chunk => Dispatcher.UIThread.Post(() => AppendOutput(chunk)));
+
+            if (result.ExitCode is null)
+                AppendOutput(result.Output + Environment.NewLine);
+            else if (result.TimedOut)
+                AppendOutput($"Command timed out after 10 minutes; the process was terminated.{Environment.NewLine}");
+            else
+                AppendOutput($"Exit code: {result.ExitCode}{Environment.NewLine}");
+
             StatusText.Text = result.Succeeded
                 ? $"proton-drive auth {action} completed successfully."
                 : result.TimedOut

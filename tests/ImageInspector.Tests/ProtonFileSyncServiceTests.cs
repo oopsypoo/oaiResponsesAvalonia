@@ -282,6 +282,36 @@ public sealed class ProtonFileSyncServiceTests
     }
 
     [Fact]
+    public async Task CombinedPushSyncsRegularFilesBeforeDatabaseSnapshot()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            var settings = CreateSettings(root);
+            string databasePath = Path.Combine(root, "localhistory.db");
+            CreateSqliteDatabase(databasePath, "combined push");
+            Directory.CreateDirectory(Path.Combine(root, "images"));
+            await File.WriteAllTextAsync(Path.Combine(root, "images", "picture.txt"), "image payload");
+            var remote = new FakeRemoteStore("/my-files/app");
+            var output = new StringBuilder();
+
+            ProtonSyncWorkflowResult result = await new ProtonSyncWorkflow(settings, remote, databasePath)
+                .PushAsync(text => { output.Append(text); });
+
+            Assert.Equal(ProtonFileSyncStatus.Ok, result.Status);
+            Assert.Equal("image payload", remote.Read("/my-files/app/images", "picture.txt"));
+            IReadOnlyList<RemoteFileEntry> snapshots = await remote.ListTreeAsync("/my-files/app/db", _ => { });
+            Assert.Single(snapshots, entry => !entry.IsDirectory && entry.RelativePath.StartsWith("db-000001-", StringComparison.Ordinal));
+            Assert.True(output.ToString().IndexOf("Regular files: Ok", StringComparison.Ordinal) <
+                        output.ToString().IndexOf("Database: Ok", StringComparison.Ordinal));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
     public async Task DatabasePushUploadsNumberedSnapshotAndStoresBaseline()
     {
         string root = CreateTempDirectory();

@@ -49,6 +49,8 @@ public partial class MainWindow : Window
     private CustomSearchResearchWindow? _customSearchResearchWindow;
     private TerminalWindow? _terminalWindow;
     private ImageGalleryWindow? _imageGalleryWindow;
+    private bool _shutdownSyncRunning;
+    private bool _allowCloseAfterProtonSync;
 
     public event Action<List<string>>? ModelsApplied;
 
@@ -69,6 +71,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Opened += (_, _) => RefreshMcpSummary();
+        Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
         _appStatus = new AppStatus(text => StatusText.Text = text ?? string.Empty);
 

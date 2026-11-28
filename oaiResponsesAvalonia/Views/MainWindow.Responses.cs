@@ -2420,6 +2420,61 @@ The assistant wants to replace text in an existing file.
             }
         }
 
+        private async void MainWindow_Closing(object? sender, WindowClosingEventArgs e)
+        {
+            if (_allowCloseAfterProtonSync || !_settings.ProtonDriveSyncEnabled)
+                return;
+
+            e.Cancel = true;
+            if (_shutdownSyncRunning)
+                return;
+
+            _shutdownSyncRunning = true;
+            try
+            {
+                while (true)
+                {
+                    var progress = new ProtonSyncProgressWindow("Pushing Proton Drive data before closing…");
+                    progress.Show(this);
+                    ProtonSyncWorkflowResult result;
+                    try
+                    {
+                        result = await new ProtonSyncWorkflow(_settings).PushAsync(progress.AppendOutput);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        progress.AppendOutput($"Shutdown Proton Sync failed: {ex}{Environment.NewLine}");
+                        result = new ProtonSyncWorkflowResult(ProtonFileSyncStatus.Failed, ex.Message);
+                    }
+                    finally
+                    {
+                        progress.Close();
+                    }
+
+                    if (result.Status == ProtonFileSyncStatus.Ok)
+                    {
+                        _allowCloseAfterProtonSync = true;
+                        Close();
+                        return;
+                    }
+
+                    bool retry = await _dialogs.ConfirmAsync(this, "Proton Sync did not complete",
+                        $"The automatic push did not complete successfully. Your recent changes may remain only on this device.{Environment.NewLine}{Environment.NewLine}" +
+                        $"{result.Summary}{Environment.NewLine}{Environment.NewLine}Choose Yes to retry the push, or No to close the application anyway.");
+                    if (!retry)
+                    {
+                        _allowCloseAfterProtonSync = true;
+                        Close();
+                        return;
+                    }
+                }
+            }
+            finally
+            {
+                _shutdownSyncRunning = false;
+            }
+        }
+
         private async void MainWindow_Closed(object? sender, EventArgs e)
         {
             if (_responsesAssetServer is not null)
